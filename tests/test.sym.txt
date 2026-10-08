@@ -1,0 +1,6 @@
+=== Symbol Table (scope 1) ===
+-- Variables --
+-- Constants --
+-- Types --
+-- Procedures (challenge) --
+-- Labels (challenge) --

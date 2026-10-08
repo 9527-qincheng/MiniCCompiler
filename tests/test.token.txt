@@ -1,0 +1,13 @@
+1:1  INT  int
+1:5  IDENT  a
+1:6  SEMI  ;
+2:1  FLOAT  float
+2:7  IDENT  b
+2:8  SEMI  ;
+3:1  IDENT  a
+3:3  ASSIGN  =
+3:5  IDENT  b
+3:7  PLUS  +
+3:9  NUM_INT  1
+3:10  SEMI  ;
+4:1  EOF  <eof>

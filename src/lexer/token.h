@@ -42,6 +42,7 @@ enum class TokenType
     TOKEN_IDENT,        // 标识符
     TOKEN_NUM_INT,      // 整型常量
     TOKEN_NUM_FLOAT,    // 浮点常量
+    TOKEN_STRING,       // 字符串常量（"..."）
     // 运算符
     TOKEN_PLUS,         // +
     TOKEN_MINUS,        // -

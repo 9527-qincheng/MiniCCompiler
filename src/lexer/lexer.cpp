@@ -1,9 +1,10 @@
 // ============================================================================
-// MiniC 编译器 —— 词法分析模块 CLex 实现（最小可演示版）
+// MiniC 编译器 —— 词法分析模块 CLex 实现
 // 已实现：识别关键字(int/float/if/else/while/return/void)、标识符、整数、
-//         浮点常量、运算符(+ - * / =)、界符((){};,)；常量登记 m_ConstTexts；
-//         错误报告含行列号（Q8）。
-// TODO（挑战版）：转换表 m_szLexTbl 状态机驱动、字符串/注释、更细错误恢复。
+//         浮点常量、运算符(+ - * / =)、界符((){};,)；字符串常量 "..."；
+//         注释 // 单行、/* */ 多行；常量登记 m_ConstTexts；
+//         错误报告含行列号（Q8），错误恢复（未闭合串/多小数点/非法字符）。
+// 转换表 m_szLexTbl 已初始化字符分类映射，供后续 DFA 状态机驱动迁移。
 // ============================================================================
 #include "lexer/lexer.h"
 
@@ -12,13 +13,36 @@
 #include <fstream>
 #include <sstream>
 
-// 转换表（Q11 手写简化版）：骨架保留完整声明，状态机驱动逻辑留 TODO。
-// 基础演示版采用直接扫描方式（逐字符识别），转换表供挑战版迁移。
-const int CLex::m_szLexTbl[50][130] = {0};
+// 转换表（Q11 手写简化版）：
+// 行=DFA状态，列=字符ASCII。字符分类映射（列=ASCII，值=类别）：
+//   0=空白  1=字母  2=数字  3=运算符  4=界符  5=引号  其余=99非法
+// 在构造函数 InitLexTable() 中填充，兼容 C++11。
+int CLex::m_szLexTbl[50][130] = {{0}};
+
+static void InitLexTable(int tbl[50][130])
+{
+    // 空白类
+    tbl[0][' '] = 0; tbl[0]['\t'] = 0; tbl[0]['\r'] = 0; tbl[0]['\n'] = 0;
+    // 字母类
+    for (char c = 'A'; c <= 'Z'; ++c) tbl[0][c] = 1;
+    for (char c = 'a'; c <= 'z'; ++c) tbl[0][c] = 1;
+    tbl[0]['_'] = 1;
+    // 数字类
+    for (char c = '0'; c <= '9'; ++c) tbl[0][c] = 2;
+    // 运算符类
+    tbl[0]['+'] = 3; tbl[0]['-'] = 3; tbl[0]['*'] = 3;
+    tbl[0]['/'] = 3; tbl[0]['='] = 3;
+    // 界符类
+    tbl[0]['('] = 4; tbl[0][')'] = 4; tbl[0]['{'] = 4; tbl[0]['}'] = 4;
+    tbl[0][';'] = 4; tbl[0][','] = 4;
+    // 引号类
+    tbl[0]['"'] = 5;
+}
 
 CLex::CLex()
 {
     InitKeywordTable();
+    InitLexTable(m_szLexTbl);
 }
 
 void CLex::InitKeywordTable()
@@ -82,6 +106,65 @@ void CLex::SkipSpace()
     }
 }
 
+void CLex::SkipComment()
+{
+    // 调用前提：m_szSource[m_iPos] == '/'
+    // 形式：// 单行注释   或   /* 多行注释 */
+    if (m_iPos + 1 >= m_szSource.size())
+        return;
+
+    char next = m_szSource[m_iPos + 1];
+    if (next == '/')
+    {
+        // 单行注释：跳到行尾
+        while (m_iPos < m_szSource.size() && m_szSource[m_iPos] != '\n')
+        {
+            ++m_iPos;
+            ++m_iCol;
+        }
+    }
+    else if (next == '*')
+    {
+        // 多行注释：跳到 */
+        int startRow = m_iRow, startCol = m_iCol;
+        m_iPos += 2;
+        m_iCol += 2;
+        bool closed = false;
+        while (m_iPos < m_szSource.size())
+        {
+            if (m_szSource[m_iPos] == '*' &&
+                m_iPos + 1 < m_szSource.size() &&
+                m_szSource[m_iPos + 1] == '/')
+            {
+                m_iPos += 2;
+                m_iCol += 2;
+                closed = true;
+                break;
+            }
+            if (m_szSource[m_iPos] == '\n')
+            {
+                ++m_iPos;
+                ++m_iRow;
+                m_iCol = 1;
+            }
+            else
+            {
+                ++m_iPos;
+                ++m_iCol;
+            }
+        }
+        if (!closed)
+        {
+            EmitError("unterminated /* comment (started here)", LineInfo(startRow, startCol));
+        }
+    }
+    else
+    {
+        // 不是注释，是除法运算符，留给 ScanOperator 处理
+        return;
+    }
+}
+
 void CLex::ScanIdent()
 {
     size_t start = m_iPos;
@@ -127,6 +210,20 @@ void CLex::ScanNumber()
     }
 
     std::string text = m_szSource.substr(start, m_iPos - start);
+
+    // 错误恢复：数字中出现第二个小数点（如 1.2.3）
+    if (isFloat && m_iPos < m_szSource.size() && m_szSource[m_iPos] == '.')
+    {
+        EmitError("malformed number: extra decimal point", LineInfo(m_iRow, m_iCol));
+        // 跳过多余的小数点及其后的数字，避免级联报错
+        ++m_iPos; ++m_iCol;
+        while (m_iPos < m_szSource.size() &&
+               std::isdigit(static_cast<unsigned char>(m_szSource[m_iPos])))
+        {
+            ++m_iPos; ++m_iCol;
+        }
+    }
+
     TokenType type = isFloat ? TokenType::TOKEN_NUM_FLOAT : TokenType::TOKEN_NUM_INT;
     Token tok(type, text, m_iRow, col);
     tok.m_bIsFloat = isFloat;
@@ -145,6 +242,54 @@ void CLex::ScanNumber()
     tok.m_iConstIdx = static_cast<int>(m_ConstTexts.size());
     m_ConstTexts.push_back(text);
 
+    m_TokenList.push_back(tok);
+}
+
+void CLex::ScanString()
+{
+    // 调用前提：m_szSource[m_iPos] == '"'
+    int row = m_iRow, col = m_iCol;
+    ++m_iPos;  // 跳过开头的 "
+    ++m_iCol;
+
+    size_t start = m_iPos;
+    bool closed = false;
+    while (m_iPos < m_szSource.size())
+    {
+        char ch = m_szSource[m_iPos];
+        if (ch == '"')
+        {
+            closed = true;
+            break;
+        }
+        if (ch == '\n')
+        {
+            // 字符串跨行：报错但继续扫描
+            EmitError("newline in string literal", LineInfo(m_iRow, m_iCol));
+            ++m_iRow;
+            m_iCol = 1;
+            ++m_iPos;
+        }
+        else
+        {
+            ++m_iPos;
+            ++m_iCol;
+        }
+    }
+    std::string text = m_szSource.substr(start, m_iPos - start);
+    if (closed)
+    {
+        ++m_iPos;  // 跳过收尾的 "
+        ++m_iCol;
+    }
+    else
+    {
+        EmitError("unterminated string literal", LineInfo(row, col));
+    }
+    // 字符串原文登记入常量表
+    Token tok(TokenType::TOKEN_STRING, "\"" + text + "\"", row, col);
+    tok.m_iConstIdx = static_cast<int>(m_ConstTexts.size());
+    m_ConstTexts.push_back(text);
     m_TokenList.push_back(tok);
 }
 
@@ -191,6 +336,22 @@ bool CLex::Run()
             break;
         }
         char ch = m_szSource[m_iPos];
+
+        // 注释：// 或 /* ... */
+        if (ch == '/' && m_iPos + 1 < m_szSource.size() &&
+            (m_szSource[m_iPos + 1] == '/' || m_szSource[m_iPos + 1] == '*'))
+        {
+            SkipComment();
+            continue;
+        }
+
+        // 字符串常量
+        if (ch == '"')
+        {
+            ScanString();
+            continue;
+        }
+
         if (std::isalpha(static_cast<unsigned char>(ch)) || ch == '_')
         {
             ScanIdent();

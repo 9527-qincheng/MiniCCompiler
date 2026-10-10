@@ -32,7 +32,7 @@ public:
 
 private:
     // 转换表：m_szLexTbl[状态][字符类别] -> 下一状态 / 动作（Q11 手写简化版）
-    static const int m_szLexTbl[50][130];
+    static int m_szLexTbl[50][130];
     // 关键字表：map<string, TokenType>（参考书声明 2-3）
     std::map<std::string, TokenType> m_KeywordTbl;
 
@@ -50,8 +50,10 @@ private:
     // 私有扫描子程序
     void InitKeywordTable();                            // 初始化关键字表
     void SkipSpace();                                   // 跳过空白/换行
+    void SkipComment();                                  // 跳过注释（// 单行, /* */ 多行）
     void ScanIdent();                                   // 扫描标识符/关键字
     void ScanNumber();                                  // 扫描整数/浮点常量
+    void ScanString();                                   // 扫描字符串常量 "..."
     void ScanOperator();                                // 扫描运算符/界符
     int  LookupKeyword(const std::string& word) const;  // 查关键字表（-1 表示非关键字）
 };

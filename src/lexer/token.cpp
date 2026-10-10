@@ -22,6 +22,7 @@ const char* TokenTypeToString(TokenType t)
     case TokenType::TOKEN_IDENT:     return "IDENT";
     case TokenType::TOKEN_NUM_INT:   return "NUM_INT";
     case TokenType::TOKEN_NUM_FLOAT: return "NUM_FLOAT";
+    case TokenType::TOKEN_STRING:    return "STRING";
     case TokenType::TOKEN_PLUS:      return "PLUS";
     case TokenType::TOKEN_MINUS:     return "MINUS";
     case TokenType::TOKEN_MUL:       return "MUL";

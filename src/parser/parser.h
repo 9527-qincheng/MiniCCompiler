@@ -8,6 +8,7 @@
 #include "lexer/token.h"
 #include "parser/ast.h"
 
+#include <string>
 #include <vector>
 
 // ----------------------------------------------------------------------------
@@ -34,6 +35,15 @@ private:
 
     // 辅助：向前读取一个 Token
     void NextToken();
+
+    // --- 私有辅助（v3.1：parser.h 无 Check/Expect 终结符匹配辅助，按需自加；
+    //     第 6.3 节 4 个公开接口签名保持不变） ---
+    bool Check(TokenType t) const;      // 当前单词类型是否为 t
+    bool IsDeclStart() const;           // 当前单词是否可开始一条声明（int/float）
+    bool Expect(TokenType t, const std::string& what);  // 匹配则消费并返回 true，否则报错
+    void ReportError(const std::string& msg);                       // 用当前单词位置报错
+    void ReportError(const std::string& msg, const LineInfo& loc);  // 用指定位置报错
+    void Synchronize();                 // 语法错误恢复：跳到下一个语句/声明边界
 
     // 递归下降分析函数（核心逻辑 TODO，挑战版按 Q5 顺序扩展）
     ASTNodePtr ParseProgram();      // 程序 = 语句/声明序列

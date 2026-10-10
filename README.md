@@ -15,6 +15,12 @@ AIGC:
 
 依据：《MiniC编译器数据结构设计.md》第 4 章（数据结构）与第 6 章（接口契约，v2.0 定稿，Q1~Q12 全部按定稿值执行）。
 
+## Git 仓库
+
+- 远程仓库：`https://github.com/9527-qincheng/MiniCCompiler.git`
+- 分支说明：`main`（稳定分支，始终可运行、可演示，只接收 dev 合并）；`dev`（集成分支，组员从 `origin/dev` 切 feature 分支开发，完成后合并回 dev）
+- 克隆命令：`git clone https://github.com/9527-qincheng/MiniCCompiler.git`
+
 ## 项目结构
 
 ```

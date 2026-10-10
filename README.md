@@ -11,7 +11,7 @@ AIGC:
 
 # MiniC 编译器（挑战版，C++17 + CMake）—— 项目骨架
 
-半成品可演示版：**词法模块已跑通最小示例**（关键字/标识符/整数/浮点/运算符/界符识别，常量词法登记），其余模块（语法分析、语义分析、中间代码、目标代码）保留完整类声明与接口实现，核心逻辑留 TODO。
+半成品可演示版：**词法与语法模块已跑通最小示例**（词法：关键字/标识符/整数/浮点/运算符/界符识别，常量词法登记；语法：声明→赋值→算术表达式的递归下降 AST），其余模块（语义分析、中间代码、目标代码）保留完整类声明与接口实现，核心逻辑留 TODO。
 
 依据：《MiniC编译器数据结构设计.md》第 4 章（数据结构）与第 6 章（接口契约，v2.0 定稿，Q1~Q12 全部按定稿值执行）。
 
@@ -81,7 +81,7 @@ g++ -std=c++17 -Isrc -o build/minic.exe \
 | 选项 | 产物文件 | 当前状态 |
 |---|---|---|
 | `--dump-tokens` | `tests/test.token.txt` | 已实现（词法演示） |
-| `--dump-ast` | `tests/test.ast.txt` | 骨架占位（TODO） |
+| `--dump-ast` | `tests/test.ast.txt` | 已实现（递归下降 AST） |
 | `--dump-symtab` | `tests/test.sym.txt` | 基础登记/查重可用 |
 | `--dump-quads` | `tests/test.quad.txt` | 骨架占位（TODO） |
 
@@ -103,7 +103,7 @@ g++ -std=c++17 -Isrc -o build/minic.exe \
 | 模块 | 接口 | 状态 |
 |---|---|---|
 | CLex（词法） | OpenSource / Run / GetTokenList | 已实现：关键字(int/float/if/else/while/return/void)、标识符、整数、浮点、运算符(+ - * / =)、界符((){};,)；常量登记 m_ConstTexts；错误含行列号 |
-| CParser（语法） | CParser(TokenList&) / Parse / HasError / GetErrors | 骨架：递归下降函数全部留 TODO |
+| CParser（语法） | CParser(TokenList&) / Parse / HasError / GetErrors | 已实现：声明/赋值/算术表达式递归下降（+ - * / 及括号优先级），错误恢复可连续报错 |
 | SymbolTable（语义） | EnterScope / ExitScope / RecVar / RecConst / SearchVar / SearchConst / BackfillConst / CheckAssign / DumpSymTab | 基础实现：多表登记/查重/作用域/常量回填/float→int 警告（Q9） |
 | IRGenerator（中间代码） | Generate / GetTmpVar / GetTmpLabel / EmitIR / GetCodes / OperandToString | 骨架：计数器/EmitIR/OperandToString 可用，遍历 AST 生成留 TODO |
 | CCodeGen（目标代码，挑战版） | Generate / IRtoASM / AsmOutput | 骨架：输出结构完整，x86 翻译留 TODO |
@@ -122,7 +122,7 @@ g++ -std=c++17 -Isrc -o build/minic.exe \
 
 ## 下一步（TODO 路线）
 
-- 阶段 1：CParser 递归下降（声明→赋值→算术表达式），产出 AST（--dump-ast）
+- 阶段 1（已完成）：CParser 递归下降（声明→赋值→算术表达式），产出 AST（--dump-ast）
 - 阶段 2：语义动作（符号表登记/查重/类型检查/常量回填）接入
 - 阶段 3：IRGenerator 遍历 AST 生成四元式（--dump-quads）
 - 挑战版（Q5 顺序）：控制流(if/while) → print → 数组 → 函数 → x86 汇编

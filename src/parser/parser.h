@@ -45,13 +45,18 @@ private:
     void ReportError(const std::string& msg, const LineInfo& loc);  // 用指定位置报错
     void Synchronize();                 // 语法错误恢复：跳到下一个语句/声明边界
 
-    // 递归下降分析函数（核心逻辑 TODO，挑战版按 Q5 顺序扩展）
-    ASTNodePtr ParseProgram();      // 程序 = 语句/声明序列
-    ASTNodePtr ParseStatement();    // 语句（赋值等）
+    // 递归下降分析函数（基础版 + 控制流扩展；挑战版其余项按 Q5 顺序扩展）
+    ASTNodePtr ParseProgram();      // 程序 = 声明序列 + 语句序列
     ASTNodePtr ParseDeclaration();  // 声明 int/float
+    ASTNodePtr ParseStmtList(TokenType terminator); // 语句序列（解析到 terminator 之前，不消费）
+    ASTNodePtr ParseStatement();    // 语句（赋值 / if / while / return / 复合语句）
+    ASTNodePtr ParseBlock();        // 复合语句 { StmtList }
+    ASTNodePtr ParseIfStatement();  // if ( Expr ) Stmt [ else Stmt ]
+    ASTNodePtr ParseWhileStatement();  // while ( Expr ) Stmt
+    ASTNodePtr ParseReturnStatement(); // return [ Expr ] ;
     ASTNodePtr ParseExpression();   // 算术表达式（+ -）
     ASTNodePtr ParseTerm();         // 项（* /）
-    ASTNodePtr ParseFactor();       // 因子（数字/标识符/括号）
+    ASTNodePtr ParseFactor();       // 因子（一元 +/-、数字、标识符、括号）
 };
 
 #endif // MINIC_PARSER_PARSER_H

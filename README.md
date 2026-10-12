@@ -35,7 +35,7 @@ MiniCCompiler/
 │   │   └── lexer.h/cpp     # CLex（词法最小可演示）
 │   ├── parser/
 │   │   ├── ast.h/cpp       # ASTNode + NumNode/IdentNode/DeclNode/AssignNode/BinOpNode/ListNode
-│   │   └── parser.h/cpp    # CParser（核心 TODO）
+│   │   └── parser.h/cpp    # CParser（声明/赋值/算术表达式递归下降）
 │   ├── symbol/
 │   │   └── symbol.h/cpp    # SymbolTable 多表（Var/Const/Type/Proc/Param/Label）+ 语义接口
 │   ├── sema/
@@ -98,12 +98,36 @@ g++ -std=c++17 -Isrc -o build/minic.exe \
 ...
 ```
 
+## Parser 回归测试
+
+语法分析模块的自动化回归测试（覆盖优先级/结合性/嵌套括号/合法与非法输入/错误恢复/既有黄金输出）：
+
+```bash
+# 校验（比对退出码、AST 输出、错误输出）
+powershell -ExecutionPolicy Bypass -File tests/run_parser_tests.ps1
+
+# 确认行为变更是有意为之后，刷新期望结果
+powershell -ExecutionPolicy Bypass -File tests/run_parser_tests.ps1 -Update
+```
+
+- 用例输入：`tests/parser/*.mc`；期望结果：`tests/parser/expected/*.ast.txt`、`*.err.txt`
+- 额外固定校验：`tests/test.mc` 的 AST 必须与 `tests/test.ast.txt` 逐字一致
+- 需要已构建的 `build/minic.exe`（`cmake --build build`）
+
+直接检查 AST 字段的 Parser 单元测试（常量表位序 `m_iConstIdx` 透传、`m_iSymIdx` 默认值）：
+
+```bash
+powershell -ExecutionPolicy Bypass -File tests/run_parser_unit.ps1
+```
+
+- 需要 `g++` 在 PATH 中（可用 `-Cxx <path>` 指定编译器）
+
 ## 各模块实现状态
 
 | 模块 | 接口 | 状态 |
 |---|---|---|
 | CLex（词法） | OpenSource / Run / GetTokenList | 已实现：关键字(int/float/if/else/while/return/void)、标识符、整数、浮点、运算符(+ - * / =)、界符((){};,)；常量登记 m_ConstTexts；错误含行列号 |
-| CParser（语法） | CParser(TokenList&) / Parse / HasError / GetErrors | 已实现：声明/赋值/算术表达式递归下降（+ - * / 及括号优先级），错误恢复可连续报错 |
+| CParser（语法） | CParser(TokenList&) / Parse / HasError / GetErrors | 已实现：声明/赋值/算术表达式递归下降（+ - * / 及括号优先级）；扩展一元 +/-、复合语句、if/else、while、return；错误恢复可连续报错。条件中的比较运算符待词法模块补充 TokenType |
 | SymbolTable（语义） | EnterScope / ExitScope / RecVar / RecConst / SearchVar / SearchConst / BackfillConst / CheckAssign / DumpSymTab | 基础实现：多表登记/查重/作用域/常量回填/float→int 警告（Q9） |
 | IRGenerator（中间代码） | Generate / GetTmpVar / GetTmpLabel / EmitIR / GetCodes / OperandToString | 骨架：计数器/EmitIR/OperandToString 可用，遍历 AST 生成留 TODO |
 | CCodeGen（目标代码，挑战版） | Generate / IRtoASM / AsmOutput | 骨架：输出结构完整，x86 翻译留 TODO |
@@ -126,4 +150,5 @@ g++ -std=c++17 -Isrc -o build/minic.exe \
 - 阶段 2：语义动作（符号表登记/查重/类型检查/常量回填）接入
 - 阶段 3：IRGenerator 遍历 AST 生成四元式（--dump-quads）
 - 挑战版（Q5 顺序）：控制流(if/while) → print → 数组 → 函数 → x86 汇编
+  - 语法侧控制流骨架（复合语句/if/while/return/一元运算）已完成；条件比较运算符（`< > <= >= == !=`）需词法模块先补 TokenType，数组需 `[ ]` 界符，均属跨模块依赖
 *（内容由AI生成，仅供参考）*

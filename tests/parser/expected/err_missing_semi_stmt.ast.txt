@@ -1,0 +1,11 @@
+List  @1:1
+  List  @1:1
+    Decl(INT a)  @1:1
+  List  @2:1
+    Assign  @2:1
+      Ident(a)  @2:1
+      Num(1)  @2:5
+    List  @2:7
+      Assign  @2:7
+        Ident(a)  @2:7
+        Num(2)  @2:11

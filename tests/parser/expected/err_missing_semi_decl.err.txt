@@ -1,0 +1,2 @@
+minic: error: 2:1: expected ';' after declaration, but found 'int' (INT)
+minic: 1 error(s) found, compilation failed

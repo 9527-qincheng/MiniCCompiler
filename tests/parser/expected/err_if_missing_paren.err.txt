@@ -1,0 +1,3 @@
+minic: error: 3:4: expected '(' after 'if', but found 'a' (IDENT)
+minic: error: 3:5: expected '=' in assignment, but found ')' (RPAREN)
+minic: 2 error(s) found, compilation failed

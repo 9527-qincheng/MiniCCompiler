@@ -1,0 +1,2 @@
+minic: error: 2:7: expected ';' after statement, but found 'a' (IDENT)
+minic: 1 error(s) found, compilation failed

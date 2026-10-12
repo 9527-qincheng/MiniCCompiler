@@ -1,0 +1,13 @@
+List  @1:1
+  List  @1:1
+    Decl(INT a)  @1:1
+  List  @2:1
+    If  @2:1
+      Ident(a)  @2:5
+      List  @2:8
+        List  @2:10
+          Return  @2:10
+            Num(1)  @2:17
+      List  @2:27
+        List  @2:29
+          Return  @2:29

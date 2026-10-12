@@ -1,0 +1,17 @@
+List  @1:1
+  List  @1:1
+    Decl(INT a)  @1:1
+    List  @2:1
+      Decl(INT b)  @2:1
+      List  @3:1
+        Decl(INT c)  @3:1
+  List  @4:1
+    Assign  @4:1
+      Ident(a)  @4:1
+      BinOp(MUL)  @4:14
+        BinOp(PLUS)  @4:9
+          Ident(b)  @4:7
+          Num(1)  @4:11
+        BinOp(MINUS)  @4:19
+          Ident(c)  @4:17
+          Num(2)  @4:21

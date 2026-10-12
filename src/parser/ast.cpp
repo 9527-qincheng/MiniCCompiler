@@ -14,8 +14,9 @@ static void PrintIndent(std::ostream& os, int indent)
     }
 }
 
-NumNode::NumNode(double value, bool isFloat, const LineInfo& loc)
-    : ASTNode(ASTNodeKind::AST_NODE_NUM, loc), m_fValue(value), m_bIsFloat(isFloat)
+NumNode::NumNode(double value, bool isFloat, const LineInfo& loc, int constIdx)
+    : ASTNode(ASTNodeKind::AST_NODE_NUM, loc),
+      m_fValue(value), m_bIsFloat(isFloat), m_iConstIdx(constIdx)
 {
 }
 
@@ -102,6 +103,94 @@ void BinOpNode::Print(std::ostream& os, int indent) const
     if (m_right)
     {
         m_right->Print(os, indent + 1);
+    }
+}
+
+UnaryOpNode::UnaryOpNode(TokenType op, std::unique_ptr<ASTNode> operand, const LineInfo& loc)
+    : ASTNode(ASTNodeKind::AST_NODE_UNARY, loc), m_op(op)
+{
+    m_left = std::move(operand);
+}
+
+void UnaryOpNode::Print(std::ostream& os, int indent) const
+{
+    PrintIndent(os, indent);
+    os << "UnaryOp(" << TokenTypeToString(m_op) << ")"
+       << "  @" << m_loc.m_iRow << ":" << m_loc.m_iCol << "\n";
+    if (m_left)
+    {
+        m_left->Print(os, indent + 1);
+    }
+}
+
+IfNode::IfNode(std::unique_ptr<ASTNode> cond,
+               std::unique_ptr<ASTNode> thenStmt,
+               std::unique_ptr<ASTNode> elseStmt,
+               const LineInfo& loc)
+    : ASTNode(ASTNodeKind::AST_NODE_IF, loc)
+{
+    m_left  = std::move(cond);
+    m_right = std::move(thenStmt);
+    m_else  = std::move(elseStmt);
+}
+
+void IfNode::Print(std::ostream& os, int indent) const
+{
+    PrintIndent(os, indent);
+    os << "If"
+       << "  @" << m_loc.m_iRow << ":" << m_loc.m_iCol << "\n";
+    if (m_left)
+    {
+        m_left->Print(os, indent + 1);    // 条件
+    }
+    if (m_right)
+    {
+        m_right->Print(os, indent + 1);   // then 分支
+    }
+    if (m_else)
+    {
+        m_else->Print(os, indent + 1);    // else 分支（可空）
+    }
+}
+
+WhileNode::WhileNode(std::unique_ptr<ASTNode> cond,
+                     std::unique_ptr<ASTNode> body,
+                     const LineInfo& loc)
+    : ASTNode(ASTNodeKind::AST_NODE_WHILE, loc)
+{
+    m_left  = std::move(cond);
+    m_right = std::move(body);
+}
+
+void WhileNode::Print(std::ostream& os, int indent) const
+{
+    PrintIndent(os, indent);
+    os << "While"
+       << "  @" << m_loc.m_iRow << ":" << m_loc.m_iCol << "\n";
+    if (m_left)
+    {
+        m_left->Print(os, indent + 1);    // 条件
+    }
+    if (m_right)
+    {
+        m_right->Print(os, indent + 1);   // 循环体
+    }
+}
+
+ReturnNode::ReturnNode(std::unique_ptr<ASTNode> expr, const LineInfo& loc)
+    : ASTNode(ASTNodeKind::AST_NODE_RETURN, loc)
+{
+    m_left = std::move(expr);
+}
+
+void ReturnNode::Print(std::ostream& os, int indent) const
+{
+    PrintIndent(os, indent);
+    os << "Return"
+       << "  @" << m_loc.m_iRow << ":" << m_loc.m_iCol << "\n";
+    if (m_left)
+    {
+        m_left->Print(os, indent + 1);    // 返回表达式（可空）
     }
 }
 

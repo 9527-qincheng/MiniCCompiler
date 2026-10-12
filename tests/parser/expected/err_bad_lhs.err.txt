@@ -1,0 +1,3 @@
+minic: error: 2:1: unexpected '100' (NUM_INT); expected a statement (assignment, if, while, return or block)
+minic: error: 2:8: expected '=' in assignment, but found ';' (SEMI)
+minic: 2 error(s) found, compilation failed

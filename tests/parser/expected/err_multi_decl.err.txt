@@ -1,0 +1,2 @@
+minic: error: 1:6: multiple declarators in one declaration are not supported; split into separate declarations like 'int a; int b;'
+minic: 1 error(s) found, compilation failed

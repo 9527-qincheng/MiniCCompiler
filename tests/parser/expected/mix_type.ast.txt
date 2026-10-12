@@ -1,0 +1,11 @@
+List  @1:1
+  List  @1:1
+    Decl(FLOAT a)  @1:1
+  List  @2:1
+    Assign  @2:1
+      Ident(a)  @2:1
+      BinOp(PLUS)  @2:7
+        Num(1)  @2:5
+        BinOp(MUL)  @2:13
+          Num(2.500000)  @2:9
+          Num(3)  @2:15

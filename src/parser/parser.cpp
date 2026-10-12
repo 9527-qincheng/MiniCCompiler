@@ -1,12 +1,17 @@
 // ============================================================================
 // MiniC 编译器 —— 语法分析模块 CParser 实现
-// 基础版文法（PPT 第 15 页）：
+// 扩展文法（在 PPT 基础版文法上增加一元运算与控制流）：
 //   Program   → DeclList StmtList
 //   DeclList  → Decl DeclList | ε          Decl → Type ID ;   Type → int | float
-//   StmtList  → Stmt StmtList | ε          Stmt → ID = Expr ;
+//   StmtList  → Stmt StmtList | ε
+//   Stmt      → ID = Expr ;
+//             | if ( Expr ) Stmt [ else Stmt ]
+//             | while ( Expr ) Stmt
+//             | return [ Expr ] ;
+//             | { StmtList }
 //   Expr      → Term { (+|-) Term }
 //   Term      → Factor { (*|/) Factor }
-//   Factor    → INT | FLOAT | ID | ( Expr )
+//   Factor    → (+|-) Factor | INT | FLOAT | ID | ( Expr )
 // 实现要点（v3.1 与代码对齐）：
 //   - Token 字段用 m_line(LineInfo) / m_bIsFloat / m_fVal(double) / m_iVal(long long)；
 //   - 常量类别为 TOKEN_NUM_INT / TOKEN_NUM_FLOAT；
@@ -15,7 +20,10 @@
 //   - Expr/Term 用循环处理 { ... } 重复，消除左递归；
 //   - 语法错误经 ReportError 记入 m_errors 并汇总至 g_ErrorList（Q8），
 //     Synchronize() 跳到语句边界继续解析，尽量一次报出多个错误。
-// TODO（挑战版，Q5 顺序）：if/else、while、print、数组、函数。
+// 依赖说明（跨模块，未在本模块实现）：
+//   - 条件里的比较运算（< > <= >= == !=）需要词法模块补充 TokenType，
+//     现有一元/算术条件已可解析；断言 print/数组/函数按 Q5 顺序后续开展
+//     （print 需词法提供 print 记号约定，数组需 [ ] 界符）。
 // ============================================================================
 #include "parser/parser.h"
 
@@ -162,10 +170,32 @@ ASTNodePtr CParser::ParseProgram()
         declTail = raw;
     }
 
-    // ---- StmtList → Stmt StmtList | ε ----
-    ASTNodePtr stmtList = nullptr;
-    ListNode*  stmtTail = nullptr;
-    while (m_CurToken.m_type != TokenType::TOKEN_EOF)
+    // ---- StmtList → Stmt StmtList | ε ----（解析到程序末尾）
+    ASTNodePtr stmtList = ParseStmtList(TokenType::TOKEN_EOF);
+
+    auto program = std::make_unique<ListNode>(startLoc);
+    program->m_left  = std::move(declList);   // 左子 = DeclList
+    program->m_right = std::move(stmtList);   // 右子 = StmtList
+    return program;
+}
+
+// StmtList → Stmt StmtList | ε
+// 解析一条条语句直到 terminator（不消费 terminator，EOF 亦自动收尾）。
+// 链表式构建：ListNode 左子=当前语句，右子=剩余序列。程序与复合语句共用。
+ASTNodePtr CParser::ParseStmtList(TokenType terminator)
+{
+    auto atEnd = [this, terminator]() {
+        if (m_CurToken.m_type == TokenType::TOKEN_EOF)
+        {
+            return true;
+        }
+        return terminator != TokenType::TOKEN_EOF &&
+               m_CurToken.m_type == terminator;
+    };
+
+    ASTNodePtr head = nullptr;
+    ListNode*  tail = nullptr;
+    while (!atEnd())
     {
         const size_t before = m_iListPos;
         ASTNodePtr stmt = ParseStatement();
@@ -180,44 +210,40 @@ ASTNodePtr CParser::ParseProgram()
         auto node = std::make_unique<ListNode>(stmt->m_loc);
         ListNode* raw = node.get();
         node->m_left = std::move(stmt);
-        if (stmtTail)
+        if (tail)
         {
-            stmtTail->m_right = std::move(node);
+            tail->m_right = std::move(node);
         }
         else
         {
-            stmtList = std::move(node);
+            head = std::move(node);
         }
-        stmtTail = raw;
+        tail = raw;
     }
-
-    auto program = std::make_unique<ListNode>(startLoc);
-    program->m_left  = std::move(declList);   // 左子 = DeclList
-    program->m_right = std::move(stmtList);   // 右子 = StmtList
-    return program;
+    return head;
 }
 
 // Stmt → ID = Expr ;
+//      | if ( Expr ) Stmt [ else Stmt ]
+//      | while ( Expr ) Stmt
+//      | return [ Expr ] ;
+//      | { StmtList }
 ASTNodePtr CParser::ParseStatement()
 {
-    // 挑战版语句暂未实现：给出明确提示，而非笼统的“期望赋值语句”
     switch (m_CurToken.m_type)
     {
-    case TokenType::TOKEN_IF:
-    case TokenType::TOKEN_WHILE:
-    case TokenType::TOKEN_RETURN:
-    case TokenType::TOKEN_LBRACE:
-        ReportError("unsupported statement '" + m_CurToken.m_szContent +
-                    "' (challenge edition, not implemented in base version)");
-        Synchronize();
-        return nullptr;
-    default:
-        break;
+    case TokenType::TOKEN_LBRACE: return ParseBlock();
+    case TokenType::TOKEN_IF:     return ParseIfStatement();
+    case TokenType::TOKEN_WHILE:  return ParseWhileStatement();
+    case TokenType::TOKEN_RETURN: return ParseReturnStatement();
+    default:                      break;
     }
 
     if (m_CurToken.m_type != TokenType::TOKEN_IDENT)
     {
-        ReportError("expected assignment statement (identifier expected)");
+        ReportError("unexpected '" + m_CurToken.m_szContent + "' (" +
+                    TokenTypeToString(m_CurToken.m_type) +
+                    "); expected a statement (assignment, if, while, return or block)");
         Synchronize();
         return nullptr;
     }
@@ -247,6 +273,133 @@ ASTNodePtr CParser::ParseStatement()
     return std::make_unique<AssignNode>(std::move(lhs), std::move(rhs), stmtLoc);
 }
 
+// Stmt → { StmtList }
+// 复合语句：左子挂语句序列；空块 { } 的左子为 nullptr。
+ASTNodePtr CParser::ParseBlock()
+{
+    const LineInfo blockLoc = m_CurToken.m_line;   // '{'
+    NextToken();                                   // 消费 '{'
+
+    ASTNodePtr body = ParseStmtList(TokenType::TOKEN_RBRACE);
+
+    if (m_CurToken.m_type == TokenType::TOKEN_RBRACE)
+    {
+        NextToken();                               // 消费 '}'
+    }
+    else
+    {
+        ReportError("expected '}' to close block, but found '" +
+                    m_CurToken.m_szContent + "' (" +
+                    TokenTypeToString(m_CurToken.m_type) + ")");
+        Synchronize();
+    }
+
+    auto block = std::make_unique<ListNode>(blockLoc);
+    block->m_left = std::move(body);
+    return block;
+}
+
+// Stmt → if ( Expr ) Stmt [ else Stmt ]
+// 递归下降天然实现“else 就近匹配”，无需额外规则。
+ASTNodePtr CParser::ParseIfStatement()
+{
+    const LineInfo ifLoc = m_CurToken.m_line;
+    NextToken();                                   // 消费 'if'
+
+    if (!Expect(TokenType::TOKEN_LPAREN, "'(' after 'if'"))
+    {
+        Synchronize();
+        return nullptr;
+    }
+    ASTNodePtr cond = ParseExpression();
+    if (!cond)
+    {
+        Synchronize();
+        return nullptr;
+    }
+    if (!Expect(TokenType::TOKEN_RPAREN, "')' after 'if' condition"))
+    {
+        Synchronize();
+        return nullptr;
+    }
+
+    ASTNodePtr thenStmt = ParseStatement();
+    if (!thenStmt)
+    {
+        return nullptr;                            // 子语句已报错
+    }
+
+    ASTNodePtr elseStmt = nullptr;
+    if (m_CurToken.m_type == TokenType::TOKEN_ELSE)
+    {
+        NextToken();                               // 消费 'else'
+        elseStmt = ParseStatement();
+        if (!elseStmt)
+        {
+            return nullptr;
+        }
+    }
+
+    return std::make_unique<IfNode>(std::move(cond), std::move(thenStmt),
+                                    std::move(elseStmt), ifLoc);
+}
+
+// Stmt → while ( Expr ) Stmt
+ASTNodePtr CParser::ParseWhileStatement()
+{
+    const LineInfo whileLoc = m_CurToken.m_line;
+    NextToken();                                   // 消费 'while'
+
+    if (!Expect(TokenType::TOKEN_LPAREN, "'(' after 'while'"))
+    {
+        Synchronize();
+        return nullptr;
+    }
+    ASTNodePtr cond = ParseExpression();
+    if (!cond)
+    {
+        Synchronize();
+        return nullptr;
+    }
+    if (!Expect(TokenType::TOKEN_RPAREN, "')' after 'while' condition"))
+    {
+        Synchronize();
+        return nullptr;
+    }
+
+    ASTNodePtr body = ParseStatement();
+    if (!body)
+    {
+        return nullptr;                            // 子语句已报错
+    }
+
+    return std::make_unique<WhileNode>(std::move(cond), std::move(body), whileLoc);
+}
+
+// Stmt → return [ Expr ] ;
+ASTNodePtr CParser::ParseReturnStatement()
+{
+    const LineInfo returnLoc = m_CurToken.m_line;
+    NextToken();                                   // 消费 'return'
+
+    ASTNodePtr expr = nullptr;
+    if (m_CurToken.m_type != TokenType::TOKEN_SEMI)
+    {
+        expr = ParseExpression();
+        if (!expr)
+        {
+            Synchronize();
+            return nullptr;
+        }
+    }
+
+    if (!Expect(TokenType::TOKEN_SEMI, "';' after return statement"))
+    {
+        Synchronize();
+    }
+    return std::make_unique<ReturnNode>(std::move(expr), returnLoc);
+}
+
 // Decl → Type ID ;
 ASTNodePtr CParser::ParseDeclaration()
 {
@@ -265,6 +418,24 @@ ASTNodePtr CParser::ParseDeclaration()
     }
     const std::string name = m_CurToken.m_szContent;
     NextToken();                                    // 消费标识符
+
+    // 基础版文法 Decl → Type ID ;：不支持一条声明里出现多个声明符（int a, b;）
+    if (m_CurToken.m_type == TokenType::TOKEN_COMMA)
+    {
+        ReportError("multiple declarators in one declaration are not supported; "
+                    "split into separate declarations like 'int a; int b;'");
+        // 跳到本条声明的分号，避免把后续声明符再当成一条语句重复报错
+        while (m_CurToken.m_type != TokenType::TOKEN_SEMI &&
+               m_CurToken.m_type != TokenType::TOKEN_EOF)
+        {
+            NextToken();
+        }
+        if (m_CurToken.m_type == TokenType::TOKEN_SEMI)
+        {
+            NextToken();
+        }
+        return std::make_unique<DeclNode>(declType, name, declLoc);
+    }
 
     if (!Expect(TokenType::TOKEN_SEMI, "';' after declaration"))
     {
@@ -323,13 +494,26 @@ ASTNodePtr CParser::ParseTerm()
     return left;
 }
 
-// Factor → INT | FLOAT | ID | ( Expr )
+// Factor → (+|-) Factor | INT | FLOAT | ID | ( Expr )
 ASTNodePtr CParser::ParseFactor()
 {
     const LineInfo loc = m_CurToken.m_line;
 
     switch (m_CurToken.m_type)
     {
+    case TokenType::TOKEN_PLUS:
+    case TokenType::TOKEN_MINUS:
+    {
+        // 一元运算符：优先级高于 * /，右结合，可连续出现（--a）
+        const TokenType op = m_CurToken.m_type;
+        NextToken();
+        ASTNodePtr operand = ParseFactor();
+        if (!operand)
+        {
+            return nullptr;
+        }
+        return std::make_unique<UnaryOpNode>(op, std::move(operand), loc);
+    }
     case TokenType::TOKEN_NUM_INT:
     case TokenType::TOKEN_NUM_FLOAT:
     {
@@ -337,8 +521,9 @@ ASTNodePtr CParser::ParseFactor()
                              m_CurToken.m_bIsFloat;
         const double value = isFloat ? m_CurToken.m_fVal
                                      : static_cast<double>(m_CurToken.m_iVal);
+        const int constIdx = m_CurToken.m_iConstIdx;   // 消费前捕获常量表位序（Q12）
         NextToken();
-        return std::make_unique<NumNode>(value, isFloat, loc);
+        return std::make_unique<NumNode>(value, isFloat, loc, constIdx);
     }
     case TokenType::TOKEN_IDENT:
     {
@@ -361,7 +546,7 @@ ASTNodePtr CParser::ParseFactor()
         return inner;                      // Factor → ( Expr )：不建冗余括号节点
     }
     default:
-        ReportError("expected number, identifier or '(' , but found '" +
+        ReportError("expected number, identifier, '(' or unary sign, but found '" +
                     m_CurToken.m_szContent + "' (" +
                     TokenTypeToString(m_CurToken.m_type) + ")");
         return nullptr;                    // 不消费：由上层循环保证前进

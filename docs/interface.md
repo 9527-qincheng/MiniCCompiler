@@ -1,13 +1,3 @@
----
-AIGC:
-    Label: "1"
-    ContentProducer: 001191440300708461136T1XGW3
-    ProduceID: bcd9f7e8ad8b40e1eb3fcdcc012220da_a1f4b970c30e11f1887c525400de85a5
-    ReservedCode1: 74fiAT4bX+b8+M49HqkeLZyNC65p4TK1kl9+rJ4+KFhkf20smce0nvYuryJDynUR4eS86kPH6c9CugFiIYNmI8OXJ9c99lfXi3f8I7qkU/87SQ5D0r1AwgC8/tyNTjzdCBlXoY3nkeif8n0XZ0IiGdO3qc+CkRcKEqCTmkNHBL7wO18jqwwyIn3JLFc=
-    ContentPropagator: 001191440300708461136T1XGW3
-    PropagateID: bcd9f7e8ad8b40e1eb3fcdcc012220da_a1f4b970c30e11f1887c525400de85a5
-    ReservedCode2: 74fiAT4bX+b8+M49HqkeLZyNC65p4TK1kl9+rJ4+KFhkf20smce0nvYuryJDynUR4eS86kPH6c9CugFiIYNmI8OXJ9c99lfXi3f8I7qkU/87SQ5D0r1AwgC8/tyNTjzdCBlXoY3nkeif8n0XZ0IiGdO3qc+CkRcKEqCTmkNHBL7wO18jqwwyIn3JLFc=
----
 
 # MiniC 编译器 —— 接口备忘与冲突记录
 
@@ -48,4 +38,3 @@ AIGC:
 - 运算符：+ - * / =
 - 界符：( ) { } ; ,
 - 结束：EOF
-*（内容由AI生成，仅供参考）*

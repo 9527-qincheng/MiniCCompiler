@@ -1,13 +1,3 @@
----
-AIGC:
-    Label: "1"
-    ContentProducer: 001191440300708461136T1XGW3
-    ProduceID: bcd9f7e8ad8b40e1eb3fcdcc012220da_a0999f87c30e11f1884b525400cd780f
-    ReservedCode1: KaAxM7ZvUXcjX+Qq2NUMgmoBLSM9fZkHjFECzs4IsyXhFjNwYPTOHJkNfYlYDW2wxCm9i9x5Gu9KAns19wu5adDIc2mFOm3G9Eq7FlpX7jRY+4/FSRjSKNGnlbSFVOL4hVJFXOeaGgjjcnL0Nm7CZpkX0vk2XgbStdqsWN3Gm/hbJCQ+P0rAQr8ak64=
-    ContentPropagator: 001191440300708461136T1XGW3
-    PropagateID: bcd9f7e8ad8b40e1eb3fcdcc012220da_a0999f87c30e11f1884b525400cd780f
-    ReservedCode2: KaAxM7ZvUXcjX+Qq2NUMgmoBLSM9fZkHjFECzs4IsyXhFjNwYPTOHJkNfYlYDW2wxCm9i9x5Gu9KAns19wu5adDIc2mFOm3G9Eq7FlpX7jRY+4/FSRjSKNGnlbSFVOL4hVJFXOeaGgjjcnL0Nm7CZpkX0vk2XgbStdqsWN3Gm/hbJCQ+P0rAQr8ak64=
----
 
 # MiniC 编译器（挑战版，C++17 + CMake）—— 项目骨架
 
@@ -126,4 +116,3 @@ g++ -std=c++17 -Isrc -o build/minic.exe \
 - 阶段 2：语义动作（符号表登记/查重/类型检查/常量回填）接入
 - 阶段 3：IRGenerator 遍历 AST 生成四元式（--dump-quads）
 - 挑战版（Q5 顺序）：控制流(if/while) → print → 数组 → 函数 → x86 汇编
-*（内容由AI生成，仅供参考）*

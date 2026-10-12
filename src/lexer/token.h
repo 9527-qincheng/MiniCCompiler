@@ -1,7 +1,6 @@
 // ============================================================================
 // MiniC 编译器 —— 公共基础结构（Token / TokenType / LineInfo / 错误记录）
-// 依据：《MiniC编译器数据结构设计.md》第 4.1 / 4.2 节 + 第 6 章接口契约
-// 说明：公共基础结构由词法模块提供（参考书 CToken/LineInfo 位于 Lex 头文件）
+// 依据：《MiniC编译器设计文档 v4.0 挑战版 LL1》§4.1 / §5.1 / §5.2
 // ============================================================================
 #ifndef MINIC_LEXER_TOKEN_H
 #define MINIC_LEXER_TOKEN_H
@@ -11,94 +10,114 @@
 #include <ostream>
 
 // ----------------------------------------------------------------------------
-// 4.1.1 行列信息 LineInfo（参考书声明 2-5）
+// 4.1.1 行列信息 LineInfo
 // ----------------------------------------------------------------------------
 struct LineInfo
 {
-    int  m_iRow = 1;          // 行号（1-based）
-    int  m_iCol = 1;          // 列号（PPT 扩展，1-based）
+    int  m_iRow = 1;
+    int  m_iCol = 1;
 
     LineInfo() = default;
     LineInfo(int row, int col) : m_iRow(row), m_iCol(col) {}
 };
 
 // ----------------------------------------------------------------------------
-// 4.1.2 单词类型 TokenType（参考书 TokenType 枚举，MiniC 收窄 + 扩展）
-// 注：为支持挑战版控制流（if/else/while），在文档 TokenType 基础上补充
-//     TOKEN_LBRACE / TOKEN_RBRACE（文档第 4 章未单列花括号界符，详见交付说明）。
+// 4.1.2 TokenType 单词类型（v4.0 挑战版：39 个文法终结符 + NONE + STRING）
+// 枚举顺序与编码无关；编码由 TokenTypeToCode() 映射（预测分析表以编码为下标）
 // ----------------------------------------------------------------------------
 enum class TokenType
 {
     TOKEN_NONE = 0,
-    // 关键字
-    TOKEN_INT,          // int
-    TOKEN_FLOAT,        // float
-    TOKEN_IF,           // if（挑战版）
-    TOKEN_ELSE,         // else（挑战版）
-    TOKEN_WHILE,        // while（挑战版）
-    TOKEN_RETURN,       // return（挑战版）
-    TOKEN_VOID,         // void（挑战版）
-    // 标识符 / 常量
-    TOKEN_IDENT,        // 标识符
-    TOKEN_NUM_INT,      // 整型常量
-    TOKEN_NUM_FLOAT,    // 浮点常量
-    TOKEN_STRING,       // 字符串常量（"..."）
-    // 运算符
-    TOKEN_PLUS,         // +
-    TOKEN_MINUS,        // -
-    TOKEN_MUL,          // *
-    TOKEN_DIV,          // /
-    TOKEN_ASSIGN,       // =
-    // 界符
-    TOKEN_LPAREN,       // (
-    TOKEN_RPAREN,       // )
-    TOKEN_LBRACE,       // {（扩展：挑战版控制流）
-    TOKEN_RBRACE,       // }（扩展：挑战版控制流）
-    TOKEN_SEMI,         // ;
-    TOKEN_COMMA,        // ,
-    // 结束
+    /* 关键字（编码 001~012） */
+    TOKEN_INT,          // 001 int
+    TOKEN_FLOAT,        // 002 float
+    TOKEN_BOOL,         // 003 bool
+    TOKEN_CHAR,         // 004 char
+    TOKEN_VOID,         // 005 void
+    TOKEN_IF,           // 006 if
+    TOKEN_ELSE,         // 007 else
+    TOKEN_WHILE,        // 008 while
+    TOKEN_PRINT,        // 009 print
+    TOKEN_RETURN,       // 010 return
+    TOKEN_TRUE,         // 011 true
+    TOKEN_FALSE,        // 012 false
+    /* 界符（编码 021~028） */
+    TOKEN_LPAREN,       // 021 (
+    TOKEN_RPAREN,       // 022 )
+    TOKEN_LBRACE,       // 023 {
+    TOKEN_RBRACE,       // 024 }
+    TOKEN_LBRACKET,     // 025 [
+    TOKEN_RBRACKET,     // 026 ]
+    TOKEN_SEMI,         // 027 ;
+    TOKEN_COMMA,        // 028 ,
+    /* 运算符（编码 031~044） */
+    TOKEN_PLUS,         // 031 +
+    TOKEN_MINUS,        // 032 -
+    TOKEN_MUL,          // 033 *
+    TOKEN_DIV,          // 034 /
+    TOKEN_ASSIGN,       // 035 =
+    TOKEN_EQ,           // 036 ==
+    TOKEN_NE,           // 037 !=
+    TOKEN_LT,           // 038 <
+    TOKEN_LE,           // 039 <=
+    TOKEN_GT,           // 040 >
+    TOKEN_GE,           // 041 >=
+    TOKEN_AND,          // 042 &&
+    TOKEN_OR,           // 043 ||
+    TOKEN_NOT,          // 044 !
+    /* 标识符 / 常量（编码 051~054） */
+    TOKEN_IDENT,        // 051 标识符
+    TOKEN_NUM_INT,      // 052 整型常量
+    TOKEN_NUM_FLOAT,    // 053 实型常量
+    TOKEN_CHAR_CONST,   // 054 字符常量
+    TOKEN_STRING,       // 字符串常量（词法扩展，不入文法，无编码）
+    /* 结束（编码 099） */
     TOKEN_EOF
 };
 
-// TokenType 文本名（用于 --dump-tokens / 调试）
+// TokenType 文本名（--dump-tokens / 调试）
 const char* TokenTypeToString(TokenType t);
 
 // ----------------------------------------------------------------------------
-// 4.1.3 单词 Token（参考书声明 2-4 CToken，扩展 PPT 列号与常量表位序）
+// T3：编码双向映射（预测分析表以数字编码为下标）
+//   TokenTypeToCode：枚举 -> 编码；TOKEN_NONE/TOKEN_STRING 返回 0
+//   CodeToTokenType：编码 -> 枚举；未知编码返回 TOKEN_NONE
+// ----------------------------------------------------------------------------
+int       TokenTypeToCode(TokenType t);
+TokenType CodeToTokenType(int code);
+
+// ----------------------------------------------------------------------------
+// 4.1.3 单词 Token
 // ----------------------------------------------------------------------------
 struct Token
 {
-    TokenType   m_type = TokenType::TOKEN_NONE; // 单词类型（参考书 m_iKind）
-    std::string m_szContent;                    // 单词原文（参考书 m_szContent）
-    LineInfo    m_line;                         // 行列信息（参考书 m_LineInfo + PPT 列号）
-    int         m_iConstIdx = -1;               // 常量表位序（Q12：词法登记 m_ConstTexts 索引）
+    TokenType   m_type = TokenType::TOKEN_NONE;
+    std::string m_szContent;
+    LineInfo    m_line;
+    int         m_iConstIdx = -1;
 
-    // 常量的语义值（词法阶段登记，供后续语义回填使用）
-    bool        m_bIsFloat = false;             // 是否为浮点常量
-    double      m_fVal = 0.0;                   // 浮点值
-    long long   m_iVal = 0;                     // 整型值
+    bool        m_bIsFloat = false;
+    double      m_fVal = 0.0;
+    long long   m_iVal = 0;
+    char        m_cVal = 0;              // 【v4.0 新增】字符常量值（'a' -> 'a'）
 
     Token() = default;
     Token(TokenType type, const std::string& content, int row, int col)
         : m_type(type), m_szContent(content), m_line(row, col) {}
 };
 
-// 单词序列（参考书声明 2-6 TokenList）
 using TokenList = std::vector<Token>;
 
 // ----------------------------------------------------------------------------
-// 4.1.4 编译错误记录 + 全局错误表 g_ErrorList（Q8：含行列号，尽量错误恢复）
+// 4.1.4 编译错误记录 + 全局错误表
 // ----------------------------------------------------------------------------
 struct CompileError
 {
-    std::string m_szMsg;    // 错误信息
-    LineInfo    m_loc;      // 出错位置（行列号）
+    std::string m_szMsg;
+    LineInfo    m_loc;
 };
 
-// 全局错误汇总表（main 汇总，非零退出码依据）
 extern std::vector<CompileError> g_ErrorList;
-
-// 错误记录辅助函数（参考书 EmitError 风格）：追加到 g_ErrorList 并打印
 void EmitError(const std::string& msg, const LineInfo& loc);
 
 #endif // MINIC_LEXER_TOKEN_H

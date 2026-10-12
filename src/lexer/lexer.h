@@ -53,8 +53,9 @@ private:
     void SkipComment();                                  // 跳过注释（// 单行, /* */ 多行）
     void ScanIdent();                                   // 扫描标识符/关键字
     void ScanNumber();                                  // 扫描整数/浮点常量
-    void ScanString();                                   // 扫描字符串常量 "..."
-    void ScanOperator();                                // 扫描运算符/界符
+    void ScanString();                                  // 扫描字符串常量 "..."
+    void ScanCharConst();                               // 扫描字符常量 'c'（含转义）
+    void ScanOperator();                                // 扫描运算符/界符（双字符优先）
     int  LookupKeyword(const std::string& word) const;  // 查关键字表（-1 表示非关键字）
 };
 

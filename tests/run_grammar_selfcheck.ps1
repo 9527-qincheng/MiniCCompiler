@@ -1,8 +1,11 @@
+#Requires -Version 7.0
+# 说明：tests\*.ps1 以 UTF-8 无 BOM 保存且含中文注释，Windows PowerShell 5.1 会按
+#       ANSI 解码并报出位置误导的语法错，故要求 PowerShell 7+（pwsh）。
 # ============================================================================
 # MiniC 编译器 —— 文法表自检运行器
 # 编译 tests\grammar_selfcheck.cpp（仅依赖 src\parser\grammar.*）并运行。
 # 用法：
-#   powershell -ExecutionPolicy Bypass -File tests\run_grammar_selfcheck.ps1
+#   pwsh -File tests\run_grammar_selfcheck.ps1
 # 需要 g++ 在 PATH 中（可用 -Cxx 指定编译器路径）。
 # ============================================================================
 

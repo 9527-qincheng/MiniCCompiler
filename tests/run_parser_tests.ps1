@@ -1,8 +1,11 @@
+#Requires -Version 7.0
+# 说明：tests\*.ps1 以 UTF-8 无 BOM 保存且含中文注释，Windows PowerShell 5.1 会按
+#       ANSI 解码并报出位置误导的语法错，故要求 PowerShell 7+（pwsh）。
 # ============================================================================
 # MiniC 编译器 —— Parser 回归测试
 # 用法：
-#   powershell -ExecutionPolicy Bypass -File tests\run_parser_tests.ps1
-#   powershell -ExecutionPolicy Bypass -File tests\run_parser_tests.ps1 -Update
+#   pwsh -File tests\run_parser_tests.ps1
+#   pwsh -File tests\run_parser_tests.ps1 -Update
 #
 # 说明：
 #   - 对 tests\parser\*.mc 逐个运行 `minic <case>.mc --dump-ast --dump-parse`

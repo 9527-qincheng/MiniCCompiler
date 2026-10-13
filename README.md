@@ -169,8 +169,10 @@ build\minic.exe tests\test.mc --dump-tokens --dump-ast --dump-symtab --dump-quad
 语法分析模块的自动化回归测试（覆盖优先级/结合性/嵌套括号/合法与非法输入/错误恢复/既有黄金输出/LL(1) 分析轨迹）：
 
 ```bash
-# 必须用 PowerShell 7（pwsh）：tests\*.ps1 为 UTF-8 无 BOM + 中文注释，
-# 老版 powershell.exe 5.1 会按 ANSI 解码而报语法错误（既有问题，非本次引入）
+# 必须用 PowerShell 7（pwsh）：tests\*.ps1 为 UTF-8 无 BOM + 中文注释，5.1 会按 ANSI
+# 解码而报语法错误；三个脚本已加 `#Requires -Version 7.0`，用 powershell.exe 5.1 运行会
+# 直接提示版本不符（5.1 另有一个已知缺陷：Start-Process 在同时存在 NO_PROXY/no_proxy
+# 时抛 "Item has already been added"，PowerShell 7 已修复）
 
 # 校验（比对退出码、AST 输出、错误输出、分析轨迹）
 pwsh -File tests/run_parser_tests.ps1

@@ -1,8 +1,11 @@
+#Requires -Version 7.0
+# 说明：tests\*.ps1 以 UTF-8 无 BOM 保存且含中文注释，Windows PowerShell 5.1 会按
+#       ANSI 解码并报出位置误导的语法错，故要求 PowerShell 7+（pwsh）。
 # ============================================================================
 # MiniC 编译器 —— Parser 单元测试运行器
 # 编译 tests\parser_unit_test.cpp（仅依赖 lexer + parser）并在若干输入上运行。
 # 用法：
-#   powershell -ExecutionPolicy Bypass -File tests\run_parser_unit.ps1
+#   pwsh -File tests\run_parser_unit.ps1
 # 需要 g++ 在 PATH 中（可用 -Cxx 指定编译器路径）。
 # ============================================================================
 

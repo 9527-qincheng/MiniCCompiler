@@ -89,7 +89,8 @@ private:
     struct SuffixItem   // 后缀表达式1 的一个后缀：[] 下标 或 () 调用
     {
         bool        m_bCall = false;
-        ASTNodePtr  m_operand;   // 下标表达式 / 实参链
+        ASTNodePtr  m_operand;                  // [] 下标表达式
+        std::vector<ASTNodePtr> m_args;         // () 实参序列（CALL 节点 children[1..]）
         LineInfo    m_loc;
     };
 

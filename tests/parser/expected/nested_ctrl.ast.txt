@@ -1,48 +1,38 @@
-List  @1:1
-  List  @1:1
-    Decl(INT i)  @1:1
-    List  @1:8
-      Decl(INT s)  @1:8
-      List  @1:15
-        ArrayDecl(INT a[5])  @1:15
-          Decl(INT a)  @1:15
-          Num(5)  @1:20
-  List  @2:1
-    Assign  @2:1
-      Ident(i)  @2:1
-      Num(0)  @2:5
-    List  @2:8
-      Assign  @2:8
-        Ident(s)  @2:8
-        Num(0)  @2:12
-      List  @3:1
-        While  @3:1
-          BinOp(LT)  @3:10
-            Ident(i)  @3:8
-            Num(5)  @3:12
-          List  @3:15
-            List  @4:3
-              If  @4:3
-                BinOp(GE)  @4:9
-                  Ident(i)  @4:7
-                  Num(2)  @4:12
-                List  @4:15
-                  List  @4:17
-                    Assign  @4:17
-                      Ident(s)  @4:17
-                      BinOp(PLUS)  @4:23
-                        Ident(s)  @4:21
-                        Ident(i)  @4:25
-                List  @4:35
-                  List  @4:37
-                    Assign  @4:37
-                      Index  @4:38
-                        Ident(a)  @4:37
-                        Ident(i)  @4:39
-                      Ident(i)  @4:44
-              List  @5:3
-                Assign  @5:3
-                  Ident(i)  @5:3
-                  BinOp(PLUS)  @5:9
-                    Ident(i)  @5:7
-                    Num(1)  @5:11
+Program  @1:1
+  Decl(INT i)  @1:1
+  Decl(INT s)  @1:8
+  ArrayDecl(INT a[5])  @1:15
+    Decl(INT a)  @1:15
+    Num(5)  @1:20
+  Assign  @2:1
+    Ident(i)  @2:1
+    Num(0)  @2:5
+  Assign  @2:8
+    Ident(s)  @2:8
+    Num(0)  @2:12
+  While  @3:1
+    BinOp(LT)  @3:10
+      Ident(i)  @3:8
+      Num(5)  @3:12
+    Block  @3:15
+      If  @4:3
+        BinOp(GE)  @4:9
+          Ident(i)  @4:7
+          Num(2)  @4:12
+        Block  @4:15
+          Assign  @4:17
+            Ident(s)  @4:17
+            BinOp(PLUS)  @4:23
+              Ident(s)  @4:21
+              Ident(i)  @4:25
+        Block  @4:35
+          Assign  @4:37
+            Index  @4:38
+              Ident(a)  @4:37
+              Ident(i)  @4:39
+            Ident(i)  @4:44
+      Assign  @5:3
+        Ident(i)  @5:3
+        BinOp(PLUS)  @5:9
+          Ident(i)  @5:7
+          Num(1)  @5:11

@@ -168,64 +168,51 @@ bool IsSyncToken(int iCode)
 }
 
 // ----------------------------------------------------------------------------
-// BridgeNode：阶段④的占位 / 扩展节点（v3.1 的 AST 节点集合只有 2 个子指针，
-// 不足以表达数组、函数、调用、print、空语句等挑战版结构）
-//   标签形如 Index / Call / FuncDef(INT f) / Param(INT a[10]) / Print / Empty，
-//   阶段⑤（AST 多子节点重构）会替换为专用节点，本阶段只保证信息不丢失。
+// 阶段⑤：语句上下文的“基址回填”辅助
+//   产生式 语句 → 标识符 标识符后续 中，标识符只在归约 语句 时才可见，而赋值/下标/调用
+//   节点在归约 标识符后续 时已构造，因此这些节点先以 children[0] = nullptr 占位，
+//   待 语句 归约时用本函数填入标识符节点（原阶段④的 BridgeNode + m_bOpenLeft 已删除）：
+//     a = 1;      ASSIGN[null, 表达式]          → ASSIGN[IDENT(a), 表达式]
+//     a[i] = 1;   ASSIGN[INDEX[null, i], 表达]  → ASSIGN[INDEX[IDENT(a), i], 表达]
+//     f(1);       CALL[null, 实参…]             → CALL[IDENT(f), 实参…]
 // ----------------------------------------------------------------------------
-class BridgeNode : public ASTNode
+void FillOpenBase(ASTNodePtr& root, ASTNodePtr base)
 {
-public:
-    BridgeNode(const std::string& label, const LineInfo& loc)
-        : ASTNode(ASTNodeKind::AST_NODE_NONE, loc), m_szLabel(label)
+    ASTNode* node = root.get();
+    if (node && node->m_kind == ASTNodeKind::AST_NODE_ASSIGN && !node->m_children.empty())
     {
-    }
-
-    // m_left 为“待绑定基址”的空槽（下标链 / 调用名），由 语句→标识符 标识符后续 回填
-    bool m_bOpenLeft = false;
-
-    std::string m_szLabel;
-
-    void Print(std::ostream& os, int indent) const override
-    {
-        for (int i = 0; i < indent; ++i) { os << "  "; }
-        os << m_szLabel << "  @" << m_loc.m_iRow << ":" << m_loc.m_iCol << "\n";
-        if (m_left)  { m_left->Print(os, indent + 1); }
-        if (m_right) { m_right->Print(os, indent + 1); }
-    }
-};
-
-// 把语义值列表串成 v3.1 的链表式 List（左=首元素，右=剩余序列）；空列表返回空指针
-ASTNodePtr ChainNodes(std::vector<ASTNodePtr>& items)
-{
-    ASTNodePtr tail;
-    for (std::size_t i = items.size(); i-- > 0;)
-    {
-        if (!items[i]) { continue; }
-        ASTNodePtr cell = std::make_unique<ListNode>(items[i]->m_loc);
-        cell->m_left  = std::move(items[i]);
-        cell->m_right = std::move(tail);
-        tail = std::move(cell);
-    }
-    return tail;
-}
-
-// 在“下标链 / 调用桥”上找到最内层的空基址槽并绑定标识符节点
-void AttachBase(ASTNodePtr& root, ASTNodePtr base)
-{
-    ASTNodePtr* slot = &root;
-    while (*slot)
-    {
-        BridgeNode* br = dynamic_cast<BridgeNode*>(slot->get());
-        if (!br || !br->m_bOpenLeft) { break; }
-        if (!br->m_left)
+        if (!node->m_children[0])
         {
-            br->m_left = std::move(base);
+            node->m_children[0] = std::move(base);   // 目标槽就是占位 null：直接填入
             return;
         }
-        slot = &br->m_left;
+        node = node->m_children[0].get();            // 目标槽已构造（INDEX 链）：继续下钻
     }
-    if (!*slot) { *slot = std::move(base); }
+    while (node)
+    {
+        if (node->m_children.empty())
+        {
+            node->m_children.push_back(std::move(base));
+            return;
+        }
+        if (!node->m_children[0])
+        {
+            node->m_children[0] = std::move(base);
+            return;
+        }
+        if (node->m_kind == ASTNodeKind::AST_NODE_INDEX ||
+            node->m_kind == ASTNodeKind::AST_NODE_CALL)
+        {
+            node = node->m_children[0].get();   // 继续下钻链式后缀
+            continue;
+        }
+        break;
+    }
+    // 兜底（正常形状下不会到达）：保证标识符信息不丢失
+    if (base && root)
+    {
+        root->m_children.push_back(std::move(base));
+    }
 }
 
 } // namespace
@@ -598,9 +585,10 @@ void CParser::ReduceProduction(int iProdNum, std::size_t iValueBase)
     // ---------- 程序 / 声明列表 ----------
     case 1:    // 程序 → 声明部分 语句部分          | sem000@0
     {
-        ASTNodePtr root = std::make_unique<ListNode>(m_ProgramLoc);
-        root->m_left  = ChainNodes(v[0].m_items);
-        root->m_right = ChainNodes(v[1].m_items);
+        // 阶段⑤：程序根为 PROGRAM 节点，children = 顶层声明… + 顶层语句…（不再用 List 链）
+        ASTNodePtr root = std::make_unique<ProgramNode>(m_ProgramLoc);
+        for (auto& d : v[0].m_items) { AddItem(root->m_children, std::move(d)); }
+        for (auto& s : v[1].m_items) { AddItem(root->m_children, std::move(s)); }
         out = Node(std::move(root), m_ProgramLoc);
         break;
     }
@@ -624,20 +612,17 @@ void CParser::ReduceProduction(int iProdNum, std::size_t iValueBase)
 
         if (v[2].m_kind == SemKind::DECLS)
         {
-            // 变量声明：int a; / int a, b; / int a[10];
-            // 数组声明（§8 semantic004：登记维度上界）在 v3.1 二叉树 AST 中无对应节点，
-            // 故用 BridgeNode 承载：子节点 = Decl(类型 名) + Num(维度)，阶段⑤ 合并进 AST。
+            // 变量声明：int a; / int a, b;（挑战版文法）/ int a[10];
+            // 数组声明用 ARRAYDECL 节点（阶段⑤）：children = [Decl(元素声明), Num(维度)]
             auto addVar = [&](const std::string& szName, int iSize, ASTNodePtr dim,
                               const LineInfo& loc)
             {
                 if (iSize > 0)
                 {
-                    std::string label = "ArrayDecl(" + std::string(TokenTypeToString(type)) +
-                                        " " + szName + "[" + std::to_string(iSize) + "])";
-                    auto arr = std::make_unique<BridgeNode>(label, loc);
-                    arr->m_left  = std::make_unique<DeclNode>(type, szName, loc);
-                    arr->m_right = std::move(dim);
-                    decls.push_back(std::move(arr));
+                    decls.push_back(std::make_unique<ArrayDeclNode>(
+                        type, szName, iSize,
+                        std::make_unique<DeclNode>(type, szName, loc, iSize),
+                        std::move(dim), loc));
                 }
                 else
                 {
@@ -653,12 +638,13 @@ void CParser::ReduceProduction(int iProdNum, std::size_t iValueBase)
         else if (v[2].m_node)
         {
             // 函数定义：声明后续 → ( 形参列表 ) 块
-            BridgeNode* fn = dynamic_cast<BridgeNode*>(v[2].m_node.get());
-            if (fn)
+            // 归约 声明后续 时还不知道返回类型与函数名，此处补填 FUNCDEF 的字段
+            if (v[2].m_node->m_kind == ASTNodeKind::AST_NODE_FUNCDEF)
             {
-                fn->m_szLabel = "FuncDef(" + std::string(TokenTypeToString(type)) +
-                                " " + name.m_szContent + ")";
-                fn->m_loc = Loc0();
+                auto* fn = static_cast<FuncDefNode*>(v[2].m_node.get());
+                fn->m_retType = type;
+                fn->m_szName  = name.m_szContent;
+                fn->m_loc     = Loc0();
             }
             decls.push_back(std::move(v[2].m_node));
         }
@@ -670,9 +656,11 @@ void CParser::ReduceProduction(int iProdNum, std::size_t iValueBase)
         break;
     case 6:    // 声明后续 → ( 形参列表 ) 块        | sem018@3, sem020@4
     {
-        ASTNodePtr fn = std::make_unique<BridgeNode>("FuncDef", Loc0());
-        fn->m_left  = ChainNodes(v[1].m_items);   // 形参链
-        fn->m_right = std::move(v[3].m_node);     // 函数体
+        // 阶段⑤：FUNCDEF 的 children = 形参… + 函数体（末元素为 BLOCK）；
+        // 返回类型与函数名在 声明 归约时补填（见 case 4）
+        ASTNodePtr fn = std::make_unique<FuncDefNode>(TokenType::TOKEN_NONE, std::string(), Loc0());
+        for (auto& p : v[1].m_items) { AddItem(fn->m_children, std::move(p)); }
+        AddItem(fn->m_children, std::move(v[3].m_node));
         out = Node(std::move(fn), Loc0());
         break;
     }
@@ -755,11 +743,10 @@ void CParser::ReduceProduction(int iProdNum, std::size_t iValueBase)
         break;
     case 22:   // 形参 → 类型 标识符 数组后缀      | sem019@3
     {
-        std::string label = "Param(" + std::string(TokenTypeToString(v[0].m_type)) +
-                            " " + v[1].m_token.m_szContent;
-        if (v[2].m_iInt > 0) { label += "[" + std::to_string(v[2].m_iInt) + "]"; }
-        label += ")";
-        out = Node(std::make_unique<BridgeNode>(label, v[1].m_loc), v[1].m_loc);
+        // 阶段⑤：PARAM 节点（类型/名/维度为字段，无子节点）
+        out = Node(std::make_unique<ParamNode>(v[0].m_type, v[1].m_token.m_szContent,
+                                               v[1].m_loc, v[2].m_iInt),
+                   v[1].m_loc);
         break;
     }
 
@@ -777,8 +764,9 @@ void CParser::ReduceProduction(int iProdNum, std::size_t iValueBase)
         break;
     case 25:   // 复合语句 → { 块项序列 }           | sem025@1, sem026@3
     {
-        ASTNodePtr block = std::make_unique<ListNode>(Loc0());
-        block->m_left = ChainNodes(v[1].m_items);
+        // 阶段⑤：BLOCK 节点，children = 块内声明与语句（序列）
+        ASTNodePtr block = std::make_unique<BlockNode>(Loc0());
+        for (auto& b : v[1].m_items) { AddItem(block->m_children, std::move(b)); }
         out = Node(std::move(block), Loc0());
         break;
     }
@@ -812,14 +800,8 @@ void CParser::ReduceProduction(int iProdNum, std::size_t iValueBase)
         ASTNodePtr suffix = std::move(v[1].m_node);
         if (suffix)
         {
-            if (suffix->m_kind == ASTNodeKind::AST_NODE_ASSIGN)
-            {
-                AttachBase(suffix->m_left, std::make_unique<IdentNode>(szName, loc));
-            }
-            else
-            {
-                AttachBase(suffix, std::make_unique<IdentNode>(szName, loc));
-            }
+            // 阶段⑤：把标识符填入赋值目标 / 下标基址 / 被调名的空槽
+            FillOpenBase(suffix, std::make_unique<IdentNode>(szName, loc));
             suffix->m_loc = loc;   // 语句位置以左值标识符为准（与 v3.1 AST 一致）
         }
         out = Node(std::move(suffix), loc);
@@ -829,32 +811,34 @@ void CParser::ReduceProduction(int iProdNum, std::size_t iValueBase)
         out = std::move(v[0]);
         break;
     case 36:   // 语句 → ;                        | sem027@1
-        out = Node(std::make_unique<BridgeNode>("Empty", Loc0()), Loc0());
+        out = Node(std::make_unique<EmptyNode>(Loc0()), Loc0());
         break;
     case 37:   // 标识符后续 → = 表达式 ;           | sem006@3
     case 40:   // 赋值 → = 表达式 ;                | sem006@3
+    {
+        // 阶段⑤：赋值目标槽先置空，由 语句 → 标识符 标识符后续 回填（FillOpenBase）
         out = Node(std::make_unique<AssignNode>(nullptr, std::move(v[1].m_node), Loc0()),
                    Loc0());
         break;
+    }
     case 38:   // 标识符后续 → [ 表达式 ] 赋值      | sem017@3
     {
         ASTNodePtr assign = std::move(v[3].m_node);
-        if (assign)
+        if (assign && !assign->m_children.empty())
         {
-            BridgeNode* idx = new BridgeNode("Index", Loc0());
-            idx->m_bOpenLeft = true;                 // m_left 待 语句 绑定标识符
-            idx->m_right     = std::move(v[1].m_node);
-            assign->m_left.reset(idx);
+            // 阶段⑤：下标基址先置空，待 语句 回填（替代原桥接节点的 m_bOpenLeft）
+            assign->m_children[0] = std::make_unique<IndexNode>(nullptr,
+                                                                std::move(v[1].m_node),
+                                                                Loc0());
         }
         out = Node(std::move(assign), v[1].m_loc);
         break;
     }
     case 39:   // 标识符后续 → ( 实参列表 ) ;       | sem021@4
     {
-        BridgeNode* call = new BridgeNode("Call", Loc0());
-        call->m_bOpenLeft = true;                    // m_left 待 语句 绑定被调名
-        call->m_right     = ChainNodes(v[1].m_items);
-        out = Node(ASTNodePtr(call), Loc0());
+        // 阶段⑤：被调名先置空，待 语句 回填
+        out = Node(std::make_unique<CallNode>(nullptr, std::move(v[1].m_items), Loc0()),
+                   Loc0());
         break;
     }
     case 41:   // 条件语句 → if ( 表达式 ) 语句 否则部分 | sem012@4, sem014@6
@@ -882,9 +866,8 @@ void CParser::ReduceProduction(int iProdNum, std::size_t iValueBase)
     }
     case 45:   // 输出语句 → print ( 表达式 ) ;     | sem024@5
     {
-        BridgeNode* node = new BridgeNode("Print", Loc0());
-        node->m_left = std::move(v[2].m_node);
-        out = Node(ASTNodePtr(node), Loc0());
+        // 阶段⑤：PRINT 节点，children[0] = 表达式
+        out = Node(std::make_unique<PrintNode>(std::move(v[2].m_node), Loc0()), Loc0());
         break;
     }
     case 46:   // 返回语句 → return 返回尾
@@ -948,9 +931,10 @@ void CParser::ReduceProduction(int iProdNum, std::size_t iValueBase)
     case 75:   // 一元表达式 → ! 一元表达式        | sem011@2
     case 76:   // 一元表达式 → - 一元表达式        | sem010@2
     {
-        ASTNodePtr node = std::make_unique<UnaryOpNode>(v[0].m_token.m_type,
-                                                        std::move(v[1].m_node),
-                                                        Loc0());
+        // 阶段⑤：UNOP 节点（原 UnaryOpNode 改名），children[0] = 操作数
+        ASTNodePtr node = std::make_unique<UnOpNode>(v[0].m_token.m_type,
+                                                     std::move(v[1].m_node),
+                                                     Loc0());
         out = Node(std::move(node), Loc0());
         break;
     }
@@ -959,13 +943,18 @@ void CParser::ReduceProduction(int iProdNum, std::size_t iValueBase)
         break;
     case 78:   // 后缀表达式 → 基本表达式 后缀表达式1
     {
+        // 阶段⑤：链式后缀按 INDEX / CALL 节点自左向右套用（基址已在基本表达式中确定）
         ASTNodePtr cur = std::move(v[0].m_node);
         for (SuffixItem& s : v[1].m_suffixes)
         {
-            BridgeNode* br = new BridgeNode(s.m_bCall ? "Call" : "Index", s.m_loc);
-            br->m_right = std::move(s.m_operand);
-            br->m_left  = std::move(cur);
-            cur = ASTNodePtr(br);
+            if (s.m_bCall)
+            {
+                cur = std::make_unique<CallNode>(std::move(cur), std::move(s.m_args), s.m_loc);
+            }
+            else
+            {
+                cur = std::make_unique<IndexNode>(std::move(cur), std::move(s.m_operand), s.m_loc);
+            }
         }
         out = Node(std::move(cur), Loc0());
         break;
@@ -985,9 +974,9 @@ void CParser::ReduceProduction(int iProdNum, std::size_t iValueBase)
     case 80:   // 后缀表达式1 → ( 实参列表 ) 后缀表达式1 | sem021@3
     {
         SuffixItem s;
-        s.m_bCall   = true;
-        s.m_operand = ChainNodes(v[1].m_items);
-        s.m_loc     = Loc0();
+        s.m_bCall = true;
+        for (auto& a : v[1].m_items) { AddItem(s.m_args, std::move(a)); }
+        s.m_loc   = Loc0();
         out.m_kind = SemKind::SUFFIX;
         out.m_suffixes.push_back(std::move(s));
         for (SuffixItem& q : v[3].m_suffixes) { out.m_suffixes.push_back(std::move(q)); }
@@ -1014,17 +1003,20 @@ void CParser::ReduceProduction(int iProdNum, std::size_t iValueBase)
         break;
     case 85:   // 基本表达式 → 字符常量           | sem003@1
         out = Node(std::make_unique<NumNode>(static_cast<double>(v[0].m_token.m_cVal), false,
-                                             Loc0(), v[0].m_token.m_iConstIdx),
+                                             Loc0(), v[0].m_token.m_iConstIdx,
+                                             /*isChar*/ true),
                    Loc0());
         break;
     case 86:   // 基本表达式 → true               | sem003@1
         out = Node(std::make_unique<NumNode>(1.0, false, Loc0(),
-                                             v[0].m_token.m_iConstIdx),
+                                             v[0].m_token.m_iConstIdx,
+                                             /*isChar*/ false, /*isBool*/ true),
                    Loc0());
         break;
     case 87:   // 基本表达式 → false              | sem003@1
         out = Node(std::make_unique<NumNode>(0.0, false, Loc0(),
-                                             v[0].m_token.m_iConstIdx),
+                                             v[0].m_token.m_iConstIdx,
+                                             /*isChar*/ false, /*isBool*/ true),
                    Loc0());
         break;
     case 88:   // 基本表达式 → ( 表达式 )

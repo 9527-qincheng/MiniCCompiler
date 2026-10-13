@@ -8,15 +8,15 @@
 | 模块 | 对外接口 | 数据传递 |
 |---|---|---|
 | CLex | `bool OpenSource(const string&)` / `bool Run()` / `const TokenList& GetTokenList() const` | TokenList → CParser |
-| CParser | `CParser(const TokenList&)` / `ASTNodePtr Parse()` / `bool HasError() const` / `const vector<CompileError>& GetErrors() const` | ASTNodePtr → 语义/IR |
+| CParser | `CParser(const TokenList&)` / `ASTNodePtr Parse()` / `bool HasError() const` / `const vector<CompileError>& GetErrors() const` / `const vector<ParseStep>& GetTrace() const`（阶段④ 新增，供 `--dump-parse`） | ASTNodePtr → 语义/IR |
 | SymbolTable | `EnterScope(ScopeType)` / `ExitScope()` / `RecVar(name,type,line,col)→VarEntry*` / `RecConst(name,type,value,line,col)→ConstEntry*` / `SearchVar/SearchConst` / `BackfillConst(iConstIdx,name,type)` / `CheckAssign(lhs,rhs,line,col)` / `DumpSymTab(os)` | 符号信息 → IRGenerator |
 | IRGenerator | `explicit IRGenerator(SymbolTable&)` / `Generate(const ASTNodePtr&)` / `GetTmpVar(TokenType)` / `GetTmpLabel()` / `EmitIR(op,op1,op2,rslt)` / `GetCodes() const` / `OperandToString(op)` | CodeList → CCodeGen / --dump-quads |
 | CCodeGen | `explicit CCodeGen(const CodeList&)` / `bool Generate(AsmOutput&)` | 汇编输出（挑战版） |
 
 ## 二、main 约定（第 6.7 节）
 
-- 命令行：`minic <源文件> [--dump-tokens] [--dump-ast] [--dump-symtab] [--dump-quads]`
-- 产物：`<源文件名>.token.txt / .ast.txt / .sym.txt / .quad.txt`（与源文件同目录）+ `<源文件名>.asm`
+- 命令行：`minic <源文件> [--dump-tokens] [--dump-ast] [--dump-symtab] [--dump-quads] [--dump-parse]`
+- 产物：`<源文件名>.token.txt / .ast.txt / .sym.txt / .quad.txt / .parse.txt`（与源文件同目录）+ `<源文件名>.asm`
 - 流水线：CLex.Run → CParser.Parse → SymbolTable 语义 → IRGenerator.Generate → CCodeGen.Generate
 - 错误：g_ErrorList（含行列号），非零退出码；成功退出码 0
 
@@ -24,11 +24,27 @@
 
 1. `ParamEntry` vs 文档 `ParaEntry`（任务要求 ParamEntry，文档 4.4.1 为 ParaEntry）
 2. TokenType 缺花括号界符（骨架扩展 `TOKEN_LBRACE/TOKEN_RBRACE`）
-3. AST 成员用 `unique_ptr<ASTNode>`（文档 4.3 为裸指针，Q10 要求 unique_ptr 管理）
+3. AST 成员用 `unique_ptr<ASTNode>`（文档 4.3 为裸指针，Q10 要求 unique_ptr 管理）；
+   **阶段⑤ 起子节点统一为 `vector<ASTNodePtr> m_children`**（原 `m_left/m_right/m_else` 删除，见第 8 条）
 4. SymbolTable 以第 6 章契约为主，保留第 4 章扩展接口为兼容
 5. IRGenerator 构造按第 6 章 `explicit IRGenerator(SymbolTable&)`
 6. 补充 `ScopeType{SCOPE_GLOBAL, SCOPE_FUNCTION}` 枚举（第 6 章需要，文档未定义）
 7. 汇编产物后缀取 `<源文件名>.asm`（第 6.7 未明确）
+8. **阶段⑤ AST 多子节点重构（已实施，2026-10-13）**：设计文档 §5.3.2【变更·破坏性】要求
+   `m_children` 多子节点与 18 类节点（文档枚举 17 类 + 02 任务书 §5.2 的 ARRAYDECL）；
+   `ast.h` 原为 v3.1 的 `m_left/m_right` + 11 类。现状：`m_children` + 18 类，删除 `AST_NODE_LIST`，
+   `UNARY` 改名 `UNOP`，新增 `PROGRAM/DECL/FUNCDEF/PARAM/BLOCK/ASSIGN/IF/WHILE/PRINT/RETURN/EMPTY/
+   BINOP/UNOP/NUM/IDENT/INDEX/CALL/ARRAYDECL`；`Print` 由基类统一实现（各节点提供 `Label()`）。
+   评审稿与子节点语义表见 `docs/stage5_ast_review.md`。
+9. **词法未登记字符/布尔常量表下标**（跨模块记录）：`'x'` / `true` / `false` 的 `Token::m_iConstIdx` 为 -1，
+   Parser 只按透传处理；语义阶段 semantic003 需按 token 自行登记（未改词法）。
+10. **分析栈元素结构扩展**（阶段④ 记录）：`StackItem` 在文档 §4.10 三字段之外增加
+    `m_iValueBase` 与 `m_loc`，并新增内部 `Kind::REDUCE` 哨兵（静默、不进 `GetTrace()`，
+    以保证 §4.11 的 82 步轨迹与文档逐行一致）。
+
+> 说明：本节第 8–10 条为 2026-10-13 阶段⑤ 收尾时同步；**下面的"四、词法识别集合"仍是 v3.1 骨架版内容**，
+> 词法 v4.0 的现状（17 个挑战版终结符等）见 `README.md` 的模块状态表与《词法模块待改进清单.md》，
+> 本次未越界改动词法章节。
 
 ## 四、词法识别集合（骨架版已实现）
 

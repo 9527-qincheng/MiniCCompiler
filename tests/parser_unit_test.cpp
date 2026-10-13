@@ -11,6 +11,11 @@
 //     故"常量表下标非负"只对整型/实型断言（不属本模块可修复范围）。
 // 用法：parser_unit_test <source.mc>
 //   退出码：0 全部通过 / 1 存在失败断言 / 2 用法或打开文件失败
+// 阶段⑤（多子节点重构）补充：
+//   - 子节点统一走 ASTNode::m_children（原 m_left/m_right/m_else 已删除）；
+//   - 新增新 AST 不变量：根为 PROGRAM、无 AST_NODE_NONE 哨兵、Label() 非空、
+//     各节点类别子节点数符合语义表、ARRAYDECL = [DECL, 维度 NUM]、
+//     ASSIGN/INDEX/CALL 的基址槽位已回填、IF 的 else 位于 children[2]。
 // ============================================================================
 #include "lexer/lexer.h"
 #include "parser/parser.h"
@@ -38,16 +43,14 @@ void Check(bool cond, const std::string& what)
     }
 }
 
-// 前序遍历子节点：IfNode 的 else 分支不在 m_left/m_right 上，必须单独访问，
-// 否则收集时会漏掉 else 分支里的节点。
+// 阶段⑤：子节点统一存放在 m_children（If 的 else 分支也在此，IfNode::m_else 已删除），
+// 因此前序遍历只需按构造顺序访问 m_children。
 template <typename Fn>
 void ForEachChild(const ASTNode* node, Fn fn)
 {
-    fn(node->m_left.get());
-    fn(node->m_right.get());
-    if (node->m_kind == ASTNodeKind::AST_NODE_IF)
+    for (const ASTNodePtr& child : node->m_children)
     {
-        fn(static_cast<const IfNode*>(node)->m_else.get());
+        fn(child.get());
     }
 }
 
@@ -116,6 +119,77 @@ double ExpectedValue(const Token& t)
 bool IsLexRegisteredConst(TokenType t)
 {
     return t == TokenType::TOKEN_NUM_INT || t == TokenType::TOKEN_NUM_FLOAT;
+}
+
+// ----------------------------------------------------------------------------
+// 阶段⑤ 新增：新 AST 不变量（18 类节点、m_children、无哨兵）
+// ----------------------------------------------------------------------------
+void WalkAll(const ASTNode* node, std::vector<const ASTNode*>& out)
+{
+    if (!node) { return; }
+    out.push_back(node);
+    for (const ASTNodePtr& c : node->m_children) { WalkAll(c.get(), out); }
+}
+
+// 各节点类别的子节点个数约束（评审稿 §3.2 的子节点语义表）
+bool ArityOk(const ASTNode* n)
+{
+    const std::size_t c = n->m_children.size();
+    switch (n->m_kind)
+    {
+    case ASTNodeKind::AST_NODE_NUM:
+    case ASTNodeKind::AST_NODE_IDENT:
+    case ASTNodeKind::AST_NODE_DECL:
+    case ASTNodeKind::AST_NODE_PARAM:
+    case ASTNodeKind::AST_NODE_EMPTY:
+        return c == 0;
+    case ASTNodeKind::AST_NODE_UNOP:
+    case ASTNodeKind::AST_NODE_RETURN:
+        return c <= 1;                                  // return; 无子节点
+    case ASTNodeKind::AST_NODE_BINOP:
+    case ASTNodeKind::AST_NODE_ASSIGN:
+    case ASTNodeKind::AST_NODE_WHILE:
+    case ASTNodeKind::AST_NODE_INDEX:
+    case ASTNodeKind::AST_NODE_ARRAYDECL:
+        return c == 2;
+    case ASTNodeKind::AST_NODE_IF:
+        return c == 2 || c == 3;                        // 无 else / 有 else
+    case ASTNodeKind::AST_NODE_PRINT:
+        return c == 1;
+    case ASTNodeKind::AST_NODE_CALL:
+    case ASTNodeKind::AST_NODE_FUNCDEF:
+        return c >= 1;                                  // 被调名 + 实参；形参 + 函数体
+    case ASTNodeKind::AST_NODE_PROGRAM:
+    case ASTNodeKind::AST_NODE_BLOCK:
+        return true;                                    // 序列，长度不限
+    default:
+        return false;                                   // 哨兵 NONE 不得出现
+    }
+}
+
+// 数组声明形状：children = [DECL, 维度 NUM]
+bool ArrayShapeOk(const ASTNode* n)
+{
+    if (n->m_kind != ASTNodeKind::AST_NODE_ARRAYDECL) { return true; }
+    return n->m_children.size() == 2 && n->m_children[0] && n->m_children[1] &&
+           n->m_children[0]->m_kind == ASTNodeKind::AST_NODE_DECL &&
+           n->m_children[1]->m_kind == ASTNodeKind::AST_NODE_NUM;
+}
+
+// 赋值目标/下标基址/被调名不得为空（阶段⑤ 由 FillOpenBase 回填）
+bool SlotFilledOk(const ASTNode* n)
+{
+    switch (n->m_kind)
+    {
+    case ASTNodeKind::AST_NODE_ASSIGN:
+    case ASTNodeKind::AST_NODE_INDEX:
+        return n->m_children.size() == 2 && n->m_children[0] != nullptr;
+    case ASTNodeKind::AST_NODE_CALL:
+        return !n->m_children.empty() && n->m_children[0] != nullptr &&
+               n->m_children[0]->m_kind == ASTNodeKind::AST_NODE_IDENT;
+    default:
+        return true;
+    }
 }
 
 } // namespace
@@ -194,6 +268,31 @@ int main(int argc, char* argv[])
     Check(!decls.empty(), "AST contains at least one Decl node");
     Check(identUnset, "parser leaves IdentNode::m_iSymIdx = -1 (semantic backfill)");
     Check(declUnset, "parser leaves DeclNode::m_iSymIdx = -1 (semantic backfill)");
+
+    // ---- 阶段⑤：新 AST（m_children / 18 类节点 / 无哨兵）不变量 ----
+    std::vector<const ASTNode*> all;
+    WalkAll(root.get(), all);
+    Check(root->m_kind == ASTNodeKind::AST_NODE_PROGRAM, "root node is AST_NODE_PROGRAM");
+    Check(all.size() > 1, "AST contains more than the root node");
+    Check(std::all_of(all.begin(), all.end(), [](const ASTNode* n) {
+              return n->m_kind != ASTNodeKind::AST_NODE_NONE; }),
+          "AST contains no AST_NODE_NONE sentinel node");
+    Check(std::all_of(all.begin(), all.end(), [](const ASTNode* n) {
+              return !n->Label().empty(); }),
+          "every AST node has a non-empty Label()");
+    Check(std::all_of(all.begin(), all.end(), [](const ASTNode* n) { return ArityOk(n); }),
+          "every AST node has the expected child count for its kind");
+    Check(std::all_of(all.begin(), all.end(), [](const ASTNode* n) { return ArrayShapeOk(n); }),
+          "ARRAYDECL children are [DECL, dimension NUM]");
+    Check(std::all_of(all.begin(), all.end(), [](const ASTNode* n) { return SlotFilledOk(n); }),
+          "ASSIGN/INDEX base slot and CALL callee are filled (not null)");
+    Check(std::all_of(all.begin(), all.end(), [](const ASTNode* n) {
+              if (n->m_kind == ASTNodeKind::AST_NODE_IF) {
+                  return n->m_children.size() == 2 ||
+                         (n->m_children.size() == 3 && n->m_children[2] != nullptr);
+              }
+              return true; }),
+          "IF else branch is carried as children[2] when present");
 
     if (g_fail == 0)
     {

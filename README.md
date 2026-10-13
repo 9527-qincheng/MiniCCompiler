@@ -37,7 +37,7 @@ MiniCCompiler/
 │   │   ├── token.h/cpp     # Token/TokenType/LineInfo/CompileError/g_ErrorList（公共基础）
 │   │   └── lexer.h/cpp     # CLex（词法）
 │   ├── parser/
-│   │   ├── ast.h/cpp       # ASTNode + NumNode/IdentNode/DeclNode/AssignNode/BinOpNode/ListNode
+│   │   ├── ast.h/cpp       # ASTNode + 18 类节点（PROGRAM/DECL/FUNCDEF/PARAM/ARRAYDECL/BLOCK/ASSIGN/IF/WHILE/PRINT/RETURN/EMPTY/BINOP/UNOP/NUM/IDENT/INDEX/CALL，统一 m_children 多子节点）
 │   │   ├── grammar.h/cpp   # 92 条产生式 + FIRST/FOLLOW/SELECT + 预测分析表（脚本生成）
 │   │   └── parser.h/cpp    # CParser（LL(1) 预测分析表驱动，分析栈 + 语义动作 + 轨迹）
 │   ├── symbol/
@@ -238,6 +238,9 @@ pwsh -File tests/run_parser_unit.ps1
 
 - 需要 `g++` 在 PATH 中（可用 `-Cxx <path>` 指定编译器）
 - 常量比对覆盖 v4.0 四类常量（整型/实型/字符/布尔）与数组维度常量
+- 阶段⑤ 起新增**新 AST 不变量**断言：根为 `PROGRAM`、树中无 `AST_NODE_NONE` 哨兵、每个节点
+  `Label()` 非空、各节点类别子节点个数符合语义表、`ARRAYDECL` 子节点为 `[DECL, 维度 NUM]`、
+  `ASSIGN`/`INDEX` 基址槽与 `CALL` 被调名均已回填、`IF` 的 else 位于 `children[2]`
 
 ### 行为变更记录（golden 基线重定）
 
@@ -249,11 +252,18 @@ pwsh -File tests/run_parser_unit.ps1
    其 AST 包含两个 `Decl(INT a)` / `Decl(INT b)`。
    为不丢失"声明符列表畸形"的覆盖，新增 `err_decl_tail_no_name`（`int a, ;`，期望退出码 1）。
    **未删除用例、未放宽断言**。
-2. **数组声明的 AST 形状**：`int a[10];` 产出 `ArrayDecl(INT a[10])` 桥接节点，子节点为 `Decl(INT a)` 与 `Num(10)`（维度常量）。
-   v3.1 二叉树 AST（`ast.h`）没有数组/维度节点，本阶段先用解析器内部的桥接节点承载，
-   待阶段⑤（AST 多子节点重构）合并进 `ast.h`。阶段⑤ 之前，挑战版的 `print`/函数/下标/调用/空语句同样使用桥接节点。
+2. **数组声明的 AST 形状**：`int a[10];` 产出 `ArrayDecl(INT a[10])`，子节点为 `Decl(INT a)` 与 `Num(10)`（维度常量）。
+   阶段④ 先用解析器内部的桥接节点承载；**阶段⑤ 已合并为 `ast.h` 的正式节点 `AST_NODE_ARRAYDECL`**
+   （02 任务书 §5.2 要求，设计文档枚举 17 类之外新增的第 18 类）。
 
 其余用例的 AST 与错误定位（行列号）在换驱动后保持一致，未改动期望；错误恢复仍可单次运行报多个错误。
+
+3. **阶段⑤ AST 文本基线整体重定**（2026-10-13，`ast.h` 破坏性重构，设计文档 §5.3.2【变更·破坏性】）：
+   `List` 序列节点删除——根节点与块节点改为 `Program` / `Block`（子节点直接缩进，比 v3.1 少一层 `List` 包裹）；
+   一元运算 `UnaryOp(...)` 改名 `UnOp(...)`；新增 `FuncDef`/`Param`/`ArrayDecl`/`Print`/`Index`/`Call`/`Empty` 等正式节点。
+   本次**只改 AST 的文本形状**：37 条 `expected/*.ast.txt` 与 `tests/test.ast.txt` 重定，
+   **无任何 `*.err.txt` 变化**（错误定位与错误恢复未动），`ll1_411.parse.txt`（§4.11 的 82 步轨迹）**逐字未变**。
+   节点清单与子节点语义见 `docs/stage5_ast_review.md`。
 
 ## 各模块实现状态
 
@@ -283,11 +293,13 @@ pwsh -File tests/run_parser_unit.ps1
 5. **IRGenerator 构造**：第 4.5.4 为无参构造，第 6.5 契约为 `explicit IRGenerator(SymbolTable&)`；按第 6 章契约实现（绑定符号表以支持 OperandToString 转原文）。
 6. **ScopeType 枚举**：第 6 章 EnterScope 需要 `ScopeType t` 参数，文档未定义该枚举；本骨架补充 `ScopeType{SCOPE_GLOBAL, SCOPE_FUNCTION}`。
 7. **main 输出 asm**：第 6.7 约定挑战版输出汇编文件但未给后缀；本骨架固定输出 `<源文件名>.asm`（挑战版占位）。
-8. **v3.1 二叉树 AST 无法表达挑战版结构**（阶段④ 记录，未擅自改 `ast.h`）：挑战版的函数定义/形参、
+8. **v3.1 二叉树 AST 无法表达挑战版结构**（阶段④ 记录 → **阶段⑤ 已解决**）：挑战版的函数定义/形参、
    `print`、下标 `a[i]`、调用 `f(x)`、数组声明、空语句在 v3.1 的 11 类节点中没有对应类型。
-   阶段④ 在 `src/parser/parser.cpp` 内用局部桥接节点 `BridgeNode : ASTNode`（`m_kind = AST_NODE_NONE`）承载，
-   打印形如 `FuncDef(INT f)`、`Param(INT x)`、`Print`、`Index`、`Call`、`ArrayDecl(INT a[10])`、`Empty`；
-   阶段⑤ 完成 AST 多子节点重构（§5.3.2 的 20 类节点）后应合并进 `ast.h` 并删除桥接节点。
+   阶段④ 曾在 `src/parser/parser.cpp` 内用局部桥接节点 `BridgeNode : ASTNode`（`m_kind = AST_NODE_NONE`）承载；
+   阶段⑤ 已按设计文档 §5.3.2【变更·破坏性】把 `ast.h` 重构为 `m_children` 多子节点 + 18 类节点
+   （新增 `PROGRAM`/`FUNCDEF`/`PARAM`/`BLOCK`/`PRINT`/`INDEX`/`CALL`/`EMPTY`/`ARRAYDECL`，
+   `UNARY` 改名 `UNOP`，删除 `LIST`），**桥接节点已全部删除**，AST 文本基线整体重定
+   （见"行为变更记录"第 3 条）。
 9. **字符/布尔常量未登记常量表下标**：词法 Q12 只为整型/实型字面量回填 `Token::m_iConstIdx`，
    `'x'`/`true`/`false` 的 `m_iConstIdx` 为 -1；Parser 按"透传 token 字段"原则原样保留，
    语义阶段 semantic003 需自行按 token 登记常量（跨模块记录，未改词法）。
@@ -321,5 +333,9 @@ pwsh -File tests/run_parser_unit.ps1
   - 阶段④ 预测分析驱动器（`CParser` 重写 + `--dump-parse`）**已完成**：
     非递归分析栈、语义动作 semantic000–027 调度、恐慌式错误恢复（可连续报错）、
     §4.11 的 82 步轨迹与文档逐行一致
-  - 待实现：阶段⑤ AST 多子节点重构（合并解析器内的桥接节点，`ast.h` 增加 PROGRAM/FUNCDEF/PARAM/
-    BLOCK/PRINT/INDEX/CALL/EMPTY 等节点）→ 阶段⑥ 符号表扩展 → 阶段⑦ 语义动作与 IR → 阶段⑧ 目标码
+  - 阶段⑤ AST 多子节点重构（设计文档 §5.3.2【变更·破坏性】）**已完成**（2026-10-13）：
+    基类 `m_children` 取代 `m_left/m_right`，节点类别 11 → 18 类（新增 PROGRAM/FUNCDEF/PARAM/BLOCK/
+    PRINT/INDEX/CALL/EMPTY/ARRAYDECL，UNARY 改名 UNOP，删除 LIST），解析器内的桥接节点全部删除，
+    Print 由基类统一实现（各节点只提供 `Label()`）；37 条 `expected/*.ast.txt` 与 `tests/test.ast.txt` 重定，
+    **`*.err.txt` 与 §4.11 的 82 步轨迹逐字未变**；单元测试新增新 AST 不变量断言（17/17 通过）。
+  - 待实现：阶段⑥ 符号表扩展 → 阶段⑦ 语义动作与 IR → 阶段⑧ 目标码

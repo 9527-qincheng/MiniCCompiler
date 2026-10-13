@@ -1,0 +1,12 @@
+# MiniC 编辑器配置约定
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.mc]
+charset = utf-8-bom = false
+indent_style = tab

@@ -70,7 +70,7 @@ enum class TokenType
     TOKEN_NUM_INT,      // 052 整型常量
     TOKEN_NUM_FLOAT,    // 053 实型常量
     TOKEN_CHAR_CONST,   // 054 字符常量
-    TOKEN_STRING,       // 字符串常量（词法扩展，不入文法，无编码）
+    TOKEN_STRING,       // 字符串常量（词法扩展，不入文法；挑战版 print 不支持字符串字面量）
     /* 结束（编码 099） */
     TOKEN_EOF
 };

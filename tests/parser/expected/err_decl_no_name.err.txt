@@ -1,2 +1,2 @@
-minic: error: 1:5: expected variable name after type, but found ';' (SEMI)
+minic: error: 1:5: expected '标识符', but found ';' (SEMI)
 minic: 1 error(s) found, compilation failed

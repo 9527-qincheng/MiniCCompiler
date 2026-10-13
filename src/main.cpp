@@ -7,6 +7,7 @@
 // ============================================================================
 #include "lexer/lexer.h"
 #include "parser/parser.h"
+#include "parser/grammar.h"
 #include "symbol/symbol.h"
 #include "sema/ir.h"
 #include "codegen/codegen.h"
@@ -22,10 +23,11 @@ namespace
 
 void PrintUsage(std::ostream& os)
 {
-    os << "Usage: minic <source.mc> [--dump-tokens] [--dump-ast] "
+    os << "Usage: minic <source.mc> [--dump-tokens] [--dump-ast] [--dump-parse] "
           "[--dump-symtab] [--dump-quads]\n";
     os << "  --dump-tokens : write <src>.token.txt\n";
     os << "  --dump-ast    : write <src>.ast.txt\n";
+    os << "  --dump-parse  : write <src>.parse.txt (LL(1) 预测分析过程, §4.11)\n";
     os << "  --dump-symtab : write <src>.sym.txt\n";
     os << "  --dump-quads  : write <src>.quad.txt\n";
 }
@@ -40,6 +42,14 @@ std::string StripExtension(const std::string& path)
         return path.substr(0, dot);
     }
     return path;
+}
+
+// 仅保留路径中的文件名部分（如 tests/x.mc -> x.mc），用于解析轨迹头部，
+// 使 --dump-parse 的产物内容与源文件所在目录无关（便于与黄金基线逐字比对）。
+std::string BaseName(const std::string& path)
+{
+    size_t sep = path.find_last_of("/\\");
+    return (sep == std::string::npos) ? path : path.substr(sep + 1);
 }
 
 bool WriteTextFile(const std::string& path, const std::string& content)
@@ -66,6 +76,35 @@ std::string DumpTokensText(const TokenList& tokens)
     return out;
 }
 
+// LL(1) 预测分析过程（§4.11 表格形式）：<步骤> | <符号栈> | <剩余输入串> | <动作>
+std::string DumpParseText(const CParser& parser, const std::string& szSrcFile)
+{
+    const std::vector<ParseStep>& trace = parser.GetTrace();
+
+    std::string out = "# MiniC LL(1) 预测分析过程（设计文档 v4.0 §4.10 / §4.11）\n";
+    out += "# 源文件: " + BaseName(szSrcFile) + "\n";
+    out += "# 产生式: " + std::to_string(PROD_COUNT) + " 条；分析步骤: " +
+           std::to_string(trace.size()) + "；结果: " +
+           (parser.HasError() ? "有语法错误" : "接受") + "\n";
+    out += "| 步骤 | 符号栈 | 剩余输入串 | 动作 |\n";
+    out += "|---|---|---|---|\n";
+    for (const auto& s : trace)
+    {
+        out += "| " + std::to_string(s.m_iStep) + " | `" + s.m_szStack + "` | `" +
+               s.m_szInput + "` | " + s.m_szAction + " |\n";
+    }
+    if (parser.HasError())
+    {
+        out += "\n# 语法错误:\n";
+        for (const auto& e : parser.GetErrors())
+        {
+            out += "#   " + std::to_string(e.m_loc.m_iRow) + ":" +
+                   std::to_string(e.m_loc.m_iCol) + ": " + e.m_szMsg + "\n";
+        }
+    }
+    return out;
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
@@ -80,6 +119,7 @@ int main(int argc, char* argv[])
     const std::string srcFile = argv[1];
     bool dumpTokens = false;
     bool dumpAst = false;
+    bool dumpParse = false;
     bool dumpSymtab = false;
     bool dumpQuads = false;
 
@@ -88,6 +128,7 @@ int main(int argc, char* argv[])
         std::string arg = argv[i];
         if (arg == "--dump-tokens")      { dumpTokens = true; }
         else if (arg == "--dump-ast")    { dumpAst = true; }
+        else if (arg == "--dump-parse")  { dumpParse = true; }
         else if (arg == "--dump-symtab") { dumpSymtab = true; }
         else if (arg == "--dump-quads")  { dumpQuads = true; }
         else
@@ -114,9 +155,14 @@ int main(int argc, char* argv[])
         WriteTextFile(base + ".token.txt", DumpTokensText(lexer.GetTokenList()));
     }
 
-    // ---------- 3. 语法分析：CParser.Parse（骨架阶段 TODO） ----------
+    // ---------- 3. 语法分析：CParser.Parse（§4.10 LL(1) 预测分析表驱动） ----------
     CParser parser(lexer.GetTokenList());
     ASTNodePtr root = parser.Parse();
+
+    if (dumpParse)
+    {
+        WriteTextFile(base + ".parse.txt", DumpParseText(parser, srcFile));
+    }
 
     if (dumpAst)
     {
@@ -124,10 +170,6 @@ int main(int argc, char* argv[])
         if (root)
         {
             root->Print(oss, 0);
-        }
-        else
-        {
-            oss << "// AST dump: parser core not implemented yet (TODO)\n";
         }
         WriteTextFile(base + ".ast.txt", oss.str());
     }

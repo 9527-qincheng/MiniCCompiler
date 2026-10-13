@@ -1,0 +1,2 @@
+minic: error: 1:13: unexpected '{' (LBRACE); expected one of: [ (in 数组后缀)
+minic: 1 error(s) found, compilation failed

@@ -1,2 +1,2 @@
-minic: error: 1:5: expected variable name after type, but found '5' (NUM_INT)
+minic: error: 1:5: expected '标识符', but found '5' (NUM_INT)
 minic: 1 error(s) found, compilation failed

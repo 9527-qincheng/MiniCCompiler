@@ -5,9 +5,11 @@
 #   powershell -ExecutionPolicy Bypass -File tests\run_parser_tests.ps1 -Update
 #
 # 说明：
-#   - 对 tests\parser\*.mc 逐个运行 `minic <case>.mc --dump-ast`
-#   - 校验三项：退出码、AST 输出（<case>.ast.txt）、错误输出（stderr）
+#   - 对 tests\parser\*.mc 逐个运行 `minic <case>.mc --dump-ast --dump-parse`
+#   - 校验：退出码、AST 输出（<case>.ast.txt）、错误输出（stderr）
 #   - 期望结果存放于 tests\parser\expected\<case>.ast.txt / <case>.err.txt
+#   - 若存在 expected\<case>.parse.txt，则额外逐字比对 LL(1) 分析轨迹（§4.11）；
+#     该 golden 由设计文档 §4.11 表格提取，不随 -Update 刷新
 #   - `-Update` 用当前程序输出刷新期望结果（仅在确认行为变更是有意为之才使用）
 #   - 额外固定校验：tests\test.mc 的 AST 必须与 tests\test.ast.txt 逐字一致
 # ============================================================================
@@ -58,7 +60,10 @@ $cases = @(
     @{ name = "err_recovery";         exit = 1 },
     @{ name = "err_decl_no_name";     exit = 1 },
     @{ name = "err_decl_num_name";    exit = 1 },
-    @{ name = "err_multi_decl";       exit = 1 },
+    # 挑战版文法：`int a, b;` 合法（doc §4.11 示例输入即为此），故由 err_ 用例转为正向用例；
+    # 声明符列表的错误路径改由 err_decl_tail_no_name（`int a, ;`）覆盖
+    @{ name = "multi_decl";           exit = 0 },
+    @{ name = "err_decl_tail_no_name"; exit = 1 },
     # 扩展文法：一元运算与控制流（挑战版第一批，不含比较运算符）
     @{ name = "unary_ops";            exit = 0 },
     @{ name = "if_else";              exit = 0 },
@@ -66,7 +71,24 @@ $cases = @(
     @{ name = "return_stmt";          exit = 0 },
     @{ name = "nested_if";            exit = 0 },
     @{ name = "err_if_missing_paren"; exit = 1 },
-    @{ name = "err_block_unclosed";   exit = 1 }
+    @{ name = "err_block_unclosed";   exit = 1 },
+    # 挑战版语法补充用例：比较/逻辑运算符、bool/char/print、数组、函数、嵌套结构
+    @{ name = "compare_ops";          exit = 0 },
+    @{ name = "logic_ops";            exit = 0 },
+    @{ name = "bool_char";            exit = 0 },
+    @{ name = "print_stmt";           exit = 0 },
+    @{ name = "array_1d";             exit = 0 },
+    @{ name = "func_def";             exit = 0 },
+    @{ name = "nested_ctrl";          exit = 0 },
+    # 挑战版新语法的非法输入
+    @{ name = "err_print_no_paren";   exit = 1 },
+    @{ name = "err_array_no_size";    exit = 1 },
+    @{ name = "err_decl_after_stmt";  exit = 1 },
+    @{ name = "err_2d_array";         exit = 1 },
+    @{ name = "err_func_bad_param";   exit = 1 },
+    # §4.11 验收：输入即文档 82 步 golden trace 的示例；
+    # parse = $true 表示另外逐字比对 expected\ll1_411.parse.txt（该 golden 直接取自文档 §4.11 表格）
+    @{ name = "ll1_411";              exit = 0; parse = $true }
 )
 
 function Read-Text([string]$path) {
@@ -99,14 +121,16 @@ function Invoke-Case([string]$srcPath, [string]$tag, [int]$expectedExit) {
     $outFile = Join-Path $scratch ($tag + ".stdout.txt")
     $errFile = Join-Path $scratch ($tag + ".stderr.txt")
     $proc = Start-Process -FilePath $Exe `
-        -ArgumentList @("`"$workSrc`"", "--dump-ast") `
+        -ArgumentList @("`"$workSrc`"", "--dump-ast", "--dump-parse") `
         -Wait -NoNewWindow -PassThru `
         -RedirectStandardOutput $outFile -RedirectStandardError $errFile
     $astPath = [System.IO.Path]::ChangeExtension($workSrc, ".ast.txt")
+    $parsePath = [System.IO.Path]::ChangeExtension($workSrc, ".parse.txt")
     return @{
-        code = $proc.ExitCode
-        ast  = (Read-Text $astPath)
-        err  = (Read-Text $errFile)
+        code  = $proc.ExitCode
+        ast   = (Read-Text $astPath)
+        parse = (Read-Text $parsePath)
+        err   = (Read-Text $errFile)
     }
 }
 
@@ -121,10 +145,13 @@ foreach ($c in $cases) {
 
     $astGoldenPath = Join-Path $goldenDir ($c.name + ".ast.txt")
     $errGoldenPath = Join-Path $goldenDir ($c.name + ".err.txt")
+    $parseGoldenPath = Join-Path $goldenDir ($c.name + ".parse.txt")
 
     if ($Update) {
         Write-Golden $astGoldenPath $r.ast
         Write-Golden $errGoldenPath $r.err
+        # 注意：*.parse.txt golden 取自设计文档 §4.11，属"外部权威基线"，
+        # 不用程序自身输出刷新（否则等于自我印证）；如需更新请手工从文档提取。
         $updated += $c.name
         continue
     }
@@ -142,6 +169,14 @@ foreach ($c in $cases) {
     $gotErr = Normalize $r.err
     if ($expErr -ne $gotErr) {
         $problems += "stderr mismatch (`"$errGoldenPath`")"
+    }
+    # LL(1) 分析轨迹（仅对声明了 parse golden 的用例比对）
+    if (Test-Path -LiteralPath $parseGoldenPath) {
+        $expParse = Normalize (Read-Text $parseGoldenPath)
+        $gotParse = Normalize $r.parse
+        if ($expParse -ne $gotParse) {
+            $problems += "parse trace mismatch (`"$parseGoldenPath`")"
+        }
     }
 
     if ($problems.Count -eq 0) {

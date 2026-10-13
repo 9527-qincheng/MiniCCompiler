@@ -1,2 +1,2 @@
-minic: error: 2:1: expected ';' after declaration, but found 'int' (INT)
+minic: error: 2:1: unexpected 'int' (INT); expected one of: ( [ ; , (in 声明后续)
 minic: 1 error(s) found, compilation failed

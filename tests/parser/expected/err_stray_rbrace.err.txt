@@ -1,2 +1,2 @@
-minic: error: 2:1: unexpected '}' (RBRACE); expected a statement (assignment, if, while, return or block)
+minic: error: 2:1: unexpected '}' (RBRACE); expected one of: int float bool char void (in 声明部分)
 minic: 1 error(s) found, compilation failed

@@ -1,0 +1,51 @@
+List  @1:1
+  List  @1:1
+    Decl(INT a)  @1:1
+    List  @1:8
+      Decl(INT b)  @1:8
+      List  @1:15
+        Decl(BOOL t)  @1:15
+  List  @2:1
+    Assign  @2:1
+      Ident(a)  @2:1
+      Num(1)  @2:5
+    List  @2:8
+      Assign  @2:8
+        Ident(b)  @2:8
+        Num(2)  @2:12
+      List  @3:1
+        Assign  @3:1
+          Ident(t)  @3:1
+          BinOp(LT)  @3:7
+            Ident(a)  @3:5
+            Ident(b)  @3:9
+        List  @3:12
+          Assign  @3:12
+            Ident(t)  @3:12
+            BinOp(LE)  @3:18
+              Ident(a)  @3:16
+              Ident(b)  @3:21
+          List  @3:24
+            Assign  @3:24
+              Ident(t)  @3:24
+              BinOp(GT)  @3:30
+                Ident(a)  @3:28
+                Ident(b)  @3:32
+            List  @3:35
+              Assign  @3:35
+                Ident(t)  @3:35
+                BinOp(GE)  @3:41
+                  Ident(a)  @3:39
+                  Ident(b)  @3:44
+              List  @3:47
+                Assign  @3:47
+                  Ident(t)  @3:47
+                  BinOp(EQ)  @3:53
+                    Ident(a)  @3:51
+                    Ident(b)  @3:56
+                List  @3:59
+                  Assign  @3:59
+                    Ident(t)  @3:59
+                    BinOp(NE)  @3:65
+                      Ident(a)  @3:63
+                      Ident(b)  @3:68

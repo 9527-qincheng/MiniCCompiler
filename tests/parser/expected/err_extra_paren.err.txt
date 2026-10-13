@@ -1,2 +1,2 @@
-minic: error: 3:8: expected ';' after statement, but found ')' (RPAREN)
+minic: error: 3:8: expected ';', but found ')' (RPAREN)
 minic: 1 error(s) found, compilation failed

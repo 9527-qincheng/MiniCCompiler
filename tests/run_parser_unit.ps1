@@ -31,6 +31,7 @@ $sources = @(
     (Join-Path $srcDir "lexer\token.cpp"),
     (Join-Path $srcDir "lexer\lexer.cpp"),
     (Join-Path $srcDir "parser\ast.cpp"),
+    (Join-Path $srcDir "parser\grammar.cpp"),
     (Join-Path $srcDir "parser\parser.cpp")
 )
 
@@ -52,7 +53,14 @@ $inputs = @(
     "if_else.mc",
     "while_block.mc",
     "return_stmt.mc",
-    "nested_if.mc"
+    "nested_if.mc",
+    "compare_ops.mc",
+    "logic_ops.mc",
+    "bool_char.mc",
+    "print_stmt.mc",
+    "array_1d.mc",
+    "func_def.mc",
+    "nested_ctrl.mc"
 )
 
 $failures = 0

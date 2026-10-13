@@ -1,0 +1,5 @@
+List  @1:1
+  List  @1:1
+    Decl(INT a)  @1:1
+    List  @1:8
+      Decl(INT b)  @1:8

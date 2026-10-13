@@ -1,0 +1,82 @@
+# ============================================================================
+# MiniC 编译器 —— Git 属性配置
+# ----------------------------------------------------------------------------
+# 作用：显式声明各类文件的换行符与文本属性，避免团队成员因 core.autocrlf
+#       配置不同（Windows 默认 true，Linux/macOS 默认 false）而产生：
+#         1. 无意义的全文件 diff（所有行都标记为改动）
+#         2. 二进制文件被误当文本转换而损坏
+#
+# 约定：本项目所有源码与文本产物统一使用 LF（\n）存入仓库。
+#       工作区检出时的行尾由各自 core.autocrlf 决定，不影响仓库内容。
+# ============================================================================
+
+# ---------- 默认：自动识别文本文件，统一以 LF 存入仓库 ----------
+* text=auto eol=lf
+
+# ---------- 源码（显式声明为文本 + LF）----------
+*.c        text eol=lf
+*.cpp      text eol=lf
+*.h        text eol=lf
+*.hpp      text eol=lf
+
+# ---------- 构建与脚本 ----------
+*.txt      text eol=lf
+*.md       text eol=lf
+*.cmake    text eol=lf
+CMakeLists.txt  text eol=lf
+.gitignore      text eol=lf
+.gitattributes  text eol=lf
+
+# ---------- MiniC 源程序与测试产物 ----------
+# .mc 为 MiniC 源文件；.ast.txt/.parse.txt/.token.txt/.sym.txt/.quad.txt/.asm
+# 为编译器产物，作为黄金基线纳入版本管理，必须保持 LF 以与程序输出逐字一致。
+*.mc       text eol=lf
+*.asm      text eol=lf
+
+# ---------- 脚本语言 ----------
+# 说明：PowerShell 脚本要求 UTF-8 无 BOM 且以 LF 存储，
+#       否则 Windows PowerShell 5.1 会按 ANSI 解码中文注释并报出误导性语法错。
+#       详见 tests/*.ps1 顶部的 #Requires -Version 7.0 说明。
+*.ps1      text eol=lf
+*.psm1     text eol=lf
+*.py       text eol=lf
+*.bat      text eol=crlf
+*.cmd      text eol=crlf
+
+# ---------- 二进制文件（禁止任何换行符转换）----------
+*.exe      binary
+*.dll      binary
+*.lib      binary
+*.o        binary
+*.obj      binary
+*.a        binary
+*.so       binary
+*.png      binary
+*.jpg      binary
+*.jpeg     binary
+*.gif      binary
+*.ico      binary
+*.pdf      binary
+*.zip      binary
+*.7z       binary
+*.gz       binary
+*.docx     binary
+*.doc      binary
+*.xlsx     binary
+*.xls      binary
+*.pptx     binary
+*.ppt      binary
+
+# ---------- 构建目录与 IDE 配置不参与导出 ----------
+build/          export-ignore
+cmake-build-*/  export-ignore
+.vscode/        export-ignore
+.idea/          export-ignore
+
+# ---------- 让 GitHub 语言统计更准确（排除测试基线）----------
+tests/parser/expected/*.txt  linguist-generated
+tests/*.token.txt            linguist-generated
+tests/*.ast.txt              linguist-generated
+tests/*.parse.txt            linguist-generated
+tests/*.sym.txt              linguist-generated
+tests/*.quad.txt             linguist-generated

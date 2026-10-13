@@ -28,8 +28,11 @@ MiniCCompiler/
 ├── CMakeLists.txt          # C++17 + GLOB_RECURSE，产出 minic
 ├── README.md
 ├── .gitignore
+├── .gitattributes          # 统一换行符（LF）与二进制保护
+├── tools/
+│   └── generate_grammar.py # 由文法规格生成 src/parser/grammar.h/.cpp（阶段③）
 ├── src/
-│   ├── main.cpp            # 命令行解析 + 流水线 + 四类产物落盘
+│   ├── main.cpp            # 命令行解析 + 流水线 + 六类产物落盘
 │   ├── lexer/
 │   │   ├── token.h/cpp     # Token/TokenType/LineInfo/CompileError/g_ErrorList（公共基础）
 │   │   └── lexer.h/cpp     # CLex（词法）
@@ -53,7 +56,15 @@ MiniCCompiler/
 │   ├── bad_char.mc         # 字符常量错误
 │   ├── bad_op.mc           # 运算符错误
 │   ├── parser_expr.mc      # 表达式优先级
-│   └── bad_parser.mc       # 语法错误恢复
+│   ├── bad_parser.mc       # 语法错误恢复
+│   ├── parser/             # Parser 回归用例（40 个 .mc）与期望结果
+│   │   ├── *.mc            #   合法 21 条 + 非法 19 条
+│   │   └── expected/       #   *.ast.txt / *.err.txt / ll1_411.parse.txt
+│   ├── grammar_selfcheck.cpp      # 文法表自检（21 项断言）
+│   ├── parser_unit_test.cpp       # Parser 单元测试（AST 字段级）
+│   ├── run_parser_tests.ps1       # 回归测试脚本（需 PowerShell 7）
+│   ├── run_parser_unit.ps1        # 单元测试脚本（需 PowerShell 7）
+│   └── run_grammar_selfcheck.ps1  # 文法自检脚本（需 PowerShell 7）
 ├── examples/
 │   └── example.mc          # 挑战版关键字示例
 ├── docs/
@@ -128,6 +139,18 @@ g++ -std=c++17 -Wall -Wextra -Isrc -o build/minic.exe ^
 > 会报 `undefined reference`。**建议改用 `build.bat`**。
 
 产出可执行文件：`build/minic.exe`。
+
+### 源文件编码与换行约定
+
+| 项 | 约定 | 说明 |
+|---|---|---|
+| 文本编码 | **UTF-8 无 BOM** | 带 BOM 的 `.mc` 会被词法器当成 3 个非法字符（已知问题，见《词法模块待改进清单.md》P0） |
+| 换行符 | **LF**（`.gitattributes` 已强制） | 由 `.gitattributes` 统一，避免各人 `core.autocrlf` 配置不同产生的全文件 diff |
+| `.bat` 脚本 | 纯 ASCII + CRLF | cmd 按本地代码页解析，含中文会导致命令被拆解 |
+| `.ps1` 脚本 | UTF-8 无 BOM + LF | 5.1 会按 ANSI 解码中文注释并报误导性语法错，故要求 PowerShell 7 |
+
+> **注意**：仓库内文本统一以 LF 存储；工作区检出时的实际换行符取决于各人 `core.autocrlf`。
+> 解析测试脚本已内置 `Normalize()` 归一化，比对不受影响。
 
 ## 运行
 

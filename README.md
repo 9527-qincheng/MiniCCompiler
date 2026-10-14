@@ -62,6 +62,7 @@ MiniCCompiler/
 │   │   └── expected/       #   *.ast.txt / *.err.txt / ll1_411.parse.txt
 │   ├── grammar_selfcheck.cpp      # 文法表自检（21 项断言）
 │   ├── parser_unit_test.cpp       # Parser 单元测试（AST 字段级）
+│   ├── run_lexer_tests.ps1        # 词法回归测试脚本（需 PowerShell 7）
 │   ├── run_parser_tests.ps1       # 回归测试脚本（需 PowerShell 7）
 │   ├── run_parser_unit.ps1        # 单元测试脚本（需 PowerShell 7）
 │   └── run_grammar_selfcheck.ps1  # 文法自检脚本（需 PowerShell 7）
@@ -89,10 +90,16 @@ build.bat
 | 命令 | 作用 |
 |---|---|
 | `build.bat` | 编译，产出 `build\minic.exe` |
+| `build.bat test` | 编译后跑全部 4 套测试，任一失败即返回 1 |
 | `build.bat run tests\test.mc` | 编译后运行指定源文件 |
 | `build.bat list` | 列出参与编译的源文件 |
 | `build.bat clean` | 清理 `build` 目录 |
 | `build.bat rebuild` | 先清理再编译 |
+
+> `build.bat test` 等价于依次执行 `run_lexer_tests.ps1`、`run_grammar_selfcheck.ps1`、
+> `run_parser_tests.ps1`、`run_parser_unit.ps1`，适合提交前自检与 CI。
+> 退出码会如实传播（**注意**：`build.bat run` 也传播 `minic` 的退出码，
+> 早前版本因 `endlocal`/`exit` 分行书写会吞掉退出码恒返回 0，现已修复）。
 
 **特点**：
 
@@ -144,7 +151,7 @@ g++ -std=c++17 -Wall -Wextra -Isrc -o build/minic.exe ^
 
 | 项 | 约定 | 说明 |
 |---|---|---|
-| 文本编码 | **UTF-8 无 BOM** | 带 BOM 的 `.mc` 会被词法器当成 3 个非法字符（已知问题，见《词法模块待改进清单.md》P0） |
+| 文本编码 | **UTF-8 无 BOM** | 词法器现已能跳过源文件开头的 BOM（`lexer.cpp` OpenSource），但仍统一无 BOM 以免歧义 |
 | 换行符 | **LF**（`.gitattributes` 已强制） | 由 `.gitattributes` 统一，避免各人 `core.autocrlf` 配置不同产生的全文件 diff |
 | `.bat` 脚本 | 纯 ASCII + CRLF | cmd 按本地代码页解析，含中文会导致命令被拆解 |
 | `.ps1` 脚本 | UTF-8 无 BOM + LF | 5.1 会按 ANSI 解码中文注释并报误导性语法错，故要求 PowerShell 7 |
@@ -186,6 +193,36 @@ build\minic.exe tests\test.mc --dump-tokens --dump-ast --dump-symtab --dump-quad
 2:1  FLOAT   float
 ...
 ```
+
+## Lexer 回归测试
+
+词法模块的自动化回归测试（覆盖关键字/标识符/常量/运算符与界符/注释/字符串/字符转义/错误恢复）：
+
+```bash
+pwsh -File tests/run_lexer_tests.ps1
+
+# 确认行为变更是有意为之、且人工核对过 token 流之后，刷新期望结果
+pwsh -File tests/run_lexer_tests.ps1 -Update
+```
+
+- 用例输入：`tests/<case>.mc` 共 6 条；期望结果：`tests/<case>.token.txt`（与输入同目录）
+- 对每个用例执行 `minic <case>.mc --dump-tokens`，逐字比对 token 流
+- **不校验退出码**：`lex_char`/`lex_challenge`/`lex_op_edge` 是刻意的词法片段
+  （如 `a == b;`、`char a = 'a';` 单独成行），语法阶段必然报错并返回 1；该退出码来自
+  parser 而非 lexer，拿它判定词法正确性会产生误导
+- 对 `bad_char`/`bad_op` 额外断言 stderr 至少含一条 `minic: error:`，防止词法把非法输入
+  **静默吞掉**却输出"干净但不完整"的 token 流（这正是二者曾经的缺陷形态）
+- 临时目录建在仓库内 `build\_lexer_scratch\`，不依赖系统 `%TEMP%`
+- 需要已构建的 `build/minic.exe`（`build.bat build`）
+
+| 用例 | 覆盖点 |
+|---|---|
+| `test` | 最小示例：`int`/`float`/赋值/算术/分号 |
+| `lex_char` | 字符常量与转义 `'\n' '\t' '\'' '\\'` |
+| `lex_challenge` | 挑战版词法全覆盖：`bool`/`true`/`char`/`==`/`!=`/`<=`/`>=`/`&&`/`\|\|`/`!` |
+| `lex_op_edge` | 单/双字符运算符边界（`<` vs `<=`、`=` vs `==`、`!` vs `!=`） |
+| `bad_char` | 字符常量错误恢复（未闭合、多字符、非法转义） |
+| `bad_op` | 非法单字符运算符（`&`、`\|`、`<<`） |
 
 ## Parser 回归测试
 
@@ -314,11 +351,13 @@ pwsh -File tests/run_parser_unit.ps1
 - 阶段 1（已完成，v4.0 已变更）：CParser 最初为递归下降（声明→赋值→算术表达式）；
   **v4.0 起改为 LL(1) 预测分析表驱动**（详见下方"挑战版语法"）
 - **阶段 1.5（进行中）**：词法 v4.0 挑战版已完成（17 个终结符、编码映射、双字符运算符、字符常量）。
-  遗留待修见《词法模块待改进清单.md》：
-  1. **UTF-8 BOM 识别**（记事本保存的 `.mc` 会报 3 个 `unexpected character`）— P0
-  2. 多字符常量 `'ab'` 报错后仍产出 token（同一错误报两遍）— P1
-  3. 字符串 `STRING` 定位说明（词法支持、文法不支持）— P1
-  4. 5 个新用例缺配套 `*.token.txt` 期望输出 — P2
+  1. ~~**UTF-8 BOM 识别**（记事本保存的 `.mc` 会报 3 个 `unexpected character`）~~ — ✅ 已修
+     （`lexer.cpp` 的 `OpenSource` 检测并跳过 `EF BB BF`）
+  2. ~~多字符常量 `'ab'` 报错后仍产出 token（同一错误报两遍）~~ — ✅ 已修
+     （`ScanCharConst` 出错不再 `emplace_back`，改由语法阶段自然发现缺失）
+  3. 字符串 `STRING` 定位说明（词法支持、文法不支持）— P1（待办，语义/文法侧定夺）
+  4. ~~5 个新用例缺配套 `*.token.txt` 期望输出~~ — ✅ 已补，并新增
+     `tests/run_lexer_tests.ps1` 纳入自动回归（6/6 通过）
   5. 字符/布尔常量未回填 `m_iConstIdx`（词法只为整型/实型登记常量表下标），
      语义阶段 semantic003 需按 token 自行登记 — P2（跨模块，已在 Parser 单元测试注释中记录）
 - 阶段 2：语义动作（符号表登记/查重/类型检查/常量回填）接入

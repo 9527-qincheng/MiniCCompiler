@@ -25,7 +25,9 @@ if (-not $cxxPath) {
     exit 2
 }
 
-$scratch = Join-Path ([System.IO.Path]::GetTempPath()) ("minic_parser_unit_" + [System.Guid]::NewGuid().ToString("N"))
+# 临时目录建在仓库内（build\ 已被 .gitignore 排除），不依赖系统 %TEMP%
+# （受限环境下 %TEMP% 不可写会导致编译/运行假失败）。
+$scratch = Join-Path $repoRoot ("build\_parser_unit_scratch_" + [System.Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $scratch | Out-Null
 $exe = Join-Path $scratch "parser_unit_test.exe"
 

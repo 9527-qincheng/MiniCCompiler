@@ -111,7 +111,10 @@ function Write-Golden([string]$path, [string]$text) {
     [System.IO.File]::WriteAllText($path, (Normalize $text) + "`n", $utf8)
 }
 
-$scratch = Join-Path ([System.IO.Path]::GetTempPath()) ("minic_parser_" + [System.Guid]::NewGuid().ToString("N"))
+# 临时目录建在仓库内（build\ 已被 .gitignore 排除），不依赖系统 %TEMP%。
+# 受限环境（沙箱/精简权限）下 %TEMP% 可能不可写，症状为 41 个用例全 FAIL 并报
+# `minic: error: 0:0: cannot write output file: ...ll1_411.parse.txt` —— 属假失败。
+$scratch = Join-Path $repoRoot ("build\_parser_scratch_" + [System.Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $scratch | Out-Null
 
 $failures = @()

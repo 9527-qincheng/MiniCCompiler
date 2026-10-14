@@ -1,4 +1,4 @@
-﻿2:1  IDENT  a
+2:1  IDENT  a
 2:3  ASSIGN  =
 2:5  IDENT  b
 2:6  SEMI  ;

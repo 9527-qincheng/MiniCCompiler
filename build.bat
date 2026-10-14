@@ -9,6 +9,7 @@ rem  Usage:
 rem    build.bat                     build, output build\minic.exe
 rem    build.bat clean               remove build directory
 rem    build.bat rebuild             clean then build
+rem    build.bat test                build then run all test suites
 rem    build.bat run tests\test.mc   build then run given source
 rem    build.bat list                list source files to be compiled
 rem ----------------------------------------------------------------------------
@@ -29,6 +30,7 @@ rem        to the recursive call so it does not re-enter :run
 if /i "%~1"=="clean"   goto :clean
 if /i "%~1"=="rebuild" goto :rebuild
 if /i "%~1"=="list"    goto :list
+if /i "%~1"=="test"    goto :test
 if /i "%~1"=="run"     goto :run
 if /i "%~1"=="build"   goto :build
 if "%~1"==""           goto :build
@@ -149,6 +151,7 @@ echo   build.bat                     build project
 echo   build.bat clean               remove build directory
 echo   build.bat rebuild             clean then build
 echo   build.bat list                list source files
+echo   build.bat test                build then run all test suites
 echo   build.bat run ^<source.mc^>    build then run
 echo.
 endlocal
@@ -185,6 +188,59 @@ echo   Total !COUNT! source file^(s^) will be compiled
 endlocal
 exit /b 0
 
+:test
+rem  Build, then run every automated test suite in tests\.
+rem  NOTE: keep this file pure ASCII (cmd parses it under the local code page).
+echo.
+echo [BUILD] building before test ...
+call "%~f0" build
+if errorlevel 1 (
+    endlocal
+    exit /b 1
+)
+
+set "TESTRC=0"
+
+where pwsh >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] pwsh not found. Install PowerShell 7 ^(tests\*.ps1 need it^).
+    endlocal
+    exit /b 1
+)
+
+echo.
+echo [TEST] lexer regression ...
+pwsh -NoProfile -File "tests\run_lexer_tests.ps1"
+if errorlevel 1 set "TESTRC=1"
+
+echo.
+echo [TEST] grammar self-check ...
+pwsh -NoProfile -File "tests\run_grammar_selfcheck.ps1"
+if errorlevel 1 set "TESTRC=1"
+
+echo.
+echo [TEST] parser regression ...
+pwsh -NoProfile -File "tests\run_parser_tests.ps1"
+if errorlevel 1 set "TESTRC=1"
+
+echo.
+echo [TEST] parser unit ...
+pwsh -NoProfile -File "tests\run_parser_unit.ps1"
+if errorlevel 1 set "TESTRC=1"
+
+echo.
+echo ============================================================
+if "%TESTRC%"=="0" (
+    echo  ALL TEST SUITES PASSED
+) else (
+    echo  TEST FAILED - see the suite output above
+)
+echo ============================================================
+rem  IMPORTANT: keep endlocal and exit on the SAME line.
+rem  On separate lines, endlocal runs first and wipes TESTRC, so the
+rem  next line expands to a bare "exit /b" and always reports 0.
+endlocal & exit /b %TESTRC%
+
 :run
 rem  Everything after "run" is the program argument list.
 rem  %* still holds the full original line, so strip the leading "run ".
@@ -210,5 +266,7 @@ echo ------------------------------------------------------------
 set "RC=%errorlevel%"
 echo ------------------------------------------------------------
 echo [EXIT CODE] %RC%
-endlocal
-exit /b %RC%
+rem  IMPORTANT: keep endlocal and exit on the SAME line (see :test above) --
+rem  otherwise endlocal wipes RC before it is expanded and this always exits 0,
+rem  silently hiding minic's non-zero exit code from callers and CI.
+endlocal & exit /b %RC%

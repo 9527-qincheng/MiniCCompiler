@@ -1,4 +1,4 @@
-﻿2:1  CHAR  char
+2:1  CHAR  char
 2:6  IDENT  a
 2:8  ASSIGN  =
 2:10  CHAR_CONST  'a'

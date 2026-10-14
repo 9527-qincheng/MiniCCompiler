@@ -1,4 +1,4 @@
-﻿2:1  BOOL  bool
+2:1  BOOL  bool
 2:6  IDENT  flag
 2:11  ASSIGN  =
 2:13  TRUE  true

@@ -1,12 +1,4 @@
-﻿.\test_lexer.exe : minic: error: 2:3: unexpected character '&'
-所在位置 行:8 字符: 5
-+     .\test_lexer.exe "tests\$f.mc" > "tests\$f.token.txt" 2>&1
-+     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (minic: error: 2...d character '&':String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 
-minic: error: 3:3: unexpected character '|'
-2:1  IDENT  a
+﻿2:1  IDENT  a
 2:5  IDENT  b
 2:6  SEMI  ;
 3:1  IDENT  a

@@ -1,13 +1,4 @@
-﻿.\test_lexer.exe : minic: error: 2:10: multi-character char literal
-所在位置 行:8 字符: 5
-+     .\test_lexer.exe "tests\$f.mc" > "tests\$f.token.txt" 2>&1
-+     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (minic: error: 2...er char literal:String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 
-minic: error: 3:10: multi-character char literal
-minic: error: 4:12: unknown escape sequence '\q'
-2:1  CHAR  char
+﻿2:1  CHAR  char
 2:6  IDENT  a
 2:8  ASSIGN  =
 3:1  CHAR  char

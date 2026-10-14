@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include <ostream>
+#include <unordered_map>
 
 // 前向声明：Quad 在中间代码模块（sema/ir.h）完整定义，
 // 此处仅用于 ProcEntry::m_Codes 的容器声明（C++17 允许 vector<不完整类型> 成员）。
@@ -41,6 +42,8 @@ class VarEntry : public SymbolEntry
 public:
     TokenType m_type = TokenType::TOKEN_NONE; // 变量类型（TOKEN_INT / TOKEN_FLOAT）
     int       m_iOffset = 0;                  // 目标代码偏移（挑战版）
+    bool      m_bIsArray = false;             // 【新增 v4.0】是否数组
+    int       m_iArraySize = 0;               // 【新增 v4.0】数组元素个数
 };
 
 // 常量表项 ConstEntry（参考书 ConstInfo）
@@ -98,7 +101,8 @@ public:
 enum class ScopeType
 {
     SCOPE_GLOBAL,   // 全局作用域
-    SCOPE_FUNCTION  // 函数作用域（挑战版）
+    SCOPE_FUNCTION, // 函数作用域（挑战版）
+    SCOPE_BLOCK     // 【新增 v4.0】块作用域
 };
 
 // ----------------------------------------------------------------------------
@@ -113,6 +117,7 @@ public:
     bool        EnterScope(ScopeType t);                     // 进入作用域
     void        ExitScope();                                 // 退出作用域
     VarEntry*   RecVar(const std::string& name, TokenType type, int line, int col);
+    VarEntry*   RecArray(const std::string& name, TokenType type, int size, int line, int col); // 【新增 v4.0】
     ConstEntry* RecConst(const std::string& name, TokenType type, double value, int line, int col);
     const VarEntry*   SearchVar(const std::string& name) const;
     const ConstEntry* SearchConst(const std::string& name) const;
@@ -150,6 +155,11 @@ private:
     int         m_iScopeCounter;  // 作用域计数器
     ScopeType   m_curScope;       // 当前作用域
     int         m_curProcIndex;   // 当前过程索引（-1 全局）
+
+    // 【v4.0 新增】作用域链：每层是「名字 → m_VarInfoTbl 下标」。
+    // 存下标而非指针：m_VarInfoTbl 会 reallocate，而 ir.cpp 依赖扁平下标稳定。
+    std::vector<std::unordered_map<std::string, std::size_t>> m_varScopeStack;
+    std::vector<ScopeType> m_scopeTypeStack;   // 与上面同层，用于退出时恢复 m_curScope
 };
 
 #endif // MINIC_SYMBOL_SYMBOL_H

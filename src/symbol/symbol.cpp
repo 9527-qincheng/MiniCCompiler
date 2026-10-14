@@ -18,33 +18,45 @@ SymbolTable::SymbolTable()
     : m_iSerialId(0), m_iScopeCounter(1),
       m_curScope(ScopeType::SCOPE_GLOBAL), m_curProcIndex(-1)
 {
+    // 【v4.0】构造函数即建立全局作用域（层级 1），且永不弹出
+    m_varScopeStack.emplace_back();
+    m_scopeTypeStack.push_back(ScopeType::SCOPE_GLOBAL);
 }
 
 bool SymbolTable::EnterScope(ScopeType t)
 {
     ++m_iScopeCounter;
+    m_varScopeStack.emplace_back();      // 压入一层新作用域
+    m_scopeTypeStack.push_back(t);
     m_curScope = t;
     return true;
 }
 
 void SymbolTable::ExitScope()
 {
-    if (m_iScopeCounter > 1)
+    // 全局作用域永不弹出（size()==1 时不动）
+    if (m_varScopeStack.size() > 1)
     {
+        m_varScopeStack.pop_back();
+        m_scopeTypeStack.pop_back();
         --m_iScopeCounter;
     }
-    m_curScope = ScopeType::SCOPE_GLOBAL;
+    m_curScope = m_scopeTypeStack.empty() ? ScopeType::SCOPE_GLOBAL
+                                          : m_scopeTypeStack.back();
 }
 
 VarEntry* SymbolTable::RecVar(const std::string& name, TokenType type, int line, int col)
 {
-    // 重名检查（当前作用域内）：按文档约定重名报错
-    VarEntry* exist = SearchVarInfoTbl(name);
-    if (exist)
+    // ⚠️ 查重只看【当前】作用域：内层允许遮蔽外层同名变量（C 语义）。
+    // 若用 SearchVarInfoTbl（全链查找）查重，内层就永远无法遮蔽外层了。
+    auto& curMap = m_varScopeStack.back();
+    auto it = curMap.find(name);
+    if (it != curMap.end())
     {
         EmitError("duplicate variable '" + name + "'", LineInfo(line, col));
-        return exist;
+        return &m_VarInfoTbl[it->second];
     }
+
     VarEntry ve;
     ve.m_szName = name;
     ve.m_type = type;
@@ -52,8 +64,39 @@ VarEntry* SymbolTable::RecVar(const std::string& name, TokenType type, int line,
     ve.m_iScope = m_iScopeCounter;
     ve.m_iLine = line;
     ve.m_iCol = col;
+    ve.m_bIsArray = false;
+    ve.m_iArraySize = 0;
     m_VarInfoTbl.push_back(ve);
-    return &m_VarInfoTbl.back();
+
+    const std::size_t idx = m_VarInfoTbl.size() - 1;
+    curMap[name] = idx;                  // 登记「名字 → 扁平下标」
+    return &m_VarInfoTbl[idx];
+}
+
+VarEntry* SymbolTable::RecArray(const std::string& name, TokenType type, int size, int line, int col)
+{
+    auto& curMap = m_varScopeStack.back();
+    auto it = curMap.find(name);
+    if (it != curMap.end())
+    {
+        EmitError("duplicate variable '" + name + "'", LineInfo(line, col));
+        return &m_VarInfoTbl[it->second];
+    }
+
+    VarEntry ve;
+    ve.m_szName = name;
+    ve.m_type = type;
+    ve.m_iProcIndex = m_curProcIndex;
+    ve.m_iScope = m_iScopeCounter;
+    ve.m_iLine = line;
+    ve.m_iCol = col;
+    ve.m_bIsArray = true;
+    ve.m_iArraySize = size;
+    m_VarInfoTbl.push_back(ve);
+
+    const std::size_t idx = m_VarInfoTbl.size() - 1;
+    curMap[name] = idx;
+    return &m_VarInfoTbl[idx];
 }
 
 ConstEntry* SymbolTable::RecConst(const std::string& name, TokenType type, double value, int line, int col)
@@ -97,14 +140,29 @@ void SymbolTable::BackfillConst(int iConstIdx, const std::string& name, TokenTyp
 
 bool SymbolTable::CheckAssign(TokenType lhs, TokenType rhs, int line, int col)
 {
-    // Q9：float→int 允许隐式转换（C 语义截断）并打印警告
+    // Q9：float→int 允许隐式转换（C 语义截断）并打印警告，不阻断编译
     if (lhs == TokenType::TOKEN_INT && rhs == TokenType::TOKEN_FLOAT)
     {
         std::cerr << "minic: warning: " << line << ":" << col
                   << ": implicit conversion from float to int (truncated, Q9)"
                   << std::endl;
+        return true;
     }
-    // 其余组合（int→float / 同类型）允许；类型不匹配由调用方另行处理
+    // char↔int 兼容（C 语义）；bool 只与 bool 赋值为同类
+    if (lhs == rhs) { return true; }
+    if ((lhs == TokenType::TOKEN_CHAR && rhs == TokenType::TOKEN_INT) ||
+        (lhs == TokenType::TOKEN_INT  && rhs == TokenType::TOKEN_CHAR) ||
+        (lhs == TokenType::TOKEN_FLOAT && rhs == TokenType::TOKEN_INT))
+    {
+        return true;
+    }
+    // 其余组合：先只警告，不返回 false
+    // 理由：语法制导语义动作（parser.cpp 的 semantic025/026）还没接线，
+    //       现在改成硬失败，将来接线时行为不可预期。严格类型检查应先组内对齐再改。
+    std::cerr << "minic: warning: " << line << ":" << col
+              << ": suspicious assignment between "
+              << TokenTypeToString(lhs) << " and " << TokenTypeToString(rhs)
+              << std::endl;
     return true;
 }
 
@@ -173,12 +231,13 @@ int SymbolTable::RecConstTbl(const std::string& szVal, TokenType constType)
 
 VarEntry* SymbolTable::SearchVarInfoTbl(const std::string& name)
 {
-    // TODO：作用域链查找（当前线性扫描，基础版全局满足）
-    for (auto& v : m_VarInfoTbl)
+    // 【v4.0】自内向外按作用域链查找，先命中先返回（内层遮蔽外层）
+    for (auto it = m_varScopeStack.rbegin(); it != m_varScopeStack.rend(); ++it)
     {
-        if (v.m_szName == name)
+        auto found = it->find(name);
+        if (found != it->end())
         {
-            return &v;
+            return &m_VarInfoTbl[found->second];
         }
     }
     return nullptr;

@@ -1,0 +1,3 @@
+minic: error: 2:7: expected '(', but found 'a' (IDENT)
+minic: error: 2:8: expected ')', but found ';' (SEMI)
+minic: 2 error(s) found, compilation failed

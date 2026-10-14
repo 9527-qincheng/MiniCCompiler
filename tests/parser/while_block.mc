@@ -1,0 +1,2 @@
+int a;
+while (a) { a = a - 1; }

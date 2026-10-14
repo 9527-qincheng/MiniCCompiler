@@ -1,0 +1,11 @@
+Program  @1:1
+  Decl(INT a)  @1:1
+  Decl(INT b)  @1:8
+  Assign  @1:12
+    Ident(a)  @1:12
+    Num(2)  @1:16
+  Assign  @1:20
+    Ident(b)  @1:20
+    BinOp(PLUS)  @1:26
+      Ident(a)  @1:24
+      Num(1)  @1:28

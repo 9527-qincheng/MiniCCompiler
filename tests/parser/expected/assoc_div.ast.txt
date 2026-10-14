@@ -1,0 +1,9 @@
+Program  @1:1
+  Decl(INT a)  @1:1
+  Assign  @2:1
+    Ident(a)  @2:1
+    BinOp(DIV)  @2:13
+      BinOp(DIV)  @2:9
+        Num(100)  @2:5
+        Num(5)  @2:11
+      Num(2)  @2:15

@@ -1,0 +1,13 @@
+Program  @1:1
+  Decl(INT a)  @1:1
+  Decl(INT b)  @2:1
+  If  @3:1
+    Ident(a)  @3:5
+    If  @3:8
+      Ident(b)  @3:12
+      Assign  @3:15
+        Ident(a)  @3:15
+        Num(1)  @3:19
+      Assign  @3:27
+        Ident(a)  @3:27
+        Num(2)  @3:31

@@ -1,0 +1,2 @@
+minic: error: 2:7: unexpected 'a' (IDENT); expected one of: ( [ (in 后缀表达式1)
+minic: 1 error(s) found, compilation failed

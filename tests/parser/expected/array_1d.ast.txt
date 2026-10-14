@@ -1,0 +1,30 @@
+Program  @1:1
+  ArrayDecl(INT a[10])  @1:1
+    Decl(INT a)  @1:1
+    Num(10)  @1:6
+  ArrayDecl(INT b[5])  @1:12
+    Decl(INT b)  @1:12
+    Num(5)  @1:17
+  Assign  @2:1
+    Index  @2:2
+      Ident(a)  @2:1
+      Num(0)  @2:3
+    Num(1)  @2:8
+  Assign  @2:11
+    Index  @2:12
+      Ident(b)  @2:11
+      Num(1)  @2:13
+    Index  @2:19
+      Ident(a)  @2:18
+      Num(0)  @2:20
+  Assign  @2:24
+    Index  @2:25
+      Ident(a)  @2:24
+      Num(1)  @2:26
+    BinOp(PLUS)  @2:36
+      Index  @2:32
+        Ident(a)  @2:31
+        Num(0)  @2:33
+      Index  @2:39
+        Ident(b)  @2:38
+        Num(1)  @2:40

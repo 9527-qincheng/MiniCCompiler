@@ -85,6 +85,16 @@ bool CLex::OpenSource(const std::string& szFileName)
     std::ostringstream oss;
     oss << ifs.rdbuf();
     m_szSource = oss.str();
+
+    // 跳过 UTF-8 BOM（EF BB BF）：Windows 记事本/PS 保存的文件常带 BOM
+    if (m_szSource.size() >= 3 &&
+        static_cast<unsigned char>(m_szSource[0]) == 0xEF &&
+        static_cast<unsigned char>(m_szSource[1]) == 0xBB &&
+        static_cast<unsigned char>(m_szSource[2]) == 0xBF)
+    {
+        m_szSource.erase(0, 3);
+    }
+
     m_iPos = 0;
     m_iRow = 1;
     m_iCol = 1;
@@ -312,12 +322,11 @@ void CLex::ScanCharConst()
     ++m_iCol;
 
     char cVal = 0;
-    bool ok = true;
+    bool ok = true;   // 是否成功产出 token（出错则跳过，不产出）
 
     if (m_iPos >= m_szSource.size())
     {
         EmitError("unterminated char literal", LineInfo(row, col));
-        m_TokenList.emplace_back(TokenType::TOKEN_CHAR_CONST, "'", row, col);
         return;
     }
 
@@ -330,7 +339,6 @@ void CLex::ScanCharConst()
         if (m_iPos >= m_szSource.size())
         {
             EmitError("unterminated char literal after escape", LineInfo(row, col));
-            m_TokenList.emplace_back(TokenType::TOKEN_CHAR_CONST, "'\\", row, col);
             return;
         }
         char esc = m_szSource[m_iPos];
@@ -376,6 +384,7 @@ void CLex::ScanCharConst()
         if (m_iPos < m_szSource.size() && m_szSource[m_iPos] != '\'')
         {
             EmitError("multi-character char literal", LineInfo(row, col));
+            ok = false;
             // 跳到行尾或收尾引号，尽量恢复
             while (m_iPos < m_szSource.size() &&
                    m_szSource[m_iPos] != '\'' &&
@@ -396,7 +405,11 @@ void CLex::ScanCharConst()
     else if (ok)
     {
         EmitError("unterminated char literal", LineInfo(row, col));
+        ok = false;
     }
+
+    // 出错则不产出 token（方案 B），让语法阶段自然发现缺失
+    if (!ok) return;
 
     std::string text = m_szSource.substr(start, m_iPos - start);
     Token tok(TokenType::TOKEN_CHAR_CONST, text, row, col);

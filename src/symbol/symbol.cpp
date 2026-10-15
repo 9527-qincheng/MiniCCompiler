@@ -207,11 +207,9 @@ void SymbolTable::DumpSymTab(std::ostream& os) const
 int SymbolTable::RecVarTbl(const std::string& name, TokenType type, int line)
 {
     VarEntry* ve = RecVar(name, type, line, 0);
-    if (!ve)
-    {
-        return -1;
-    }
-    return static_cast<int>(m_VarInfoTbl.size()) - 1;
+    // 用指针差算下标：重名路径 RecVar 不会 push_back，而是返回已存在项，
+    // 此时 size()-1 是"最后一项"而非该项，会返回错下标（ir.cpp 按它回查会用错对象）。
+    return ve ? static_cast<int>(ve - m_VarInfoTbl.data()) : -1;
 }
 
 int SymbolTable::RecConstTbl(const std::string& szVal, TokenType constType)

@@ -9,7 +9,7 @@
 |---|---|---|
 | CLex | `bool OpenSource(const string&)` / `bool Run()` / `const TokenList& GetTokenList() const` | TokenList → CParser |
 | CParser | `CParser(const TokenList&)` / `ASTNodePtr Parse()` / `bool HasError() const` / `const vector<CompileError>& GetErrors() const` / `const vector<ParseStep>& GetTrace() const`（阶段④ 新增，供 `--dump-parse`） | ASTNodePtr → 语义/IR |
-| SymbolTable | `EnterScope(ScopeType)` / `ExitScope()` / `RecVar(name,type,line,col)→VarEntry*` / `RecConst(name,type,value,line,col)→ConstEntry*` / `SearchVar/SearchConst` / `BackfillConst(iConstIdx,name,type)` / `CheckAssign(lhs,rhs,line,col)` / `DumpSymTab(os)` | 符号信息 → IRGenerator |
+| SymbolTable | `EnterScope(ScopeType)` / `ExitScope()` / `RecVar(name,type,line,col)→VarEntry*` / `RecArray(name,type,size,line,col)→VarEntry*`（阶段⑥ 新增） / `RecConst(name,type,value,line,col)→ConstEntry*` / `SearchVar/SearchConst` / `BackfillConst(iConstIdx,name,type)` / `CheckAssign(lhs,rhs,line,col)` / `DumpSymTab(os)` | 符号信息 → IRGenerator |
 | IRGenerator | `explicit IRGenerator(SymbolTable&)` / `Generate(const ASTNodePtr&)` / `GetTmpVar(TokenType)` / `GetTmpLabel()` / `EmitIR(op,op1,op2,rslt)` / `GetCodes() const` / `OperandToString(op)` | CodeList → CCodeGen / --dump-quads |
 | CCodeGen | `explicit CCodeGen(const CodeList&)` / `bool Generate(AsmOutput&)` | 汇编输出（挑战版） |
 
@@ -41,6 +41,13 @@
 10. **分析栈元素结构扩展**（阶段④ 记录）：`StackItem` 在文档 §4.10 三字段之外增加
     `m_iValueBase` 与 `m_loc`，并新增内部 `Kind::REDUCE` 哨兵（静默、不进 `GetTrace()`，
     以保证 §4.11 的 82 步轨迹与文档逐行一致）。
+11. **符号表新增 `RecArray` 与 `SCOPE_BLOCK`**（阶段⑥ 符号表模块，2026-10-15）：
+    设计文档 §5.4【变更】要求变量表项支持数组维度、作用域增加块级。
+    变更内容：`ScopeType` 增 `SCOPE_BLOCK`；`VarEntry` 增 `m_bIsArray`/`m_iArraySize`；
+    新增 `VarEntry* RecArray(name, type, size, line, col)`；`SearchVarInfoTbl` 由线性扫描改为
+    **按作用域链自内向外查找**（内层可遮蔽外层）；`RecVar` 查重范围收窄为**当前作用域**；
+    `CheckAssign` 扩展 char↔int、同类型，其余组合改为告警不阻断。
+    兼容性：**未删除任何既有公开接口**，`m_VarInfoTbl` 仍为 public 且下标语义不变。
 
 > 说明：本节第 8–10 条为 2026-10-13 阶段⑤ 收尾时同步；**下面的"四、词法识别集合"仍是 v3.1 骨架版内容**，
 > 词法 v4.0 的现状（17 个挑战版终结符等）见 `README.md` 的模块状态表与《词法模块待改进清单.md》，

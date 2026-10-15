@@ -3,7 +3,7 @@
 // 覆盖：作用域栈出入、内层遮蔽外层、链式查找、当前作用域查重、
 //       扁平下标稳定、数组登记、RecVarTbl 返回值、全局作用域不可弹出
 // 编译运行：
-//   g++ -std=c++17 -Isrc tests/symbol_test.cpp src/symbol/symbol.cpp \
+//   g++ -std=c++17 -Isrc tests/symbol_test.cpp src/symbol/symbol.cpp
 //       src/lexer/token.cpp src/sema/ir.cpp -o build/symbol_test.exe && build/symbol_test.exe
 // 期望：stdout 打印 ALL SCOPE-CHAIN ASSERTIONS PASSED，退出码 0
 // ============================================================================
@@ -57,6 +57,13 @@ int main()
     int idx = sym.RecVarTbl("y", TokenType::TOKEN_INT, 11);
     assert(idx == (int)sym.m_VarInfoTbl.size() - 1);
     assert(sym.m_VarInfoTbl[idx].m_szName == "y");
+
+    // ⑦b 重名路径：RecVarTbl 必须返回"已存在那一项"的下标，而不是最后一项
+    int i1 = sym.RecVarTbl("x", TokenType::TOKEN_INT, 1);
+    int i2 = sym.RecVarTbl("y", TokenType::TOKEN_INT, 2);
+    int i3 = sym.RecVarTbl("x", TokenType::TOKEN_INT, 3);   // 重名，不新增
+    assert(i3 == i1);                                       // 而不是 i2
+    assert(i3 != i2);
 
     // ⑧ 全局作用域不可弹出：多余的 ExitScope 不影响全局表项
     sym.ExitScope(); sym.ExitScope(); sym.ExitScope();

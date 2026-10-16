@@ -229,6 +229,11 @@ pwsh -NoProfile -File "tests\run_parser_unit.ps1"
 if errorlevel 1 set "TESTRC=1"
 
 echo.
+echo [TEST] symbol scope-chain ...
+pwsh -NoProfile -File "tests\run_symbol_tests.ps1"
+if errorlevel 1 set "TESTRC=1"
+
+echo.
 echo ============================================================
 if "%TESTRC%"=="0" (
     echo  ALL TEST SUITES PASSED

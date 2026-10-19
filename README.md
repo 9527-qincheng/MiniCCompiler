@@ -68,6 +68,11 @@ MiniCCompiler/
 │   └── run_grammar_selfcheck.ps1  # 文法自检脚本（需 PowerShell 7）
 ├── examples/
 │   └── example.mc          # 挑战版关键字示例
+├── gui/
+│   ├── minic_gui.cpp       # Win32 图形界面（源码编辑 + 一键编译 + 七页签查看产物）
+│   ├── build_gui.bat       # 图形界面构建脚本（build / clean / run / all）
+│   ├── minic_gui.exe       # 构建产物（已被 .gitignore 排除）
+│   └── scratch/            # 运行期临时源码与产物（已被 .gitignore 排除，仅留 .gitkeep）
 ├── docs/
 │   └── interface.md        # 接口备忘 + 冲突记录
 └── build/                  # 构建产物目录（已被 .gitignore 排除）
@@ -193,6 +198,37 @@ build\minic.exe tests\test.mc --dump-tokens --dump-ast --dump-symtab --dump-quad
 2:1  FLOAT   float
 ...
 ```
+
+## 图形界面（GUI）
+
+仓库自带一个基于 Win32 API 的轻量图形界面，把「写代码 → 编译 → 看产物」串成一个窗口，
+适合课堂演示与手工试用例：
+
+```bash
+# 在仓库根目录先构建编译器，再构建图形界面（一步到位）
+gui\build_gui.bat all
+
+# 或者分开来
+build.bat
+gui\build_gui.bat run      # 构建并启动界面
+```
+
+界面功能：
+
+| 区域 | 说明 |
+|---|---|
+| 左侧编辑区 | 直接写 MiniC 源码；`Ctrl+S` 保存，`F5` 编译（等同于 `运行` 按钮） |
+| 工具栏 | 新建 / 打开 / 保存 / 另存为 / 运行 / 示例 / 清空结果 |
+| 右侧七个页签 | 输出（退出码 + 控制台文字 + 产物路径）、Token、语法树、符号表、四元式、汇编、分析过程 |
+| 状态栏 | 当前保存路径、编译结论、光标行列 |
+
+约定与注意：
+
+- 界面调用的是仓库内的 `build\minic.exe`（启动时自动搜索，找不到会提示先运行 `build.bat`；
+  也可用菜单 `编译 → 查找编译器` 手动指定）。
+- 未保存的编辑内容会先落到 `gui\scratch\` 下再编译，`gui\scratch\` 已被 `.gitignore` 排除。
+- `build_gui.bat` 的四个子命令：无参=构建、`clean`=删除 exe、`run`=构建并启动、`all`=先构建编译器再构建界面。
+- 只依赖系统自带的 `user32/gdi32/comctl32/comdlg32`，不需要任何第三方 GUI 框架。
 
 ## Lexer 回归测试
 

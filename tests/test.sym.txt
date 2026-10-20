@@ -1,6 +1,9 @@
 === Symbol Table (scope 1) ===
 -- Variables --
+  a : INT  @line 1 scope 1
+  b : FLOAT  @line 2 scope 1
 -- Constants --
+  1 : INT = 1  @line 3
 -- Types --
 -- Procedures (challenge) --
 -- Labels (challenge) --

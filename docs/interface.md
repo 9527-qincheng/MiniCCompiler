@@ -10,6 +10,7 @@
 | CLex | `bool OpenSource(const string&)` / `bool Run()` / `const TokenList& GetTokenList() const` | TokenList → CParser |
 | CParser | `CParser(const TokenList&)` / `ASTNodePtr Parse()` / `bool HasError() const` / `const vector<CompileError>& GetErrors() const` / `const vector<ParseStep>& GetTrace() const`（阶段④ 新增，供 `--dump-parse`） | ASTNodePtr → 语义/IR |
 | SymbolTable | `EnterScope(ScopeType)` / `ExitScope()` / `RecVar(name,type,line,col)→VarEntry*` / `RecArray(name,type,size,line,col)→VarEntry*`（阶段⑥ 新增） / `RecConst(name,type,value,line,col)→ConstEntry*` / `SearchVar/SearchConst` / `BackfillConst(iConstIdx,name,type)` / `CheckAssign(lhs,rhs,line,col)` / `DumpSymTab(os)` | 符号信息 → IRGenerator |
+| SemanticAnalyzer | `explicit SemanticAnalyzer(SymbolTable&)` / `void Analyze(const ASTNodePtr&)`（阶段⑥ 新增，遍历 AST 填充符号表；不新增独立产物） | ASTNodePtr → 符号表 |
 | IRGenerator | `explicit IRGenerator(SymbolTable&)` / `Generate(const ASTNodePtr&)` / `GetTmpVar(TokenType)` / `GetTmpLabel()` / `EmitIR(op,op1,op2,rslt)` / `GetCodes() const` / `OperandToString(op)` | CodeList → CCodeGen / --dump-quads |
 | CCodeGen | `explicit CCodeGen(const CodeList&)` / `bool Generate(AsmOutput&)` | 汇编输出（挑战版） |
 
@@ -48,6 +49,17 @@
     **按作用域链自内向外查找**（内层可遮蔽外层）；`RecVar` 查重范围收窄为**当前作用域**；
     `CheckAssign` 扩展 char↔int、同类型，其余组合改为告警不阻断。
     兼容性：**未删除任何既有公开接口**，`m_VarInfoTbl` 仍为 public 且下标语义不变。
+12. **新增语义分析模块 `SemanticAnalyzer`**（阶段⑥ 语义分析模块，2026-10-20）：
+     设计文档 §5.5 与 `src/sema/` 原先只有中间代码（`ir.h/ir.cpp`），未为语义分析预定义目录；
+     本模块落在 `src/sema/semantic.h` + `semantic.cpp`（与 `ir.h` 同目录，可被 `build.bat` 收集）。
+     接口：`explicit SemanticAnalyzer(SymbolTable&)` + `void Analyze(const ASTNodePtr&)`，
+     构造函数注入符号表（不修改 `IRGenerator` / `CParser` 的任何既有签名）。
+     接线点：`src/main.cpp` 第 4 阶段，**仅当 `g_ErrorList` 为空时执行**——语法阶段已报错时
+     AST 可能残缺，继续语义分析会产生连锁误报并破坏 `tests/parser/expected/*.err.txt` 黄金基线。
+     常量表：第 9 条的遗留问题（`'x'`/`true`/`false` 的 `m_iConstIdx` 为 -1）由语义阶段
+     自行 `RecConst` 登记解决，词法未改动。
+     行为影响：语义报错会使退出码为 1（此前不报错）；`--dump-symtab` 的 `.sym.txt`
+     从空表变为实际登记内容。
 
 > 说明：本节第 8–10 条为 2026-10-13 阶段⑤ 收尾时同步；**下面的"四、词法识别集合"仍是 v3.1 骨架版内容**，
 > 词法 v4.0 的现状（17 个挑战版终结符等）见 `README.md` 的模块状态表与《词法模块待改进清单.md》，

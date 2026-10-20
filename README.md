@@ -1,7 +1,7 @@
 
 # MiniC 编译器（挑战版，C++17）—— 项目说明
 
-**当前进度**：词法模块已按 v4.0 挑战版完成（17 个新终结符、编码映射、双字符运算符、字符常量）；语法模块已按 v4.0 挑战版落地为 **LL(1) 预测分析表驱动**（92 条产生式，非递归分析栈 + `src/parser/grammar.cpp` 预测表，`--dump-parse` 输出分析过程）；其余模块（语义接入、中间代码、目标代码）保留完整接口实现，核心逻辑留 TODO。
+**当前进度**：词法模块已按 v4.0 挑战版完成（17 个新终结符、编码映射、双字符运算符、字符常量）；语法模块已按 v4.0 挑战版落地为 **LL(1) 预测分析表驱动**（92 条产生式，非递归分析栈 + `src/parser/grammar.cpp` 预测表，`--dump-parse` 输出分析过程）；符号表模块已实现多表登记、作用域链查找与数组登记；**语义分析模块已实现并接入主流程**（`src/sema/semantic.cpp`，遍历 AST 登记变量/数组/函数/常量并做类型检查）；其余模块（中间代码、目标代码）保留完整接口实现，核心逻辑留 TODO。
 
 依据：《MiniC编译器数据结构设计.md》第 4 章（数据结构）与第 6 章（接口契约，Q1~Q12 定稿）；挑战版文法见《MiniC编译器设计文档_v4.0_挑战版LL1.md》。
 
@@ -43,6 +43,7 @@ MiniCCompiler/
 │   ├── symbol/
 │   │   └── symbol.h/cpp    # SymbolTable 多表（Var/Const/Type/Proc/Param/Label）+ 语义接口
 │   ├── sema/
+│   │   ├── semantic.h/cpp  # SemanticAnalyzer（遍历 AST 填充符号表 + 类型检查）
 │   │   └── ir.h/cpp        # Quad/Operand/QuadOp + IRGenerator（核心 TODO）
 │   └── codegen/
 │       └── codegen.h/cpp   # AsmOutput + CCodeGen（挑战版骨架）
@@ -183,7 +184,7 @@ build\minic.exe tests\test.mc --dump-tokens --dump-ast --dump-symtab --dump-quad
 | `--dump-tokens` | `tests/test.token.txt` | 已实现（词法演示） |
 | `--dump-ast` | `tests/test.ast.txt` | 已实现（LL(1) 表驱动解析产出的 AST） |
 | `--dump-parse` | `tests/test.parse.txt` | 已实现（分析栈/剩余输入/动作 逐步轨迹，对齐设计文档 §4.11） |
-| `--dump-symtab` | `tests/test.sym.txt` | 基础登记/查重可用 |
+| `--dump-symtab` | `tests/test.sym.txt` | 已实现（语义分析填充的多表符号表） |
 | `--dump-quads` | `tests/test.quad.txt` | 骨架占位（TODO） |
 
 - 默认同时生成 `<源文件名>.asm`（挑战版汇编骨架占位）。
@@ -344,7 +345,8 @@ pwsh -File tests/run_parser_unit.ps1
 |---|---|---|
 | CLex（词法） | OpenSource / Run / GetTokenList | **已实现（v4.0 挑战版）**：关键字(int/float/bool/char/void/if/else/while/print/return/true/false)、标识符、整型/实型/字符常量、运算符(+ - * / = == != < <= > >= && \|\| !)、界符((){}[];,)；注释与字符串；常量登记 m_ConstTexts；错误含行列号。**已补 TokenTypeToCode / CodeToTokenType 编码映射** |
 | CParser（语法） | CParser(TokenList&) / Parse / HasError / GetErrors / GetTrace | **已实现（v4.0 挑战版 LL(1) 预测分析表驱动）**：92 条产生式驱动的非递归分析栈（`StackItem{TERM/NTERM/ACTION}` + 内部规约标记），语义动作 semantic000–027 按设计文档 §8 位置调度（符号表/IR 类动作登记占位，待阶段⑥⑦）；支持声明（含 `int a, b;` 多声明符与一维数组）、赋值/下标赋值/调用语句、表达式优先级与结合性、一元 `- !`、比较与逻辑运算符、`bool`/`char`/`true`/`false`、`print`、`if/else`（就近配对）、`while`、`return`、复合语句、函数定义与调用；恐慌式错误恢复可连续报错不崩溃；`GetTrace()` 输出分析轨迹供 `--dump-parse` 使用。公开签名与 §7.2 一致，`GetTrace()` 为新增 |
-| SymbolTable（语义） | EnterScope / ExitScope / RecVar / RecConst / SearchVar / SearchConst / BackfillConst / CheckAssign / DumpSymTab | 基础实现：多表登记/查重/作用域/常量回填/float→int 警告（Q9） |
+| SymbolTable（符号表） | EnterScope / ExitScope / RecVar / RecArray / RecConst / SearchVar / SearchConst / BackfillConst / CheckAssign / DumpSymTab | **已实现**：多表登记、作用域链自内向外查找（内层可遮蔽外层）、数组登记（m_bIsArray / m_iArraySize）、常量回填、float→int 告警（Q9） |
+| SemanticAnalyzer（语义分析） | SemanticAnalyzer(SymbolTable&) / Analyze(const ASTNodePtr&) | **已实现**：遍历 AST 登记变量/数组/函数/形参/常量，未声明与重复声明报错，按 §8.1 类型系统做运算与赋值检查 |
 | IRGenerator（中间代码） | Generate / GetTmpVar / GetTmpLabel / EmitIR / GetCodes / OperandToString | 骨架：计数器/EmitIR/OperandToString 可用，遍历 AST 生成留 TODO |
 | CCodeGen（目标代码，挑战版） | Generate / IRtoASM / AsmOutput | 骨架：输出结构完整，x86 翻译留 TODO |
 

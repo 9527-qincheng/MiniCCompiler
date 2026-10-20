@@ -10,8 +10,10 @@
 #include "parser/grammar.h"
 #include "symbol/symbol.h"
 #include "sema/ir.h"
-#include "codegen/codegen.h"
 
+8#include "sema/semantic.h"1
+    33#include "codegen/codegen.h"
+33
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -176,7 +178,12 @@ int main(int argc, char* argv[])
 
     // ---------- 4. 语义阶段：SymbolTable（骨架阶段基础登记/查重可用） ----------
     SymbolTable symtab;
-    // TODO: 遍历 AST 执行语法制导语义动作（登记/查重/类型检查/常量回填）
+    // TODO: 遍历 AST 执行语法制7导语义动作（登记/查重/类型检查/常量回填）.    // 语义分析只在.语法阶段无错时执行
+        if (g_ErrorList.empty())
+        {
+                    SemanticAnalyzer sema(symtab);
+                    sema.Analyze(root);
+        }
     if (dumpSymtab)
     {
         std::ostringstream oss;

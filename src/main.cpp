@@ -10,6 +10,7 @@
 #include "parser/grammar.h"
 #include "symbol/symbol.h"
 #include "sema/ir.h"
+#include "sema/semantic.h"
 #include "codegen/codegen.h"
 
 #include <fstream>
@@ -176,7 +177,15 @@ int main(int argc, char* argv[])
 
     // ---------- 4. 语义阶段：SymbolTable（骨架阶段基础登记/查重可用） ----------
     SymbolTable symtab;
-    // TODO: 遍历 AST 执行语法制导语义动作（登记/查重/类型检查/常量回填）
+    // 语义分析只在语法阶段无错时执行。
+    // 这个 if 判断不能省：语法已经报错的输入（如 tests/parser/err_recovery.mc
+    // 里的 `a = ;`），AST 是残缺的，硬跑语义会额外报出 "undefined identifier b"
+    // 之类的次生错误，把 parser 的黄金基线 err_recovery.err.txt 弄脏。
+    if (g_ErrorList.empty())
+    {
+        SemanticAnalyzer sema(symtab);
+        sema.Analyze(root);
+    }
     if (dumpSymtab)
     {
         std::ostringstream oss;

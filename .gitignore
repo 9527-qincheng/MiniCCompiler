@@ -23,3 +23,6 @@ compile_commands.json
 # 临时文件
 *.tmp
 *.log
+
+# GUI（Electron）依赖
+gui/node_modules/

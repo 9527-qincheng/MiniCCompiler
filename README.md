@@ -69,11 +69,6 @@ MiniCCompiler/
 │   └── run_grammar_selfcheck.ps1  # 文法自检脚本（需 PowerShell 7）
 ├── examples/
 │   └── example.mc          # 挑战版关键字示例
-├── gui/
-│   ├── minic_gui.cpp       # Win32 图形界面（源码编辑 + 一键编译 + 七页签查看产物）
-│   ├── build_gui.bat       # 图形界面构建脚本（build / clean / run / all）
-│   ├── minic_gui.exe       # 构建产物（已被 .gitignore 排除）
-│   └── scratch/            # 运行期临时源码与产物（已被 .gitignore 排除，仅留 .gitkeep）
 ├── docs/
 │   └── interface.md        # 接口备忘 + 冲突记录
 └── build/                  # 构建产物目录（已被 .gitignore 排除）

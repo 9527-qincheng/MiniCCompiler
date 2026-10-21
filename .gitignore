@@ -23,7 +23,3 @@ compile_commands.json
 # 临时文件
 *.tmp
 *.log
-
-# GUI 运行时生成的临时源码与产物（gui/scratch 目录本身保留）
-gui/scratch/*
-!gui/scratch/.gitkeep

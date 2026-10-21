@@ -1,0 +1,17 @@
+{
+  "name": "minic-gui",
+  "version": "1.0.0",
+  "description": "MiniC 编译器 GUI（Electron 前端 + minic.exe 后端）",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron . --no-sandbox --disable-gpu",
+    "shot": "electron . --no-sandbox --disable-gpu --shot",
+    "test": "node test/compile-smoke.js"
+  },
+  "author": "MiniC 实训小组",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^37.10.3"
+  }
+}

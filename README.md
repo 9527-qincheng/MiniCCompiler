@@ -197,34 +197,26 @@ build\minic.exe tests\test.mc --dump-tokens --dump-ast --dump-symtab --dump-quad
 
 ## 图形界面（GUI）
 
-仓库自带一个基于 Win32 API 的轻量图形界面，把「写代码 → 编译 → 看产物」串成一个窗口，
-适合课堂演示与手工试用例：
+`gui/` 是基于 **Electron** 的桌面界面：暗/亮双主题、多文件标签、源码行号与语法高亮、
+代码格式化、7 类产物页签，以及可点击跳转的诊断列表，把「写代码 → 编译 → 看产物」串成一个窗口。
 
 ```bash
-# 在仓库根目录先构建编译器，再构建图形界面（一步到位）
-gui\build_gui.bat all
-
-# 或者分开来
-build.bat
-gui\build_gui.bat run      # 构建并启动界面
+cd gui
+npm install        :: 首次安装 Electron（.npmrc 已配置 npmmirror 镜像）
+启动GUI.bat        :: 或 npm start；需先 build.bat 生成 build\minic.exe
 ```
 
-界面功能：
-
-| 区域 | 说明 |
+| 页签 | 数据来源 |
 |---|---|
-| 左侧编辑区 | 直接写 MiniC 源码；`Ctrl+S` 保存，`F5` 编译（等同于 `运行` 按钮） |
-| 工具栏 | 新建 / 打开 / 保存 / 另存为 / 运行 / 示例 / 清空结果 |
-| 右侧七个页签 | 输出（退出码 + 控制台文字 + 产物路径）、Token、语法树、符号表、四元式、汇编、分析过程 |
-| 状态栏 | 当前保存路径、编译结论、光标行列 |
+| Token / 语法分析 / 语法树 / 符号表 | `--dump-tokens` / `--dump-parse` / `--dump-ast` / `--dump-symtab` 产物 |
+| 四元式 / 汇编 | `--dump-quads` 与默认 `.asm` 产物（当前为 TODO 占位） |
+| 诊断 | stderr 的 `minic: error/warning: 行:列: 消息`，点击跳到源码行 |
 
-约定与注意：
-
-- 界面调用的是仓库内的 `build\minic.exe`（启动时自动搜索，找不到会提示先运行 `build.bat`；
-  也可用菜单 `编译 → 查找编译器` 手动指定）。
-- 未保存的编辑内容会先落到 `gui\scratch\` 下再编译，`gui\scratch\` 已被 `.gitignore` 排除。
-- `build_gui.bat` 的四个子命令：无参=构建、`clean`=删除 exe、`run`=构建并启动、`all`=先构建编译器再构建界面。
-- 只依赖系统自带的 `user32/gdi32/comctl32/comdlg32`，不需要任何第三方 GUI 框架。
+- 用法、快捷键、目录结构与启动器原理见 [gui/README.md](gui/README.md)。
+- 界面规范板（S1~S5）与验收截图见 [`docs/gui-acceptance/`](docs/gui-acceptance/)。
+- 冒烟测试：`cd gui && node test\compile-smoke.js`（校验各类产物齐全、Token 格式与错误诊断格式）。
+- 注意：本机实测原生程序在含中文的路径下文件 I/O 会失效，启动脚本会把 Electron 运行时部署到
+  `%LOCALAPPDATA%\minic-gui\runtime`、`lib/compiler.js` 会把 `minic.exe` 复制到 `%TEMP%\minic-gui`，首次启动稍慢。
 
 ## Lexer 回归测试
 

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+<title>MiniC 编译器</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app" data-theme="dark">
+
+  <!-- ───────────── 标题栏 ───────────── -->
+  <header id="titlebar">
+    <div class="brand">
+      <div class="logo">m</div>
+      <span class="app-title">MiniC 编译器</span>
+      <span class="app-ver">GUI · v1.0</span>
+      <span class="app-stack">Electron · minic C++17</span>
+    </div>
+    <div class="win-controls">
+      <button class="win-btn" id="btn-min" title="最小化" tabindex="-1">
+        <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 6h8" stroke="currentColor" stroke-width="1.2"/></svg>
+      </button>
+      <button class="win-btn" id="btn-max" title="最大化" tabindex="-1">
+        <svg width="12" height="12" viewBox="0 0 12 12"><rect x="2.2" y="2.2" width="7.6" height="7.6" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+      </button>
+      <button class="win-btn close" id="btn-close" title="关闭" tabindex="-1">
+        <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2.4 2.4l7.2 7.2M9.6 2.4L2.4 9.6" stroke="currentColor" stroke-width="1.2"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ───────────── 菜单栏 ───────────── -->
+  <nav id="menubar">
+    <button class="menu-item" data-menu="file">文件</button>
+    <button class="menu-item" data-menu="edit">编辑</button>
+    <button class="menu-item" data-menu="build">构建</button>
+    <button class="menu-item" data-menu="view">视图</button>
+    <button class="menu-item" data-menu="help">帮助</button>
+    <div id="menu-pop" class="menu-pop hidden"></div>
+  </nav>
+
+  <!-- ───────────── 工具栏 ───────────── -->
+  <div id="toolbar">
+    <button class="btn" id="btn-new-file" title="新建文件 (Ctrl+N)">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+        <path d="M4 1.8h5.4l3 3v9.4H4z"/><path d="M9.2 1.8v3.2h3.2"/><path d="M8 8.2v4M6 10.2h4"/>
+      </svg><span>新建</span>
+    </button>
+    <button class="btn" id="btn-open">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+        <path d="M1.6 4.2h4.1l1.3 1.6h7.4v7.4a1 1 0 0 1-1 1H2.6a1 1 0 0 1-1-1V4.2z"/>
+        <path d="M1.6 4.2V3.1a1 1 0 0 1 1-1h3.2l1.2 1.4"/>
+      </svg><span>打开</span>
+    </button>
+    <button class="btn" id="btn-save">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+        <path d="M2.5 2.5h8.6l2.4 2.4v8.6h-11z"/>
+        <path d="M5 2.5v4h5.4v-4M5 13.5v-4h6v4"/>
+      </svg><span>保存</span>
+    </button>
+    <div class="btn dropdown" id="btn-sample">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+        <rect x="2.4" y="1.8" width="11.2" height="12.4" rx="1"/>
+        <path d="M5 5.2h6M5 8h6M5 10.8h4"/>
+      </svg><span>示例</span>
+      <svg class="caret" width="8" height="8" viewBox="0 0 8 8"><path d="M1.4 2.8L4 5.4l2.6-2.6" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>
+    </div>
+    <span class="toolbar-sep"></span>
+    <button class="btn primary" id="btn-compile">
+      <svg width="13" height="13" viewBox="0 0 14 14"><path d="M3.2 1.8l8.4 5.2-8.4 5.2z" fill="currentColor"/></svg><span>编译</span>
+    </button>
+    <button class="btn" id="btn-clear">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+        <path d="M3 4.4h10M6.4 4.4V2.8h3.2v1.6M4.2 4.4l.7 9h6.2l.7-9M6.6 6.8v4.4M9.4 6.8v4.4"/>
+      </svg><span>清空</span>
+    </button>
+    <span class="toolbar-sep"></span>
+    <div class="file-pill" id="file-pill" title="当前文件">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+        <path d="M4 1.8h5.4l3 3v9.4H4z"/><path d="M9.2 1.8v3.2h3.2"/>
+      </svg>
+      <span id="file-name">work.mc</span>
+      <span class="dirty-mark" id="dirty-mark" title="未保存">●</span>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn ghost compact" id="btn-font" title="编辑器字号">Aa</button>
+    <button class="btn ghost" id="btn-theme" title="切换主题 (Ctrl+Shift+L)">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+        <circle cx="8" cy="8" r="6.2"/><path d="M8 1.8v12.4a6.2 6.2 0 0 0 0-12.4z" fill="currentColor" stroke="none"/>
+      </svg><span id="theme-label">主题</span>
+    </button>
+    <div class="top-status" id="top-status">
+      <span class="dot ok" id="top-dot"></span>
+      <span id="top-status-text">就绪</span>
+    </div>
+  </div>
+
+  <!-- ───────────── 主区域 ───────────── -->
+  <main id="main">
+    <!-- 左：源码编辑器 -->
+    <section class="panel" id="editor-panel">
+      <div class="panel-head">
+        <span class="panel-title">源码编辑器</span>
+        <span class="panel-meta" id="editor-meta">MiniC · 可编辑</span>
+      </div>
+      <div class="file-tabs" id="file-tabs">
+        <div class="file-tab-list" id="file-tab-list"></div>
+        <button class="file-tab-add" id="btn-tab-new" title="新建文件 (Ctrl+N)">+</button>
+      </div>
+      <div class="editor-body">
+        <div class="gutter" id="gutter"></div>
+        <div class="code-wrap" id="code-wrap">
+          <div class="current-line" id="current-line"></div>
+          <div class="line-marks" id="line-marks"></div>
+          <pre class="highlight" id="highlight" aria-hidden="true"></pre>
+          <textarea id="source" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off"></textarea>
+          <div class="editor-placeholder" id="editor-placeholder">在此输入 MiniC 源码，或点击「打开」选择文件、用「示例▾」载入示例</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 右：编译产物 -->
+    <section class="panel" id="output-panel">
+      <div class="panel-head">
+        <span class="panel-title">编译产物</span>
+        <span class="panel-meta">7 类产物 · 只读</span>
+      </div>
+      <div class="tabs" id="tabs">
+        <button class="tab active" data-tab="token">Token<span class="tab-count" id="c-token">—</span></button>
+        <button class="tab" data-tab="parse">语法分析<span class="tab-count" id="c-parse"></span></button>
+        <button class="tab" data-tab="ast">语法树<span class="tab-tag">AST</span></button>
+        <button class="tab" data-tab="sym">符号表<span class="tab-count" id="c-sym"></span></button>
+        <button class="tab" data-tab="quad">四元式<span class="tab-count" id="c-quad"></span></button>
+        <button class="tab" data-tab="asm">汇编<span class="tab-tag">ASM</span></button>
+        <button class="tab" data-tab="diag">诊断<span class="tab-count" id="c-diag">0</span></button>
+      </div>
+      <div class="tab-body" id="tab-body">
+        <div class="pane active" id="pane-token">
+          <div class="empty-hint" id="token-empty">尚未编译 · 写点代码后点击「编译」（Ctrl+Enter）</div>
+          <div class="token-table-wrap">
+            <table class="token-table">
+              <thead><tr><th class="c-line">行</th><th class="c-col">列</th><th class="c-type">类型</th><th class="c-val">值</th></tr></thead>
+              <tbody id="token-rows"></tbody>
+            </table>
+          </div>
+          <div class="pane-foot" id="token-foot"></div>
+        </div>
+        <div class="pane" id="pane-parse"><pre class="raw" id="raw-parse"></pre></div>
+        <div class="pane" id="pane-ast"><pre class="raw" id="raw-ast"></pre></div>
+        <div class="pane" id="pane-sym"><pre class="raw" id="raw-sym"></pre></div>
+        <div class="pane" id="pane-quad"><pre class="raw" id="raw-quad"></pre></div>
+        <div class="pane" id="pane-asm"><pre class="raw" id="raw-asm"></pre></div>
+        <div class="pane" id="pane-diag">
+          <div class="diag-head" id="diag-head"></div>
+          <div class="diag-list" id="diag-list"></div>
+          <div class="diag-foot" id="diag-foot"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ───────────── 状态栏 ───────────── -->
+  <footer id="statusbar">
+    <span class="sb-item" id="sb-exe">minic v1.0 · C++17</span>
+    <span class="sb-sep">|</span>
+    <span class="sb-item" id="sb-cursor">行 1 · 列 1</span>
+    <span class="sb-sep">|</span>
+    <span class="sb-item">UTF-8</span>
+    <span class="sb-sep">|</span>
+    <span class="sb-item">MiniC · LL(1) 文法</span>
+    <span class="spacer"></span>
+    <span class="sb-item dim" id="sb-theme">暗色主题</span>
+  </footer>
+</div>
+<script src="renderer.js"></script>
+</body>
+</html>

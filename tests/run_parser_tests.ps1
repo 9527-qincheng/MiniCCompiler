@@ -83,6 +83,8 @@ $cases = @(
     @{ name = "array_1d";             exit = 0 },
     @{ name = "func_def";             exit = 0 },
     @{ name = "nested_ctrl";          exit = 0 },
+    # 收尾清单（2026-10-21）：全特性叠加用例——一维数组+下标赋值+函数定义(形参)+while+if-else+print+return
+    @{ name = "full_challenge";       exit = 0 },
     # 挑战版新语法的非法输入
     @{ name = "err_print_no_paren";   exit = 1 },
     @{ name = "err_array_no_size";    exit = 1 },

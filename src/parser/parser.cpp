@@ -471,6 +471,9 @@ void CParser::PushProduction(int iProdNum)
 // ============================================================================
 bool CParser::ExecuteAction(int iSemantic)
 {
+    // 本阶段不实现：语义动作统一由 SemanticAnalyzer 遍历 AST 完成，
+    // 见 src/sema/semantic.* 与《MiniC编译器设计文档_v4.0_挑战版LL1.md》§8。
+    // 此处仅保留调度点与职责标注，case 1–27 保持 break;。
     switch (iSemantic)
     {
     case 0:   // semantic000 初始化：清空操作数/操作符/类型位置栈，SerialId=0，建立空 IR 指令集

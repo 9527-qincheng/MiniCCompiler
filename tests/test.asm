@@ -4,4 +4,4 @@ section .text
 global _start
 _start:
     ; TODO: IR-to-ASM translation not implemented yet
-    ; input IR quads: 0
+    ; input IR quads: 4

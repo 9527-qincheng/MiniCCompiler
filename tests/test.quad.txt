@@ -1,1 +1,4 @@
-// MiniC quads (TODO: generator core not implemented yet)
+(ITOF, 1, -, _T1)  @3:7
+(+, b, _T1, _T2)  @3:7
+(FTOI, _T2, -, _T3)  @3:1
+(=, _T3, -, a)  @3:1

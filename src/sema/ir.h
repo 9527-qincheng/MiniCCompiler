@@ -32,7 +32,19 @@ enum class QuadOp
     Q_LABEL,    // 标号定义（挑战版）
     Q_RETURN,   // 返回（挑战版）
     Q_CALL,     // 过程调用（挑战版）
-    Q_PRINT     // 打印（挑战版 print 语句）
+    Q_PRINT,    // 打印（挑战版 print 语句）
+    // ---- 阶段 07 中间代码模块新增（追加在末尾，不改变既有值；见 docs/interface.md）----
+    Q_PARA,     // 实参压栈（函数调用前逐实参发出，挑战版）
+    Q_INDEX,    // 数组元素：取值 (INDEX, 数组, 下标, t) → t=数组[下标]；
+                //         存值 (INDEX, 值, 下标, 数组) → 数组[下标]=值
+    Q_ITOF,     // int → float 类型转换
+    Q_FTOI,     // float → int 类型转换（Q9 截断）
+    Q_EQ,       // 关系运算 ==
+    Q_NE,       // 关系运算 !=
+    Q_LT,       // 关系运算 <
+    Q_LE,       // 关系运算 <=
+    Q_GT,       // 关系运算 >
+    Q_GE        // 关系运算 >=
 };
 
 // ----------------------------------------------------------------------------
@@ -95,6 +107,16 @@ private:
     int         m_iLabelCounter;    // 标号计数器（L1,L2,...）
     CodeList    m_Codes;            // 当前过程四元式序列
     SymbolTable& m_symtab;          // 绑定符号表（确定操作数类型，第 6 章契约）
+    std::vector<TokenType> m_TmpTypes; // 临时量类型登记（与临时编号一一对应，供类型转换判断）
+
+    // ---- 阶段 07 内部辅助（新增私有方法，不属第 6 章公开契约）----
+    Operand EvalExpr(const ASTNodePtr& node);      // 表达式 → Operand（含类型转换插入）
+    void    GenStmt(const ASTNodePtr& node);       // 语句 → 四元式
+    void    GenFuncDef(FuncDefNode* fn);           // 函数定义：翻译函数体并 FlushToProc
+    TokenType OperandType(const Operand& op) const; // 取操作数类型（常量表/变量表/临时量表）
+    Operand IntToFloatConv(const Operand& op, const LineInfo& loc); // 插入 ITOF
+    Operand FloatToIntConv(const Operand& op, const LineInfo& loc); // 插入 FTOI
+    Operand ConstInt(int value, const LineInfo& loc); // 取整型常量 0/1（无则登记）
 
 public:
     explicit IRGenerator(SymbolTable& symtab);
@@ -104,6 +126,8 @@ public:
     int     GetTmpVar(TokenType t);                     // 申请临时变量
     int     GetTmpLabel();                              // 申请标号（挑战版）
     void    EmitIR(QuadOp op, const Operand& op1, const Operand& op2, const Operand& rslt);
+    void    EmitIR(QuadOp op, const Operand& op1, const Operand& op2, const Operand& rslt,
+                   const LineInfo& loc);                // 阶段 07 新增重载：携带源码位置
     const CodeList& GetCodes() const;                    // 输出四元式序列
     std::string OperandToString(const Operand& op) const; // Q6：操作数索引转原文
 

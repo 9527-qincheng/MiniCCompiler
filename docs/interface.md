@@ -60,6 +60,23 @@
      自行 `RecConst` 登记解决，词法未改动。
      行为影响：语义报错会使退出码为 1（此前不报错）；`--dump-symtab` 的 `.sym.txt`
      从空表变为实际登记内容。
+13. **中间代码模块 IRGenerator 实现**（阶段⑦ 中间代码模块，张灏宇，2026-10-21）：
+     `Generate()` 递归遍历 AST 生成四元式（交付物④ `--dump-quads`），包含：
+     - 表达式：NUM/IDENT/BINOP（算术/关系/逻辑短路）/UNOP（取负、逻辑非）/INDEX（Q_INDEX）/CALL（Q_PARA+Q_CALL）；
+     - 语句：ASSIGN / IF（JZ+JMP+LABEL 标号）/ WHILE（入口 LABEL+JZ+回跳）/ PRINT / RETURN / FUNCDEF→FlushToProc；
+     - 类型转换（§8.1 表）：算术 int/float 混合插入 ITOF；赋值 FLOAT→INT 插入 FTOI；
+     - 控制流标号经 `GetTmpLabel()` 预先申请编号后直接引用（编号体系下无需两趟回填）。
+     **接口变更（均为新增，未破坏既有签名/值）**：
+     - `EmitIR` 新增带 `LineInfo` 的重载（原四元式 `m_loc` 恒为 0,0，无法定位源码；重载属新增，已登记）；
+     - `QuadOp` 追加 `Q_PARA / Q_INDEX / Q_ITOF / Q_FTOI / Q_EQ / Q_NE / Q_LT / Q_LE / Q_GT / Q_GE`
+       （追加在枚举末尾，既有值不变；`Quad::Print` 的 opName 表与 main.cpp 的 `QuadOpName` 同步扩展）；
+     - `IRGenerator` 增加私有辅助方法（EvalExpr/GenStmt/GenFuncDef/OperandType/类型转换/ConstInt）与
+       `m_TmpTypes` 临时量类型登记（GetTmpVar 补完类型记录 TODO）；
+     - `OperandToString` 的 OP_CONST 分支补浮点原文输出（语义 RecConst 未存 `m_szVal` 时按类型格式化，
+       修复浮点常量打印被截断为整数的缺陷）；
+     - main.cpp `--dump-quads` 改为 Q6 原文打印（去掉硬编码 TODO 首行），函数四元式按过程分组输出。
+     联调约定（与目标代码组王逸凡）：CodeList 只读消费；`(INDEX, 数组, 下标, t)` 为取值、
+     `(INDEX, 值, 下标, 数组)` 为存值（元素寻址，下标×元素宽度由目标代码处理）；新增操作码如需调整先对齐。
 
 > 说明：本节第 8–10 条为 2026-10-13 阶段⑤ 收尾时同步；**下面的"四、词法识别集合"仍是 v3.1 骨架版内容**，
 > 词法 v4.0 的现状（17 个挑战版终结符等）见 `README.md` 的模块状态表与《词法模块待改进清单.md》，

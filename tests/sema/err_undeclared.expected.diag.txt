@@ -1,0 +1,1 @@
+error: 6:5: undefined identifier b

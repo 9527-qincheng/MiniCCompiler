@@ -1,0 +1,1 @@
+warning: 7:5: suspicious assignment between INT and BOOL

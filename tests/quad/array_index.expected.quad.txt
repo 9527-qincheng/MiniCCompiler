@@ -1,0 +1,6 @@
+
+// --- proc: main ---
+(=, 2, -, i)  @5:5
+(INDEX, 7, i, arr)  @6:5
+(INDEX, arr, i, _T1)  @7:15
+(RETURN, _T1, -, -)  @7:5

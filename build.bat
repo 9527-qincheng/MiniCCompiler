@@ -239,6 +239,16 @@ pwsh -NoProfile -File "tests\run_symtab_tests.ps1"
 if errorlevel 1 set "TESTRC=1"
 
 echo.
+echo [TEST] sema diagnostics regression ...
+pwsh -NoProfile -File "tests\run_sema_tests.ps1"
+if errorlevel 1 set "TESTRC=1"
+
+echo.
+echo [TEST] quad dump regression ...
+pwsh -NoProfile -File "tests\run_quad_tests.ps1"
+if errorlevel 1 set "TESTRC=1"
+
+echo.
 echo [TEST] target code (asm assemble + link + run) ...
 pwsh -NoProfile -File "tests\run_codegen_tests.ps1"
 if errorlevel 1 set "TESTRC=1"

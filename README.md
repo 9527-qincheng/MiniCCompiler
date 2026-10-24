@@ -67,10 +67,14 @@ MiniCCompiler/
 │   ├── symbol_test.cpp            # 符号表作用域链断言
 │   ├── run_lexer_tests.ps1        # 词法回归（6 例）
 │   ├── run_grammar_selfcheck.ps1  # 文法表自检
-│   ├── run_parser_tests.ps1       # 语法回归（40 例 AST / 错误基线）
+│   ├── run_parser_tests.ps1       # 语法回归（43 例 AST / 错误基线）
 │   ├── run_parser_unit.ps1        # Parser 单元测试
 │   ├── run_symbol_tests.ps1       # 符号表作用域链断言
 │   ├── run_symtab_tests.ps1       # 符号表 DumpSymTab 回归
+│   ├── run_sema_tests.ps1         # 语义诊断回归（12 例，含警告与多错并报）
+│   ├── run_quad_tests.ps1         # 四元式序列回归（14 例）
+│   ├── sema/                      # 语义用例 *.mc + *.expected.diag.txt
+│   ├── quad/                      # 四元式用例 *.mc + *.expected.quad.txt
 │   └── run_codegen_tests.ps1      # 目标代码端到端（编译→gcc 链接→运行→比对输出）
 ├── examples/
 │   └── example.mc          # 挑战版关键字示例
@@ -105,7 +109,7 @@ build.bat
 | 命令 | 作用 |
 |---|---|
 | `build.bat` | 编译，产出 `build\minic.exe` |
-| `build.bat test` | 编译后跑全部 7 套测试 + 2 套 GUI 冒烟，任一失败即返回 1 |
+| `build.bat test` | 编译后跑全部 9 套测试 + 2 套 GUI 冒烟，任一失败即返回 1 |
 | `build.bat run tests\test.mc` | 编译后运行指定源文件 |
 | `build.bat list` | 列出参与编译的源文件 |
 | `build.bat clean` | 清理 `build` 目录 |
@@ -113,9 +117,13 @@ build.bat
 
 > `build.bat test` 等价于依次执行 `run_lexer_tests.ps1`、`run_grammar_selfcheck.ps1`、
 > `run_parser_tests.ps1`、`run_parser_unit.ps1`、`run_symbol_tests.ps1`、`run_symtab_tests.ps1`、
-> `run_codegen_tests.ps1`，再跑 GUI 的 `gui\test\book-smoke.js`（语法手册数据与渲染）与
-> `gui\test\sample-smoke.js`（示例库数据与可编译性），两者都是纯 Node、不需要 Electron 窗口；
-> PATH 里没有 `node` 时整体跳过，适合提交前自检与 CI。
+> `run_sema_tests.ps1`、`run_quad_tests.ps1`、`run_codegen_tests.ps1`，再跑 GUI 的
+> `gui\test\book-smoke.js`（语法手册数据与渲染）与 `gui\test\sample-smoke.js`（示例库数据与
+> 可编译性），两者都是纯 Node、不需要 Electron 窗口；PATH 里没有 `node` 时整体跳过，
+> 适合提交前自检与 CI。
+> 九个编译阶段各有自己的回归网：词法比 `.token.txt`、语法比 `.ast.txt`/错误消息、
+> 符号表比 `.sym.txt`、语义比 stderr 诊断（含行列号）、中间代码比 `.quad.txt`、
+> 目标代码是唯一走"汇编→链接→运行→比 stdout"的端到端。
 > 退出码会如实传播（**注意**：`build.bat run` 也传播 `minic` 的退出码，
 > 早前版本因 `endlocal`/`exit` 分行书写会吞掉退出码恒返回 0，现已修复）。
 
@@ -367,6 +375,46 @@ pwsh -File tests/run_parser_unit.ps1
    本次**只改 AST 的文本形状**：37 条 `expected/*.ast.txt` 与 `tests/test.ast.txt` 重定，
    **无任何 `*.err.txt` 变化**（错误定位与错误恢复未动），`ll1_411.parse.txt`（§4.11 的 82 步轨迹）**逐字未变**。
    节点清单与子节点语义见 `docs/stage5_ast_review.md`。
+
+## 语义分析诊断回归测试
+
+```bash
+pwsh -File tests/run_sema_tests.ps1
+pwsh -File tests/run_sema_tests.ps1 -Case err_duplicate
+pwsh -File tests/run_sema_tests.ps1 -Update
+```
+
+- 用例输入：`tests/sema/*.mc` 共 12 条；期望诊断：`tests/sema/<case>.expected.diag.txt`
+- 期望类型写在用例首行 `/* expect: ok | err | warn:<条数> */`，新增用例不必改 runner
+- 比对**诊断行的完整文本**（`minic: error: 行:列: 消息`），含行列号与错误码措辞；
+  只比条数会漏掉位置漂移，只比有无会漏掉措辞变化
+- `err_` 用例要求退出码 1 且至少一条 error；`ok_` 要求退出码 0 且零 error（warning 允许，
+  `warn:N` 会额外核对条数）；尾部汇总行 `N error(s) found` 不参与比对（由条数派生）
+- 覆盖：未声明标识符、重复声明、形参与局部重名、`&&` 非 bool 操作数、嵌套函数定义、
+  调用未定义函数、同名错误并报（3 条一次报出）、块内遮蔽合法、bool 作条件合法、
+  void 裸 return 合法、float→int 截断告警（Q9）、INT↔BOOL 可疑赋值告警
+
+## 四元式回归测试
+
+```bash
+pwsh -File tests/run_quad_tests.ps1
+pwsh -File tests/run_quad_tests.ps1 -Case arith_int
+pwsh -File tests/run_quad_tests.ps1 -Update
+```
+
+- 用例输入：`tests/quad/*.mc` 共 14 条；期望序列：`tests/quad/<case>.expected.quad.txt`
+- 校验收敛到 `.quad.txt` 的**结构**：表达式求值顺序、临时变量编号（`_T1`/`_T2`…）、
+  标号编号（`L1`/`L2`…）、短路展开形态、`ITOF`/`FTOI` 插入位置、`PARA`/`CALL` 的相对次序。
+  这些在端到端测试里完全测不出来（只比 stdout，结构变了照样输出对）
+- 覆盖：整型与实型四则及优先级、混合类型转换、一元取负与逻辑非、if-else 双标号、
+  while 四段式、六种关系运算、`&&`/`||` 真短路展开、多实参求值次序、嵌套调用
+  （内层实参不得与外层 `PARA` 交错）、数组 `INDEX` 取址、`PRINT`/`RETURN` 发射形态、多函数分段
+- golden 命名为 `*.expected.quad.txt` 而非 `*.quad.txt`：minic 会把产物写在源文件同目录，
+  若基线叫 `<用例>.quad.txt`，任何人直接对 `tests/quad/*.mc` 编译一次就会覆盖基线。
+  `.gitignore` 的 `*.quad.txt` 因此加了 `!tests/quad/*.expected.quad.txt` 例外
+- 另查一条硬约束：产物里不得出现盘符或反斜杠路径（四元式是逻辑表示，混进路径就无法跨环境比对），
+  且必须含 `// --- proc: ` 段头
+
 
 ## 各模块实现状态
 

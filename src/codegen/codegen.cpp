@@ -858,13 +858,46 @@ void AsmEmitter::Run(AsmOutput& out)
     // ---- 1. 数据段：全局变量与全局数组 ----
     EmitGlobals();
 
-    // ---- 2. 代码段：main（顶层语句）+ 各过程 ----
-    EmitFunction("main", m_top, true);
+    // ---- 2. 代码段：入口 main + 各过程 ----
+    // 【2026-10-24 修复】用户可能自己写 `int main() { ... }`
+    // （《MiniC语法支持清单》7.1~7.3 的示例全是这种写法）。原实现无条件把顶层语句
+    // 编成 main，随后又为 ProcInfoTbl 里每个过程各编一份，于是 `int main(){...}`
+    // 会产出两个 `main:` 标号，as 直接报
+    //     Error: symbol `main' is already defined
+    // 现改为：若用户定义了 main，就把顶层语句接在它的函数体之前，合并成唯一的 main
+    // （顶层语句先执行，语义上等价于「入口代码」）；未定义 main 时行为完全不变。
+    const ProcEntry* userMain = nullptr;
+    if (m_sym)
+    {
+        for (const ProcEntry& pe : m_sym->m_ProcInfoTbl)
+        {
+            if (pe.m_szName == "main")
+            {
+                userMain = &pe;
+                break;
+            }
+        }
+    }
+
+    if (userMain != nullptr)
+    {
+        CodeList merged = m_top;
+        merged.insert(merged.end(), userMain->m_Codes.begin(), userMain->m_Codes.end());
+        EmitFunction("main", merged, true);
+    }
+    else
+    {
+        EmitFunction("main", m_top, true);
+    }
 
     if (m_sym)
     {
         for (const ProcEntry& pe : m_sym->m_ProcInfoTbl)
         {
+            if (userMain != nullptr && &pe == userMain)
+            {
+                continue;                   // 已合并进入口 main，不重复输出
+            }
             // 【2026-10-24 修复】不能因为 m_Codes 为空就跳过整个函数体。
             // 空函数（void f() { }）没有任何四元式，若跳过则符号 f 在汇编里
             // 根本没有定义，而调用点仍然会生成 `call f`，链接期报

@@ -3,7 +3,7 @@
 
 **当前进度**：六个阶段全部打通，**编译器已可端到端运行**。词法模块已按 v4.0 挑战版完成（17 个新终结符、编码映射、双字符运算符、字符常量）；语法模块已按 v4.0 挑战版落地为 **LL(1) 预测分析表驱动**（92 条产生式，非递归分析栈 + `src/parser/grammar.cpp` 预测表，`--dump-parse` 输出分析过程）；符号表模块已实现多表登记、作用域链查找与数组登记；语义分析模块已实现并接入主流程（`src/sema/semantic.cpp`，遍历 AST 登记变量/数组/函数/常量并做类型检查）；**中间代码模块已实现**（`src/sema/ir.cpp`，四元式含 ITOF/FTOI 类型转换、`&&`/`||` 真短路、数组读写、函数调用与递归，`--dump-quads` 输出）；**目标代码模块已实现**（`src/codegen/codegen.cpp`，x86-64 / GNU as 汇编，产物可直接用 gcc 汇编链接成 exe 运行）。
 
-依据：《MiniC编译器数据结构设计.md》第 4 章（数据结构）与第 6 章（接口契约，Q1~Q12 定稿）；挑战版文法见《MiniC编译器设计文档_v4.0_挑战版LL1.md》。
+依据：[docs/MiniC编译器数据结构设计.md](docs/MiniC编译器数据结构设计.md) 第 4 章（数据结构）与第 6 章（接口契约，Q1~Q12 定稿）；挑战版文法见 [docs/MiniC编译器设计文档_v4.0_挑战版LL1.md](docs/MiniC编译器设计文档_v4.0_挑战版LL1.md)。
 
 ## 快速开始
 
@@ -75,7 +75,16 @@ MiniCCompiler/
 ├── examples/
 │   └── example.mc          # 挑战版关键字示例
 ├── docs/
-│   └── interface.md        # 接口备忘 + 冲突记录
+│   ├── interface.md                            # 接口备忘 + 冲突记录（模块接口定义）
+│   ├── MiniC编译器设计文档_v4.0_挑战版LL1.md     # 系统架构设计文档：文法/LL(1) 表/接口/语义动作
+│   ├── MiniC编译器数据结构设计.md               # 数据结构设计：多表符号表/四元式/AST/指令模板
+│   ├── MiniC语法支持清单.md                     # 语言规格：92 条产生式实测支持矩阵、与 C 的 15 条差异
+│   ├── 词法模块待改进清单.md                    # 词法模块实测复审记录（4 项问题的修复依据）
+│   ├── stage5_ast_review.md                     # 阶段⑤ AST 形状评审
+│   ├── 语法分析过程_示例.xlsx                   # 分析过程示例（LL(1) 逐步推导）
+│   ├── 语法分析过程_ll1_411.xlsx                # §4.11 的 82 步分析轨迹
+│   ├── gui-implementation/                      # GUI 实现截图（01~11）
+│   └── gui-acceptance/                          # GUI 验收截图（S1~S5）
 └── build/                  # 构建产物目录（已被 .gitignore 排除）
 ```
 
@@ -359,7 +368,7 @@ pwsh -File tests/run_parser_unit.ps1
 > 原先"`print`/数组/函数等尚未实现"的表述已过时；仍属**预期报错**的是文法本身不允许的写法：
 > `print` 必须带括号（`print a;` 非法）、数组仅一维（`int b[2][3];` 非法）、
 > 声明必须全部位于语句之前（`程序 → 声明部分 语句部分`）。
-> 详见《词法模块待改进清单.md》。
+> 详见 [docs/词法模块待改进清单.md](docs/词法模块待改进清单.md)（词法侧 4 个问题的实测与修复记录）。
 
 ## 冲突记录与待决策项（不擅自变更接口）
 
@@ -421,7 +430,7 @@ pwsh -File tests/run_parser_unit.ps1
       `as` 报 `symbol 'main' is already defined`）、显式 `return 5;` 被出口标号后的
       `xorl %eax,%eax` 清零（`int main(){return 5;}` 退出码实测为 0）、
       裸 `return;` 带出 `%eax` 残值、无 `return` 的 `int` 函数返回垃圾值（实测 2043900272）
-- **挑战版语法**：文法已定稿（92 条产生式、LL(1) 预测分析表，见《MiniC编译器设计文档_v4.0_挑战版LL1.md》）。
+- **挑战版语法**：文法已定稿（92 条产生式、LL(1) 预测分析表，见 [docs/MiniC编译器设计文档_v4.0_挑战版LL1.md](docs/MiniC编译器设计文档_v4.0_挑战版LL1.md)）。
   - 阶段③ 编码层 + 文法表（`src/parser/grammar.h/.cpp`）**已完成**：产生式/FIRST/FOLLOW/SELECT/预测分析表，
     由 `tools/generate_grammar.py` 从 xlsx 生成（**禁止手工编辑 grammar.cpp**），
     自检 `pwsh -File tests/run_grammar_selfcheck.ps1` 全绿

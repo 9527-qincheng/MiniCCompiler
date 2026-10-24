@@ -70,6 +70,11 @@
     <button class="btn primary" id="btn-compile">
       <svg width="13" height="13" viewBox="0 0 14 14"><path d="M3.2 1.8l8.4 5.2-8.4 5.2z" fill="currentColor"/></svg><span>编译</span>
     </button>
+    <button class="btn" id="btn-run" title="编译 → 汇编链接 → 运行 (F5)">
+      <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4">
+        <path d="M2.2 1.9l7.2 4.5-7.2 4.5z" fill="currentColor" stroke="none"/><path d="M11.4 1.9v9.6"/>
+      </svg><span>运行</span>
+    </button>
     <button class="btn" id="btn-clear">
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
         <path d="M3 4.4h10M6.4 4.4V2.8h3.2v1.6M4.2 4.4l.7 9h6.2l.7-9M6.6 6.8v4.4M9.4 6.8v4.4"/>
@@ -124,15 +129,15 @@
     <section class="panel" id="output-panel">
       <div class="panel-head">
         <span class="panel-title">编译产物</span>
-        <span class="panel-meta">7 类产物 · 只读</span>
+        <span class="panel-meta">7 个页签 · 只读</span>
       </div>
       <div class="tabs" id="tabs">
         <button class="tab active" data-tab="token">Token<span class="tab-count" id="c-token">—</span></button>
-        <button class="tab" data-tab="parse">语法分析<span class="tab-count" id="c-parse"></span></button>
         <button class="tab" data-tab="ast">语法树<span class="tab-tag">AST</span></button>
         <button class="tab" data-tab="sym">符号表<span class="tab-count" id="c-sym"></span></button>
         <button class="tab" data-tab="quad">四元式<span class="tab-count" id="c-quad"></span></button>
         <button class="tab" data-tab="asm">汇编<span class="tab-tag">ASM</span></button>
+        <button class="tab" data-tab="run">运行输出<span class="tab-count" id="c-run"></span></button>
         <button class="tab" data-tab="diag">诊断<span class="tab-count" id="c-diag">0</span></button>
       </div>
       <div class="tab-body" id="tab-body">
@@ -146,11 +151,15 @@
           </div>
           <div class="pane-foot" id="token-foot"></div>
         </div>
-        <div class="pane" id="pane-parse"><pre class="raw" id="raw-parse"></pre></div>
         <div class="pane" id="pane-ast"><pre class="raw" id="raw-ast"></pre></div>
         <div class="pane" id="pane-sym"><pre class="raw" id="raw-sym"></pre></div>
         <div class="pane" id="pane-quad"><pre class="raw" id="raw-quad"></pre></div>
         <div class="pane" id="pane-asm"><pre class="raw" id="raw-asm"></pre></div>
+        <div class="pane" id="pane-run">
+          <div class="empty-hint" id="run-empty">尚未运行 · 点击「运行」（F5）编译并执行程序，print 的输出显示在这里</div>
+          <pre class="raw run-out" id="raw-run"></pre>
+          <div class="pane-foot" id="run-foot"></div>
+        </div>
         <div class="pane" id="pane-diag">
           <div class="diag-head" id="diag-head"></div>
           <div class="diag-list" id="diag-list"></div>

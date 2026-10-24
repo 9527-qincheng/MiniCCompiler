@@ -37,6 +37,9 @@
   --syn-comment: #6a9955;
   --syn-op: #d4d4d4;
   --syn-punct: #ffd700;
+  /* 语法树框线 */
+  --ast-guide: #4d545c;
+  --ast-hover: rgba(255, 255, 255, 0.045);
 }
 
 #app[data-theme="light"] {
@@ -67,6 +70,8 @@
   --syn-comment: #a0a1a7;
   --syn-op: #0184bc;
   --syn-punct: #c18401;
+  --ast-guide: #c3c9d2;
+  --ast-hover: rgba(0, 0, 0, 0.04);
 }
 
 /* ---------- 基础 ---------- */
@@ -618,6 +623,63 @@ pre.raw .raw-comment { color: var(--syn-comment); }
 pre.raw .raw-head { color: var(--text); font-weight: 600; }
 pre.raw .raw-num { color: var(--syn-num); }
 pre.raw .raw-key { color: var(--syn-kw); }
+
+/* 运行输出：stdout 正常色，stderr 用错误色 */
+#pane-run .empty-hint { position: absolute; }
+pre.raw.run-out { color: var(--text); }
+pre.raw.run-out .run-err { color: var(--err); }
+pre.raw.run-out .run-meta { color: var(--text-muted); font-style: italic; }
+pre.raw.run-out .run-sep {
+  display: block;
+  margin: 8px 0 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+  user-select: none;
+}
+
+/* 语法树：tree 命令风格框线树（框线用 CSS 画，小字号下也是连续实线） */
+pre.raw .ast-line {
+  display: block;
+  position: relative;
+  white-space: pre;
+  border-radius: 3px;
+}
+pre.raw .ast-line.clickable { cursor: pointer; }
+pre.raw .ast-line.clickable:hover { background: var(--ast-hover); }
+pre.raw .ast-gutter { position: absolute; left: 0; top: 0; bottom: 0; display: flex; }
+pre.raw .ast-cell { position: relative; flex: 0 0 auto; width: 4ch; }
+/* 每一层的竖线 */
+pre.raw .ast-cell::before {
+  content: '';
+  position: absolute;
+  left: calc(0.5ch - 0.5px);
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--ast-guide);
+}
+/* 该层祖先已是「最后一个孩子」，竖线到此为止 */
+pre.raw .ast-cell.pass::before { display: none; }
+/* └── 只画上半段 */
+pre.raw .ast-cell.arm.last::before { bottom: 50%; }
+/* ── 横线 */
+pre.raw .ast-cell.arm::after {
+  content: '';
+  position: absolute;
+  left: 0.5ch;
+  top: calc(50% - 0.5px);
+  width: 2.4ch;
+  height: 1px;
+  background: var(--ast-guide);
+}
+pre.raw .ast-node { color: var(--text); }
+pre.raw .ast-node.a-id { color: var(--syn-id); }
+pre.raw .ast-node.a-num { color: var(--syn-num); }
+pre.raw .ast-node.a-struct { color: var(--text-dim); }
+pre.raw .ast-line:first-child .ast-node { color: var(--text); font-weight: 600; }
+pre.raw .ast-pos { color: var(--text-muted); user-select: none; }
 
 /* 诊断 */
 .diag-head {

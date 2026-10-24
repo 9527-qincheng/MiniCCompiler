@@ -8,7 +8,7 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { findMinic, decodeBuffer, compileSource } = require('./lib/compiler');
+const { findMinic, decodeBuffer, compileSource, runSource } = require('./lib/compiler');
 
 const isShot = process.argv.some((a) => a.startsWith('--shot'));
 let win = null;
@@ -63,6 +63,8 @@ function createWindow() {
       const multifile = process.argv.includes('--multifile');
       const fmt = process.argv.includes('--fmt');
       const editTest = process.argv.includes('--edittest');
+      const dupTest = process.argv.includes('--duptest');
+      const demo = process.argv.includes('--demo');
       await new Promise((r) => setTimeout(r, 900));
 
       // Ctrl+滚轮缩放回归测试
@@ -80,15 +82,17 @@ function createWindow() {
         console.log('WHEELTEST ' + JSON.stringify(r));
       }
 
-      if (autoCompile || breakIt || tab || menu || twice || multifile || fmt || editTest) {
+      if (autoCompile || breakIt || tab || menu || twice || multifile || fmt || editTest || dupTest || demo) {
         try {
           const r = await win.webContents.executeJavaScript(
-            `window.__minicTest && window.__minicTest(${JSON.stringify({ theme, break: breakIt, tab, menu, twice, multifile, fmt, editTest })})`,
+            `window.__minicTest && window.__minicTest(${JSON.stringify({ theme, break: breakIt, tab, menu, twice, multifile, fmt, editTest, dupTest, demo })})`,
           );
           if (twice && r) console.log('TWICETEST ' + JSON.stringify(r));
           if (multifile && r) console.log('MULTITEST ' + JSON.stringify(r));
           if (fmt && r) console.log('FMTTEST ' + JSON.stringify(r));
           if (editTest && r) console.log('EDITTEST ' + JSON.stringify(r));
+          if (dupTest && r) console.log('DUPTEST ' + JSON.stringify(r));
+          if (demo && r) console.log('DEMO ' + JSON.stringify(r));
         } catch (e) {
           console.error('auto test failed:', e);
         }
@@ -174,6 +178,14 @@ ipcMain.handle('file:saveas', async (_e, { content, defaultName }) => {
 ipcMain.handle('compile:run', async (_e, payload) => {
   try {
     return await compileSource({ ...payload, guiDir: __dirname });
+  } catch (e) {
+    return { ok: false, reason: 'exception', message: String(e) };
+  }
+});
+
+ipcMain.handle('run:run', async (_e, payload) => {
+  try {
+    return await runSource({ ...payload, guiDir: __dirname });
   } catch (e) {
     return { ok: false, reason: 'exception', message: String(e) };
   }

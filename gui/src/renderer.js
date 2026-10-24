@@ -88,6 +88,7 @@ const state = {
   activeTab: 'token',
   compiled: false,
   lastResult: null,
+  runResult: null,
   busy: false,
   autoFormatOnSave: true,
 };
@@ -105,16 +106,18 @@ const el = {
   dirty: $('dirty-mark'),
   tokenRows: $('token-rows'),
   tokenFoot: $('token-foot'),
-  rawParse: $('raw-parse'),
   rawAst: $('raw-ast'),
   rawSym: $('raw-sym'),
   rawQuad: $('raw-quad'),
   rawAsm: $('raw-asm'),
+  rawRun: $('raw-run'),
+  runEmpty: $('run-empty'),
+  runFoot: $('run-foot'),
+  cRun: $('c-run'),
   diagHead: $('diag-head'),
   diagList: $('diag-list'),
   diagFoot: $('diag-foot'),
   cToken: $('c-token'),
-  cParse: $('c-parse'),
   cSym: $('c-sym'),
   cQuad: $('c-quad'),
   cDiag: $('c-diag'),
@@ -522,6 +525,7 @@ function newDoc({ name, content = '', filePath = null } = {}) {
     dirty: false,
     compiled: false,
     lastResult: null,
+    runResult: null,
     artifacts: emptyArtifacts(),
     diagnostics: [],
     errorLines: [],
@@ -542,6 +546,7 @@ function snapshotActive() {
   doc.dirty = state.dirty;
   doc.compiled = state.compiled;
   doc.lastResult = state.lastResult;
+  doc.runResult = state.runResult;
   doc.artifacts = state.artifacts;
   doc.diagnostics = state.diagnostics;
   doc.errorLines = state.errorLines;
@@ -578,6 +583,7 @@ function activateDoc(id, { skipSnapshot = false } = {}) {
   state.filePath = doc.path;
   state.compiled = doc.compiled;
   state.lastResult = doc.lastResult;
+  state.runResult = doc.runResult || null;
   state.artifacts = doc.artifacts || emptyArtifacts();
   state.diagnostics = doc.diagnostics || [];
   state.errorLines = doc.errorLines || [];
@@ -589,6 +595,7 @@ function activateDoc(id, { skipSnapshot = false } = {}) {
 
   setSource(doc.content, { resetMarks: false });
   renderArtifactsView();
+  renderRunResult(state.runResult);
   selectTab(doc.activeTab || 'token');
   renderFileTabs();
 
@@ -606,8 +613,41 @@ function activateDoc(id, { skipSnapshot = false } = {}) {
   }
 }
 
+/** 路径归一化：Windows 下大小写不敏感、斜杠方向不一 */
+function normPath(p) {
+  if (!p) return '';
+  return String(p).replace(/\//g, '\\').toLowerCase();
+}
+
+/**
+ * 在已打开的文档里找一个"同一个文件"：
+ * - 有真实路径 → 按路径匹配（优先）
+ * - 无路径（示例文件）→ 按同名匹配
+ * 找到就直接切过去，绝不再新建标签。
+ */
+function findOpenedDoc({ name, filePath = null }) {
+  const target = normPath(filePath);
+  if (target) {
+    const byPath = state.docs.find((d) => d.path && normPath(d.path) === target);
+    if (byPath) return byPath;
+  } else {
+    // 示例/无路径文档：同名且也无路径即视为同一个
+    const byName = state.docs.find((d) => !d.path && d.name === name);
+    if (byName) return byName;
+  }
+  return null;
+}
+
 /** 打开文件/载入示例时：如果当前是"空的、干净的、没编译过"的新文件，就直接复用，避免堆积空白标签 */
 function reuseOrCreateDoc({ name, content, filePath = null }) {
+  // ① 已经开过同一个文件 → 聚焦，不新建
+  const opened = findOpenedDoc({ name, filePath });
+  if (opened) {
+    activateDoc(opened.id);
+    statusNote(`已切换到已打开的 ${opened.name}`);
+    return opened;
+  }
+  // ② 当前是空白未命名文件 → 就地复用
   const cur = activeDoc();
   if (cur && !cur.dirty && !cur.compiled && !cur.path && !el.source.value.trim()) {
     cur.name = name;
@@ -655,17 +695,15 @@ function closeDoc(id) {
   }
 }
 
-/** 按当前 state 重绘右侧 7 个产物视图 */
+/** 按当前 state 重绘右侧产物视图（6 份编译产物 + 运行输出） */
 function renderArtifactsView() {
   renderTokens();
-  renderRaw(el.rawParse, state.artifacts.parse, 'parse');
-  renderRaw(el.rawAst, state.artifacts.ast, 'ast');
+  renderAst(el.rawAst, state.artifacts.ast);
   renderRaw(el.rawSym, state.artifacts.sym, 'sym');
   renderRaw(el.rawQuad, state.artifacts.quad, 'quad');
   renderRaw(el.rawAsm, state.artifacts.asm, 'asm');
   renderDiagnostics(state.lastResult);
   renderMarks();
-  el.cParse.textContent = state.artifacts.parse ? String(countParseSteps(state.artifacts.parse)) : '';
   el.cSym.textContent = state.artifacts.sym ? String(countSymbols(state.artifacts.sym)) : '';
   el.cQuad.textContent = state.artifacts.quad
     ? String(Math.max(0, state.artifacts.quad.split(/\r?\n/).filter((l) => l.trim() && !l.trim().startsWith('//')).length))
@@ -766,6 +804,89 @@ function renderRaw(target, text, kind) {
     .join('\n');
 }
 
+/* ------------------------- 语法树（框线树） ------------------------- */
+// 叶子"值"节点：这类只做浅色强调，其余视为结构节点用主色
+const AST_VALUE_HEAD = new Set(['Num', 'NumInt', 'NumFloat', 'Char', 'CharConst', 'String', 'Str', 'True', 'False']);
+
+function astNodeClass(name) {
+  const head = name.replace(/\([\s\S]*$/, '').trim();
+  if (head === 'Ident' || head === 'Var') return 'a-id';
+  if (AST_VALUE_HEAD.has(head)) return 'a-num';
+  return 'a-struct';
+}
+
+/** 把缩进式 AST 文本解析成带层级/位置/末子标记的节点表 */
+function parseAstNodes(text) {
+  const raw = [];
+  for (const line of text.replace(/\s+$/, '').split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const m = line.match(/^(\s*)(.+?)\s+@(\d+):(\d+)\s*$/);
+    if (m) {
+      raw.push({ indent: m[1].length, name: m[2], line: +m[3], col: +m[4] });
+    } else {
+      const m2 = line.match(/^(\s*)(\S[\s\S]*)$/);
+      if (m2) raw.push({ indent: m2[1].length, name: m2[2].replace(/\s+$/, ''), line: 0, col: 0 });
+    }
+  }
+  if (!raw.length) return [];
+  // 缩进宽度 → 层级（不同缩进步长都能正确归层）
+  const widths = [...new Set(raw.map((r) => r.indent))].sort((a, b) => a - b);
+  const levelOf = new Map(widths.map((w, i) => [w, i]));
+  for (const r of raw) r.level = levelOf.get(r.indent) || 0;
+
+  // 判定「是否是同级最后一个」→ 决定 └── 还是 ├──
+  const lastOfLevel = [];
+  for (let i = 0; i < raw.length; i++) {
+    const n = raw[i];
+    let isLast = true;
+    for (let j = i + 1; j < raw.length; j++) {
+      if (raw[j].level < n.level) break;
+      if (raw[j].level === n.level) { isLast = false; break; }
+    }
+    n.isLast = isLast;
+    n.ancestorLast = lastOfLevel.slice(0, n.level);
+    lastOfLevel[n.level] = isLast;
+  }
+  return raw;
+}
+
+/** 渲染为 tree 命令风格的框线树，位置注解右对齐成列 */
+function renderAst(target, text) {
+  if (!text) {
+    target.innerHTML = '<span class="raw-comment">暂无内容 — 点击「编译」生成</span>';
+    return;
+  }
+  const nodes = parseAstNodes(text);
+  if (!nodes.length) { renderRaw(target, text, 'ast'); return; }
+
+  // 位置列：默认第 40 列，节点名过长时整体右移，保证始终对齐
+  let maxLen = 0;
+  for (const n of nodes) maxLen = Math.max(maxLen, n.level * 4 + n.name.length);
+  const col = Math.max(40, maxLen + 2);
+
+  target.innerHTML = nodes
+    .map((n) => {
+      const pad = ' '.repeat(Math.max(2, col - (n.level * 4 + n.name.length)));
+      const pos = n.line ? `@${n.line}:${n.col}` : '';
+      const click = n.line ? ' clickable' : '';
+      const attrs = n.line ? ` data-line="${n.line}" data-col="${n.col}"` : '';
+      // 框线：祖先层竖线（该层已是末子则断掉）+ 本层 └/├ + 横线
+      let gutter = '';
+      for (let d = 1; d < n.level; d++) {
+        gutter += `<span class="ast-cell${n.ancestorLast[d] ? ' pass' : ''}"></span>`;
+      }
+      if (n.level > 0) gutter += `<span class="ast-cell arm${n.isLast ? ' last' : ''}"></span>`;
+      return (
+        `<span class="ast-line${click}" style="padding-left:${n.level * 4}ch"${attrs}>` +
+        (gutter ? `<span class="ast-gutter">${gutter}</span>` : '') +
+        `<span class="ast-node ${astNodeClass(n.name)}">${escapeHtml(n.name)}</span>` +
+        `<span class="ast-pos">${pad}${escapeHtml(pos)}</span>` +
+        '</span>'
+      );
+    })
+    .join('');
+}
+
 function countSymbols(symText) {
   if (!symText) return 0;
   let n = 0;
@@ -775,13 +896,6 @@ function countSymbols(symText) {
     if (inSection && /^\s{2}\S/.test(line)) n++;
   }
   return n;
-}
-
-function countParseSteps(parseText) {
-  if (!parseText) return 0;
-  const m = parseText.match(/分析步骤[:：]\s*(\d+)/);
-  if (m) return +m[1];
-  return parseText.split(/\r?\n/).filter((l) => /^\|\s*\d+\s*\|/.test(l)).length;
 }
 
 /* ------------------------- 诊断 ------------------------- */
@@ -934,6 +1048,11 @@ async function doCompile() {
     };
   }
   state.lastResult = res || null;
+  // 源码变了，上一次的运行输出就过期了：留着会让用户以为那是新代码的结果
+  state.runResult = null;
+  const _doc = activeDoc();
+  if (_doc) _doc.runResult = null;
+  renderRunResult(null);
   state.diagnostics = parseDiagnostics(res && res.stderr, res && res.exitCode);
 
   const errs = state.diagnostics.filter((d) => d.severity === 'error');
@@ -981,6 +1100,176 @@ function statusNote(text) {
   }, 4000);
 }
 
+/* ------------------------- 运行 ------------------------- */
+/** Windows 崩溃退出码是 0xC0000000 段的负数，转成常见的 0xC0000094 形式便于排查 */
+function formatExitCode(code) {
+  if (code == null) return '—';
+  if (code < 0) {
+    const hex = (code >>> 0).toString(16).toUpperCase().padStart(8, '0');
+    const known = {
+      C0000094: '整数除零',
+      C0000095: '整数溢出',
+      C0000005: '访问冲突（野指针/越界）',
+      C00000FD: '栈溢出（递归过深）',
+      C0000409: '栈缓冲区溢出（安全检查失败）',
+    };
+    return `0x${hex}${known[hex] ? '（' + known[hex] + '）' : ''}`;
+  }
+  return String(code);
+}
+
+/**
+ * 编译 + 汇编链接 + 执行，把 print 的输出显示在「运行输出」页签。
+ * 注意：minic.exe 本身只做编译，print 是运行期语句，必须真的把程序跑起来才有输出。
+ */
+async function doRun() {
+  if (state.busy) return;
+  if (!el.source.value.trim()) {
+    selectTab('run');
+    renderRunResult({ ok: false, stage: 'compile', reason: 'empty', message: '源码为空，先写点代码再运行。' });
+    return;
+  }
+  setBusy(true, '运行中…');
+  el.topDot.className = 'dot busy';
+  try {
+    let res;
+    try {
+      res = await window.minicAPI.run({ text: el.source.value, name: state.fileName });
+    } catch (e) {
+      res = { ok: false, reason: 'exception', message: String(e) };
+    }
+    state.runResult = res || null;
+    const doc = activeDoc();
+    if (doc) doc.runResult = state.runResult;
+
+    renderRunResult(res);
+    selectTab('run');
+
+    if (res && res.ok) {
+      const lines = String(res.stdout || '').replace(/\s+$/, '');
+      const n = lines ? lines.split(/\r?\n/).length : 0;
+      el.topDot.className = 'dot ok';
+      el.topStatus.textContent = n ? `运行完成 · ${n} 行输出` : '运行完成 · 无输出';
+    } else if (res && res.crashed) {
+      el.topDot.className = 'dot err';
+      el.topStatus.textContent = '运行崩溃 · 退出码 ' + formatExitCode(res.exitCode);
+    } else {
+      el.topDot.className = 'dot err';
+      const stageText = { compile: '编译失败', link: '链接失败', gcc: '找不到 gcc', run: '运行失败' }[res && res.stage] || '运行失败';
+      el.topStatus.textContent = res && res.timedOut ? '运行超时（已强制结束）' : stageText;
+    }
+  } finally {
+    state.busy = false;
+  }
+}
+
+/** 把运行结果画到「运行输出」页签 */
+function renderRunResult(res) {
+  if (!el.rawRun) return;
+  if (!res) {
+    el.rawRun.innerHTML = '';
+    if (el.runEmpty) el.runEmpty.classList.add('show');
+    if (el.runFoot) el.runFoot.textContent = '';
+    if (el.cRun) el.cRun.textContent = '';
+    return;
+  }
+  const parts = [];
+  const addStdout = (text) => {
+    if (!text) return;
+    String(text).replace(/\s+$/, '').split(/\r?\n/).forEach((line) => {
+      parts.push(escapeHtml(line));
+    });
+  };
+
+  // 编译阶段就失败：没有可运行的程序
+  if (res.stage === 'compile') {
+    if (res.reason === 'minic-not-found' || res.reason === 'spawn-failed') {
+      parts.push(`<span class="run-err">${escapeHtml(res.message || '未找到 minic.exe')}</span>`);
+      parts.push('<span class="run-meta">提示：先运行 build.bat 生成 build\\minic.exe。</span>');
+    } else if (res.reason === 'empty') {
+      parts.push(`<span class="run-meta">${escapeHtml(res.message || '')}</span>`);
+    } else {
+      parts.push('<span class="run-meta">编译阶段就失败了，没有生成可运行的程序：</span>');
+      const errText = String(res.stderr || res.stdout || res.message || '').replace(/\s+$/, '');
+      errText.split(/\r?\n/).forEach((line) => {
+        if (line.trim()) parts.push(`<span class="run-err">${escapeHtml(line)}</span>`);
+      });
+    }
+    el.rawRun.innerHTML = parts.join('\n');
+    if (el.runEmpty) el.runEmpty.classList.remove('show');
+    if (el.runFoot) el.runFoot.textContent = '请到「诊断」页签查看完整错误列表。';
+    if (el.cRun) el.cRun.textContent = '';
+    return;
+  }
+
+  // gcc 缺失或链接失败
+  if (res.stage === 'gcc' || res.stage === 'link') {
+    parts.push(`<span class="run-err">${escapeHtml(res.message || '汇编链接失败')}</span>`);
+    if (res.stage === 'gcc') {
+      parts.push('<span class="run-meta">提示：设置环境变量 MINIC_GCC 指向 gcc.exe 的完整路径，或把 MinGW 的 bin 目录加入 PATH。</span>');
+    }
+    el.rawRun.innerHTML = parts.join('\n');
+    if (el.runEmpty) el.runEmpty.classList.remove('show');
+    if (el.runFoot) el.runFoot.textContent = '汇编产物已生成，可在「汇编」页签查看。';
+    if (el.cRun) el.cRun.textContent = '';
+    return;
+  }
+
+  // 程序启动失败（exe 被杀毒软件拦截、权限不足等）
+  if (res.reason === 'spawn-failed') {
+    parts.push(`<span class="run-err">${escapeHtml(res.message || '无法启动生成的可执行文件')}</span>`);
+    parts.push('<span class="run-meta">常见原因：杀毒软件拦截了 %TEMP% 下新生成的 exe，或该目录被策略禁止执行。</span>');
+    el.rawRun.innerHTML = parts.join('\n');
+    if (el.runEmpty) el.runEmpty.classList.remove('show');
+    if (el.runFoot) el.runFoot.textContent = '编译与汇编链接本身是成功的。';
+    if (el.cRun) el.cRun.textContent = '';
+    return;
+  }
+
+  // 正常运行结束
+  const out = String(res.stdout || '').replace(/\s+$/, '');
+  const err = String(res.stderr || '').replace(/\s+$/, '');
+  if (out) {
+    addStdout(out);
+  } else if (!err && !res.crashed && !res.timedOut) {
+    parts.push('<span class="run-meta">程序运行结束，但没有任何输出（源码里没有 print，或 print 的分支没被执行）。</span>');
+  }
+  if (err) {
+    if (out) parts.push('<span class="run-sep">—— stderr ——</span>');
+    err.split(/\r?\n/).forEach((line) => parts.push(`<span class="run-err">${escapeHtml(line)}</span>`));
+  }
+  if (res.timedOut) {
+    parts.push('<span class="run-sep">—— 超时 ——</span>');
+    parts.push('<span class="run-err">程序运行超过 5 秒被强制结束，可能存在死循环。</span>');
+  } else if (res.crashed) {
+    parts.push('<span class="run-sep">—— 崩溃 ——</span>');
+    parts.push(`<span class="run-err">程序异常终止，退出码 ${escapeHtml(formatExitCode(res.exitCode))}。</span>`);
+    if (!err) {
+      parts.push('<span class="run-meta">常见原因：整数除零、数组下标越界、递归过深导致栈溢出。</span>');
+    }
+  }
+  el.rawRun.innerHTML = parts.join('\n') || '<span class="run-meta">（无输出）</span>';
+  if (el.runEmpty) el.runEmpty.classList.remove('show');
+
+  const outLines = out ? out.split(/\r?\n/).length : 0;
+  if (el.cRun) el.cRun.textContent = outLines ? String(outLines) : '';
+  if (el.runFoot) {
+    const bits = [];
+    if (res.compileMs != null) bits.push(`编译 ${res.compileMs} ms`);
+    if (res.linkMs != null) bits.push(`汇编链接 ${res.linkMs} ms`);
+    if (res.runMs != null) bits.push(`运行 ${res.runMs} ms`);
+    bits.push(`退出码 ${formatExitCode(res.exitCode)}`);
+    el.runFoot.textContent = bits.join(' · ');
+  }
+}
+
+function clearRunOutput() {
+  state.runResult = null;
+  const doc = activeDoc();
+  if (doc) doc.runResult = null;
+  renderRunResult(null);
+}
+
 /* ------------------------- 文件操作 ------------------------- */
 function maybeAutoFormat() {
   if (!state.autoFormatOnSave) return;
@@ -997,12 +1286,6 @@ function toggleAutoFormat() {
 async function openFile() {
   const r = await window.minicAPI.openFile();
   if (!r || r.canceled) return;
-  // 已经打开过同一路径 → 直接切过去
-  const existing = state.docs.find((d) => d.path && d.path === r.filePath);
-  if (existing) {
-    activateDoc(existing.id);
-    return;
-  }
   reuseOrCreateDoc({ name: r.name, content: r.content, filePath: r.filePath });
   selectTab('token');
 }
@@ -1062,6 +1345,7 @@ const MENUS = {
   ],
   build: [
     { label: '编译', shortcut: 'Ctrl+Enter', action: doCompile },
+    { label: '运行', shortcut: 'F5', action: doRun },
     { label: '清空产物', action: clearOutputs },
   ],
   view: [
@@ -1126,6 +1410,7 @@ function clearOutputs() {
   state.warnLines = [];
   state.compiled = false;
   state.lastResult = null;
+  state.runResult = null;
   const doc = activeDoc();
   if (doc) {
     doc.artifacts = state.artifacts;
@@ -1134,8 +1419,10 @@ function clearOutputs() {
     doc.warnLines = [];
     doc.compiled = false;
     doc.lastResult = null;
+    doc.runResult = null;
   }
   renderArtifactsView();
+  renderRunResult(null);
   el.topDot.className = 'dot ok';
   el.topStatus.textContent = '就绪';
 }
@@ -1153,6 +1440,7 @@ function bindEvents() {
   $('btn-open').onclick = openFile;
   $('btn-save').onclick = saveFile;
   $('btn-compile').onclick = doCompile;
+  $('btn-run').onclick = doRun;
   $('btn-clear').onclick = clearOutputs;
   $('btn-theme').onclick = toggleTheme;
   $('btn-font').onclick = () => applyFontSize(state.fontSize >= 18 ? 12 : state.fontSize + 1);
@@ -1212,6 +1500,12 @@ function bindEvents() {
   el.diagList.addEventListener('click', (e) => {
     const item = e.target.closest('.diag-item.clickable');
     if (item) jumpToLine(+item.dataset.line, +item.dataset.col);
+  });
+
+  // 语法树节点跳转（点节点 → 跳到源码对应位置）
+  el.rawAst.addEventListener('click', (e) => {
+    const node = e.target.closest('.ast-line.clickable');
+    if (node) jumpToLine(+node.dataset.line, +node.dataset.col);
   });
 
   // 编辑器
@@ -1376,6 +1670,7 @@ function bindEvents() {
     else if (ctrl && e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); saveAs(); }
     else if (ctrl && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(); }
     else if (ctrl && e.key === 'Enter') { e.preventDefault(); doCompile(); }
+    else if (e.key === 'F5') { e.preventDefault(); doRun(); }
     else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'l') { e.preventDefault(); toggleTheme(); }
     else if (ctrl && (e.key === '=' || e.key === '+')) { e.preventDefault(); applyFontSize(state.fontSize + 1); }
     else if (ctrl && e.key === '-') { e.preventDefault(); applyFontSize(state.fontSize - 1); }
@@ -1430,8 +1725,36 @@ async function init() {
 }
 
 /* 截图/回归钩子：--compile / --break / --tab=xx / --menu=xx / --twice 模式使用 */
-window.__minicTest = async ({ theme, break: breakIt, tab, menu, twice, multifile, fmt, editTest } = {}) => {
+window.__minicTest = async ({ theme, break: breakIt, tab, menu, twice, multifile, fmt, editTest, dupTest, demo } = {}) => {
   if (theme) applyTheme(theme);
+  if (demo) {
+    // 效果图/演示：载入成功示例并编译，焦点停在指定产物标签
+    loadSample(SAMPLE_GCD, 'gcd-demo.mc');
+    await doCompile();
+    if (tab) selectTab(tab);
+    if (theme) applyTheme(theme);
+    await new Promise((r) => setTimeout(r, 250));
+    return { docs: state.docs.map((d) => d.name), activeTab: state.activeTab, tokens: parseTokens(state.artifacts.tokens).length };
+  }
+  if (dupTest) {
+    // 回归：同一个示例连续打开 3 次 + 打开同一磁盘文件 2 次，都不应产生重复标签
+    loadSample(SAMPLE_GCD, 'gcd-demo.mc');
+    loadSample(SAMPLE_GCD, 'gcd-demo.mc');
+    loadSample(SAMPLE_GCD, 'gcd-demo.mc');
+    const afterSample = state.docs.length;
+    const info = await window.minicAPI.info();
+    // 换一个示例、再回来，仍应复用
+    loadSample(SAMPLE_LEX, 'lex-demo.mc');
+    loadSample(SAMPLE_GCD, 'gcd-demo.mc');
+    await new Promise((r) => setTimeout(r, 150));
+    return {
+      afterSample,
+      finalDocs: state.docs.map((d) => d.name),
+      dupCount: state.docs.filter((d) => d.name === 'gcd-demo.mc').length,
+      active: state.fileName,
+      exeFound: info.exeFound,
+    };
+  }
   if (editTest) {
     const src = el.source;
     const press = (key) => src.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));

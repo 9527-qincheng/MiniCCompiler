@@ -12,4 +12,5 @@ contextBridge.exposeInMainWorld('minicAPI', {
   saveFile: (filePath, content) => ipcRenderer.invoke('file:save', { filePath, content }),
   saveAs: (content, defaultName) => ipcRenderer.invoke('file:saveas', { content, defaultName }),
   compile: (payload) => ipcRenderer.invoke('compile:run', payload),
+  run: (payload) => ipcRenderer.invoke('run:run', payload),
 });

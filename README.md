@@ -206,7 +206,8 @@ build\minic.exe tests\test.mc --dump-tokens --dump-ast --dump-symtab --dump-quad
 ## 图形界面（GUI）
 
 `gui/` 是基于 **Electron** 的桌面界面：暗/亮双主题、多文件标签、源码行号与语法高亮、
-代码格式化、7 类产物页签，以及可点击跳转的诊断列表，把「写代码 → 编译 → 看产物」串成一个窗口。
+代码格式化、7 类产物页签，以及可点击跳转的诊断列表，把「写代码 → 编译 → 看产物 → **运行看 print 输出**」
+串成一个窗口。
 
 ```bash
 cd gui
@@ -218,7 +219,15 @@ npm install        :: 首次安装 Electron（.npmrc 已配置 npmmirror 镜像�
 |---|---|
 | Token / 语法分析 / 语法树 / 符号表 | `--dump-tokens` / `--dump-parse` / `--dump-ast` / `--dump-symtab` 产物 |
 | 四元式 / 汇编 | `--dump-quads` 与默认 `.asm` 产物（均为真实输出） |
+| **运行输出** | **点「运行」（F5）：minic 编译 → gcc 汇编链接 → 执行 exe，抓 stdout/stderr** |
 | 诊断 | stderr 的 `minic: error/warning: 行:列: 消息`，点击跳到源码行 |
+
+> **`print` 的输出在哪看**：`print` 是运行期语句，`minic.exe` 只做编译，本身不输出 `print` 的内容。
+> 点工具栏 **运行**（或 `F5`）会走完整链路并执行程序，`print` 的结果显示在「运行输出」页签，
+> 页脚给出编译/链接/运行耗时与进程退出码。只点「编译」是看不到任何 `print` 结果的。
+>
+> 运行需要 MinGW 的 `gcc`（自动从 PATH 查找；也可用环境变量 `MINIC_GCC` 指定完整路径）。
+> 程序若死循环，5 秒后被强制结束并提示超时。
 
 - 用法、快捷键、目录结构与启动器原理见 [gui/README.md](gui/README.md)。
 - 界面规范板（S1~S5）与验收截图见 [`docs/gui-acceptance/`](docs/gui-acceptance/)。

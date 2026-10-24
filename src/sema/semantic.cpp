@@ -148,6 +148,16 @@ void SemanticAnalyzer::VisitFuncDef(FuncDefNode* fn)
 {
     if (!fn) return;
 
+    // 设计文档 §15.2：文法上允许 `{ int f(){...} }` 这类嵌套函数定义，
+    // 但 C 语言不允许，且两个同名函数会生成重复的汇编标号
+    // （`as` 报 symbol `f' is already defined）。此处按职责边界拦截。
+    if (m_iFuncDepth > 0)
+    {
+        EmitError("function definition is only allowed at the outermost level: "
+                  + fn->m_szName, fn->m_loc);
+    }
+    ++m_iFuncDepth;
+
     // 函数名：进变量表（保证 Call 能解析）+ 进过程表
     // 接口缺口：symbol.h 无 RecProc，暂用 RecVar 承载名字
     VarEntry* fv = m_symtab.RecVar(fn->m_szName, fn->m_retType,
@@ -193,6 +203,7 @@ void SemanticAnalyzer::VisitFuncDef(FuncDefNode* fn)
     }
 
     m_symtab.ExitScope();
+    --m_iFuncDepth;
 }
 
 // ---------------------------------------------------------------- 语句

@@ -25,6 +25,11 @@ public:
 private:
     SymbolTable& m_symtab;
 
+    // 函数定义嵌套深度。文法上允许块内出现函数定义（设计文档 §15.2），
+    // 但 C 语言不允许，且嵌套函数会与外层同名函数一起生成重复的汇编标号，
+    // 因此语义阶段必须拦截「函数定义只能出现在最外层」。
+    int m_iFuncDepth = 0;
+
     // 递归遍历单个节点；表达式节点返回推导类型，语句/声明节点返回 TOKEN_NONE
     TokenType Visit(const ASTNodePtr& node);
 

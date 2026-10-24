@@ -1,0 +1,18 @@
+Program  @1:1
+  FuncDef(INT main)  @1:1
+    Block  @1:11
+      Decl(INT a)  @2:5
+      Assign  @3:5
+        Ident(a)  @3:5
+        Num(5)  @3:9
+      FuncDef(INT f)  @4:5
+        Block  @4:12
+          Return  @5:9
+            Num(1)  @5:16
+      Print  @7:5
+        Call  @7:12
+          Ident(f)  @7:11
+      Print  @8:5
+        Ident(a)  @8:11
+      Return  @9:5
+        Num(0)  @9:12

@@ -91,6 +91,9 @@ $cases = @(
     @{ name = "err_decl_after_stmt";  exit = 1 },
     @{ name = "err_2d_array";         exit = 1 },
     @{ name = "err_func_bad_param";   exit = 1 },
+    # 设计文档 §15.2：文法允许块内函数定义，但语义阶段必须拦截
+    # （嵌套函数会与外层同名函数生成重复汇编标号，且会破坏外层局部变量的栈帧布局）
+    @{ name = "err_nested_func";      exit = 1 },
     # §4.11 验收：输入即文档 82 步 golden trace 的示例；
     # parse = $true 表示另外逐字比对 expected\ll1_411.parse.txt（该 golden 直接取自文档 §4.11 表格）
     @{ name = "ll1_411";              exit = 0; parse = $true }

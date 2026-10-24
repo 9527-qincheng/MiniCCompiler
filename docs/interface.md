@@ -120,6 +120,33 @@
       词法 6/6、语法自检、40 例 AST 基线均无差异。
     - 顺带清理：`src/main.cpp` 末尾的完成提示由 `minic: compilation finished (skeleton demo)`
       改为 `minic: compilation finished`（骨架期的残留措辞）。
+16. **目标代码模块缺陷修复（阶段⑧ 收尾，鲍方乐，2026-10-24）**：三处缺陷，均不改变对外签名。
+    - **C1 嵌套调用实参错序**（根因在 IR，暴露在目标代码）：原 `EvalExpr` 的 `AST_NODE_CALL` 分支
+      「边求值边发 `Q_PARA`」，遇到嵌套调用时四元式错序：
+      `add3(inc(0), inc(10), inc(20))` 产出
+      `(PARA,0)(CALL,inc,_T4)(PARA,_T4)(PARA,10)(CALL,inc,_T5)...`——
+      内层 `(PARA,0)` 被内层 `(CALL,inc)` 消费，外层实参 `_T4` 又混进下一次内层调用的实参列表
+      （`Q_CALL` 取走当时 `m_pendingArgs` 的全部内容），从第二个实参起全部错乱
+      （实测输出 `-1719689673`，期望 `33`）。
+      **改为两段式**：先把全部实参求值进 `std::vector<Operand>`（含 `Q_ITOF`/`Q_FTOI` 插入），
+      全部求值完再逐个发 `Q_PARA`，`Q_PARA` 与 `Q_CALL` 严格配对。
+      注意：**2 个实参的嵌套恰好正确**，只有 ≥3 个实参且有嵌套才暴露，故原 20 例全绿也发现不了。
+    - **C2 空函数缺定义**：`AsmEmitter::Run()` 原先 `if (pe.m_Codes.empty()) continue;` 跳过无四元式的
+      过程表项。`void f() { }` 没有任何四元式 → 汇编里没有 `f:` 标号，而调用点仍生成 `call f`，
+      链接期报 `undefined reference`。MiniC 不支持函数原型，`ProcEntry` 只为**已定义**的函数创建，
+      故改为无条件为每个 `ProcEntry` 输出函数体（空函数只留序言 + 出口）。
+    - **C3 出错时仍产出 .asm**：`main.cpp` 原先无条件调 `CCodeGen::Generate`。语法/语义报错的输入
+      （如 `print(1); int late(int x){...}`）会让残缺 AST 走完 IR 与代码生成，落下一份**只有空 `main`**
+      的 `.asm`——它能被 gcc 汇编、也能跑起来，但和用户写的程序毫无关系，属误导性产物。
+      改为 `if (g_ErrorList.empty())` 内才生成汇编，与语义阶段"仅语法无错时跑"的口径一致。
+    - 回归：新增 `tests/codegen/call_nested.mc`（2/3 实参嵌套 6 组断言，期望 13/106/106/33/32/6）与
+      `tests/codegen/empty_fn.mc`（空函数连续调用，期望 7/8/1），`tests/run_codegen_tests.ps1`
+      从 20 例增至 **22 例全通过**。
+17. **`Q_PARA` 的顺序约定（对目标代码模块的硬约束）**：`Q_PARA` 必须**紧邻**在对应的 `Q_CALL` 之前，
+      且多个实参的 `Q_PARA` 按实参从左到右的次序连续排列，中间不得插入任何其他四元式
+      （包括内层调用的 `Q_PARA`/`Q_CALL`）。`AsmEmitter` 依赖该约定：`Q_PARA` 只做
+      `m_pendingArgs.push_back`，`Q_CALL` 一次性取走整个列表并按 `i*8(%rsp)` 落栈。
+      违反该约定会静默产生错误实参（C1 即此情形）。
 
 > 说明：本节第 8–10 条为 2026-10-13 阶段⑤ 收尾时同步；**下面的"四、词法识别集合"仍是 v3.1 骨架版内容**，
 > 词法 v4.0 的现状（17 个挑战版终结符等）见 `README.md` 的模块状态表与《词法模块待改进清单.md》，

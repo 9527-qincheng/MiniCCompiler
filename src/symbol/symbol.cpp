@@ -1,11 +1,16 @@
 // ============================================================================
 // MiniC 编译器 —— 符号表模块 SymbolTable 实现
-// 状态：骨架版——登记/查询/作用域/回填/类型检查基础逻辑可用，
-//       语义动作（语法制导驱动）留 TODO（词法模块先行演示）。
-// TODO（下一阶段）：
-//   1. 作用域链查找（当前线性扫描，挑战版函数作用域需按 m_curProcIndex 链）
-//   2. 常量语义回填的完整语义动作（Q12：标识符引用→常量表位序回填）
-//   3. float→int 警告仅打印到 stderr（Q9），不阻断编译
+// 状态：已完工（阶段⑥）——六张子表登记、作用域链查找、常量回填、
+//       类型检查（CheckAssign）、DumpSymTab 产物输出均已实现并接入主流程。
+// 三项历史遗留的落实口径：
+//   1. 作用域链查找：SearchVarInfoTbl 沿 m_varScopeStack 自内向外查找，
+//      全局层在构造函数建立且永不弹出（不再依赖 m_curProcIndex 链）。
+//   2. 常量语义回填：由 SemanticAnalyzer 在 AST_NODE_NUM 分派中统一 RecConst
+//      登记，IdentNode 侧回填 m_iConstIdx，见 src/sema/semantic.cpp。
+//   3. float→int 赋值告警：CheckAssign 打印 Q9 告警到 stderr，不阻断编译。
+// 已知限制：VarEntry::m_iProcIndex 恒为 -1（m_curProcIndex 无赋值点），
+//           ParamEntry 无过程归属；目标代码侧以「形参名 + 声明行列」回连，
+//           IR 侧以 BuildParamTypeTable 扫描 AST 兜底。
 // ============================================================================
 #include "symbol/symbol.h"
 

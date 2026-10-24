@@ -61,7 +61,7 @@ MiniCCompiler/
 │   ├── parser/             # Parser 回归用例（40 个 .mc）与期望结果
 │   │   ├── *.mc            #   合法 21 条 + 非法 19 条
 │   │   └── expected/       #   *.ast.txt / *.err.txt / ll1_411.parse.txt
-│   ├── codegen/            # 目标代码端到端用例（22 个 .mc + 期望输出）
+│   ├── codegen/            # 目标代码端到端用例（24 个 .mc + 期望输出）
 │   ├── grammar_selfcheck.cpp      # 文法表自检（21 项断言）
 │   ├── parser_unit_test.cpp       # Parser 单元测试（AST 字段级）
 │   ├── symbol_test.cpp            # 符号表作用域链断言
@@ -398,12 +398,17 @@ pwsh -File tests/run_parser_unit.ps1
 - **挑战版（Q5 顺序）：控制流(if/while) → print → 数组 → 函数 → x86 汇编 —— 五步全部落地**
   - **语法侧已全部落地**：复合语句/if/while/return/一元运算、比较与逻辑运算符、
     `bool`/`char`/`true`/`false`、`print(表达式);`、一维数组声明与下标、函数定义/形参/调用
-  - **目标代码侧已全部落地**：`src/codegen/codegen.cpp`，`tests/run_codegen_tests.ps1` 22 例
+  - **目标代码侧已全部落地**：`src/codegen/codegen.cpp`，`tests/run_codegen_tests.ps1` 24 例
     （算术/比较/if-else/while/浮点/混合类型/逻辑/函数调用/递归/数组读写/字符/嵌套分支/短路/实参转换/返回值转换/
-    嵌套调用实参顺序/空函数）全部编译成汇编、经 gcc 链接、运行并比对输出，**22/22 通过**
-  - **收尾修复的三处缺陷**（2026-10-24，详见 `docs/interface.md` 第 16 条）：嵌套调用实参错序
-    （根因在 IR 边求值边发 `Q_PARA`，≥3 实参且有嵌套才暴露）、空函数 `void f(){}` 不产出函数体
-    导致链接期 `undefined reference`、语法/语义报错时仍落下一份只有空 `main` 的误导性 `.asm`
+    嵌套调用实参顺序/空函数/用户自定义 `main`/返回值语义）全部编译成汇编、经 gcc 链接、运行并比对输出，**24/24 通过**
+  - **收尾修复的两批缺陷**（2026-10-24，详见 `docs/interface.md` 第 16、18 条）：
+    - 第一批：嵌套调用实参错序（根因在 IR 边求值边发 `Q_PARA`，≥3 实参且有嵌套才暴露）、
+      空函数 `void f(){}` 不产出函数体导致链接期 `undefined reference`、
+      语法/语义报错时仍落下一份只有空 `main` 的误导性 `.asm`
+    - 第二批：用户自定义 `int main()` 产出重复 `main:` 标号（**文档 7.1~7.3 的三个官方示例全部无法汇编**，
+      `as` 报 `symbol 'main' is already defined`）、显式 `return 5;` 被出口标号后的
+      `xorl %eax,%eax` 清零（`int main(){return 5;}` 退出码实测为 0）、
+      裸 `return;` 带出 `%eax` 残值、无 `return` 的 `int` 函数返回垃圾值（实测 2043900272）
 - **挑战版语法**：文法已定稿（92 条产生式、LL(1) 预测分析表，见《MiniC编译器设计文档_v4.0_挑战版LL1.md》）。
   - 阶段③ 编码层 + 文法表（`src/parser/grammar.h/.cpp`）**已完成**：产生式/FIRST/FOLLOW/SELECT/预测分析表，
     由 `tools/generate_grammar.py` 从 xlsx 生成（**禁止手工编辑 grammar.cpp**），

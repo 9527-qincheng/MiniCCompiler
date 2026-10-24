@@ -147,6 +147,32 @@
       （包括内层调用的 `Q_PARA`/`Q_CALL`）。`AsmEmitter` 依赖该约定：`Q_PARA` 只做
       `m_pendingArgs.push_back`，`Q_CALL` 一次性取走整个列表并按 `i*8(%rsp)` 落栈。
       违反该约定会静默产生错误实参（C1 即此情形）。
+18. **目标代码模块第二批缺陷修复（阶段⑧ 收尾，鲍方乐，2026-10-24）**：四处缺陷，同样不改变对外签名。
+    - **C4 用户自定义 `int main()` 产出重复 `main:` 标号**：`AsmEmitter::Run()` 原先无条件
+      `EmitFunction("main", m_top, true)`，随后又为 `m_ProcInfoTbl` 里每个过程各编一份，
+      于是**文档《MiniC语法支持清单》7.1~7.3 推荐的写法**（`int main(){...}`）会产出两个
+      `main:` 标号，`as` 直接报 `Error: symbol 'main' is already defined`——
+      三个官方示例程序全部无法汇编。改为：用户定义了 `main` 时，把顶层语句**接在其函数体之前**
+      合并成唯一的 `main`（顶层语句先执行，等价于入口代码）；未定义 `main` 时行为完全不变。
+    - **C5 显式 `return 5;` 被出口清零**：原实现把 `xorl %eax, %eax` 发在出口标号**之后**且无条件，
+      把 `Q_RETURN` 已装进 `%eax` 的返回值清掉——实测 `int main() { return 5; }` 的进程退出码是
+      **0** 而不是 5。改为：仅当控制流能**落到**出口时（最后一条四元式不是 `Q_RETURN`）
+      才在标号**之前**补默认值。
+      注意 **`Q_JMP` 不能当不可达判据**：循环体末尾回跳循环头的 `Q_JMP` 之后，循环的出口标号
+      仍会落到函数末尾（实测按 `Q_JMP` 判定会让 `arg_conv`/`ret_conv`/`short_circuit`
+      三个用例 `main` 的退出码变成残值，全部报 `run exit≠0`）。
+    - **C6 裸 `return;` 带出残值**：`Q_RETURN` 的操作数为 `OP_NONE` 时原 `GenReturn` 什么都不发，
+      直接把 `%eax`/`%xmm0` 里的残值当返回值。顶层语句与 `void` 函数里的裸 `return` 很常见
+      （既有用例 `arg_conv`/`ret_conv`/`short_circuit` 的顶层结尾都是 `return;`）。
+      改为按当前函数返回类型显式清零：`main` 与整型类返回清 `%eax`，`float` 返回清 `%xmm0`。
+    - **C7 无 `return` 的 `int` 函数返回垃圾值**：`int f() { }` 修复前实测 `print(f())` 输出
+      **2043900272**（`%eax` 残值）。由 C5 的落空出口默认值覆盖：非 `main` 按
+      `ProcEntry::m_retType` 区分 `float`（清 `%xmm0`）与整型（清 `%eax`），统一返回确定的 0。
+    - 回归：新增 `tests/codegen/user_main.mc`（数组+递归+算术，期望 9/120/7）与
+      `tests/codegen/ret_semantics.mc`（无 return / 有 return / 裸 return / 早退，期望 0/42/2.5/0/1/0），
+      `tests/run_codegen_tests.ps1` 从 22 例增至 **24 例全通过**。
+    - 实现细节：`AsmEmitter` 新增两个成员 `m_bCurIsMain` / `m_bCurRetFloat`，在 `EmitFunction`
+      开头按过程表回填，供 `GenReturn`（裸 return）与出口默认值共用。
 
 > 说明：本节第 8–10 条为 2026-10-13 阶段⑤ 收尾时同步；**下面的"四、词法识别集合"仍是 v3.1 骨架版内容**，
 > 词法 v4.0 的现状（17 个挑战版终结符等）见 `README.md` 的模块状态表与《词法模块待改进清单.md》，

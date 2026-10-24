@@ -169,6 +169,9 @@ body {
 .menu-pop {
   position: fixed;
   min-width: 248px;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 4px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);

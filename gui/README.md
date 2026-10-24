@@ -73,11 +73,25 @@ gui/
   src/index.html     界面结构
   src/styles.css     设计令牌（S5 色值）+ 布局 + 组件 + 语法手册浮层
   src/syntax-book.js 语法手册数据（10 章 67 条，纯数据、可 require 校验）
+  src/samples.js     示例源码库（15 条，分组、逐条实测、纯数据可 require）
   src/renderer.js    编辑器高亮、Token 表、7 标签、诊断解析、菜单与快捷键、语法手册
   test/compile-smoke.js  编译管线冒烟测试
   test/run-smoke.js      运行链路冒烟测试（编译→链接→执行）
+  test/book-smoke.js     语法手册数据/渲染冒烟测试
+  test/sample-smoke.js   示例库数据/可编译性冒烟测试
   启动GUI.bat        启动器（部署 ASCII 运行时）
 ```
+
+## 示例库
+
+**示例▾** 菜单里 15 条源码，分 6 组（基础 / 类型 / 函数 / 数组与控制流 / 综合 / 错误演示），
+覆盖最小程序、最大公约数、浮点、字符与布尔、嵌套调用、递归、素数筛选、冒泡排序、
+数组统计、嵌套循环、全特性综合，以及 3 条错误演示（缺分号+未声明、未声明变量、顶层声明写在语句后）。
+
+- 数据在 `src/samples.js`，渲染逻辑在 `renderer.js` 的示例下拉段。改示例只需编辑 `SAMPLES` 数组。
+- 每条都带 `output`（期望 stdout）或 `err`（期望 stderr 首行），**全部在真实工具链上跑通过**：
+  `build\minic.exe` 编译 → `gcc -x assembler` 汇编链接 → 运行比对 stdout；错误示例比对退出码 1 与报错原文。
+- 回归：`node test\sample-smoke.js`（数据层恒跑；实跑校验在允许启动子进程的环境才执行）。
 
 ## 产物与标签对应
 
@@ -134,9 +148,16 @@ gui/
 ```bat
 cd /d MiniCCompiler\gui
 node test\compile-smoke.js
+node test\run-smoke.js
+node test\book-smoke.js
+node test\sample-smoke.js
 ```
 
-覆盖：正常源码（7 个产物齐全、Token 格式、AST/符号表内容）与错误源码（退出码 1、诊断格式）。
+或者从仓库根一次性跑全套：`build.bat test`（编译器 7 套回归 + GUI 2 套冒烟）。
+
+- `compile-smoke.js` 覆盖：正常源码（7 个产物齐全、Token 格式、AST/符号表内容）与错误源码（退出码 1、诊断格式）。
+- `book-smoke.js` 覆盖语法手册的数据层（章结构、status 合法、id 唯一、related 交叉引用、ok 必带示例、no 必带报错原文）与渲染层（用最小 DOM stub 跑真实 `renderer.js`：67 条渲染、10 个章按钮、搜索过滤、空态、开关、定位、徽标）。
+- `sample-smoke.js` 覆盖示例库的数据层（条数、id 唯一、字段齐全、分组）与格式约定（LF、末尾换行、空格缩进），并在环境允许启动子进程时逐条实跑。
 
 ## 截图/回归模式
 

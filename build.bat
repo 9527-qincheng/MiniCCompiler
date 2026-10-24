@@ -244,7 +244,8 @@ pwsh -NoProfile -File "tests\run_codegen_tests.ps1"
 if errorlevel 1 set "TESTRC=1"
 
 rem  GUI smoke tests are pure Node and need no Electron window. They cover the
-rem  syntax book data/render path and (when gcc is present) the run pipeline.
+rem  syntax book data/render path, the sample library, and (when gcc is present)
+rem  the compile/assemble/run pipeline.
 where node >nul 2>nul
 if errorlevel 1 (
     echo.
@@ -254,6 +255,11 @@ if errorlevel 1 (
     echo [TEST] GUI syntax book ...
     pushd "gui"
     node "test\book-smoke.js"
+    if errorlevel 1 set "TESTRC=1"
+
+    echo.
+    echo [TEST] GUI sample library ...
+    node "test\sample-smoke.js"
     if errorlevel 1 set "TESTRC=1"
     popd
 )

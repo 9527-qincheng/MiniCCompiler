@@ -117,6 +117,7 @@ function buildContext() {
     Event: class { constructor(t) { this.type = t; } },
     getComputedStyle: () => ({ getPropertyValue: () => '' }),
     SYNTAX_BOOK: require(path.join(GUI_DIR, 'src', 'syntax-book.js')).SYNTAX_BOOK,
+    SAMPLES: require(path.join(GUI_DIR, 'src', 'samples.js')).SAMPLES,
   };
   sandbox.globalThis = sandbox;
   sandbox.self = sandbox;
@@ -126,7 +127,7 @@ function buildContext() {
   // renderer.js 是脚本不是模块，末尾追加一行把内部符号挂到 globalThis 供断言使用
   const EXPORTS = '\n;globalThis.__T = { BOOK, BOOK_INDEX, BOOK_BADGE, bookState, el,'
     + ' bookEntryHtml, bookMatch, renderBook, openBook, closeBook, toggleBook, bookFindEntry,'
-    + ' bookInlineCode };\n';
+    + ' bookInlineCode, SAMPLE_LIST, SAMPLE_GCD, SAMPLE_LEX, SAMPLE_BAD, sampleById, openMenu };\n';
   vm.runInContext(src + EXPORTS, ctx, { filename: 'renderer.js' });
   return ctx.__T;
 }
@@ -234,8 +235,18 @@ async function main() {
   check(g.bookState.current === 'recursion' && g.bookState.open === true, 'openBook(id) 打开并定位');
   g.closeBook();
 
-  /* ---------------- 3. 示例可编译性 ---------------- */
-  console.log('\n[3] 示例在 minic.exe 上的可编译性');
+  /* ---------------- 3. 示例库注入 ---------------- */
+  console.log('\n[3] 示例库注入（samples.js → renderer.js）');
+  const { SAMPLES } = require(path.join(GUI_DIR, 'src', 'samples.js'));
+  check(g.SAMPLE_LIST.length === SAMPLES.length, `SAMPLE_LIST 注入 ${g.SAMPLE_LIST.length} 条`);
+  check(g.SAMPLE_GCD.length > 0 && g.SAMPLE_GCD.includes('while'), 'SAMPLE_GCD 兼容别名可用');
+  check(g.SAMPLE_LEX.length > 0 && g.SAMPLE_LEX.includes('float'), 'SAMPLE_LEX 兼容别名可用');
+  check(g.SAMPLE_BAD.length > 0, 'SAMPLE_BAD 兼容别名可用（指向 err-combined）');
+  check(g.sampleById('gcd').text === g.SAMPLE_GCD, 'sampleById 与别名一致');
+  check(g.sampleById('__nope__').text === '', 'sampleById 未知 id 返回空对象');
+
+  /* ---------------- 4. 示例可编译性 ---------------- */
+  console.log('\n[4] 示例在 minic.exe 上的可编译性');
   if (!fs.existsSync(MINIC)) {
     console.log('        未找到 build/minic.exe，跳过（先运行 build.bat）');
   } else {

@@ -8,52 +8,18 @@ const $ = (id) => document.getElementById(id);
 const app = $('app');
 
 /* ------------------------- 示例源码 ------------------------- */
-const SAMPLE_GCD = `/* MiniC 示例：求两数最大公约数（辗转相减） */
-int a;
-int b;
+/* 示例库本体在 src/samples.js（15 条，逐条在真实工具链上实测过）。
+   这里只负责取值，以及保留几个旧名字给截图/回归钩子用。 */
+const SAMPLE_LIST =
+  typeof SAMPLES !== 'undefined' && Array.isArray(SAMPLES) ? SAMPLES : [];
 
-int main() {
-    int t;
-    a = 36;
-    b = 24;
-    while (a != b) {
-        if (a > b) a = a - b;
-        else b = b - a;
-    }
-    t = a;
-    return t;
+function sampleById(id) {
+  return SAMPLE_LIST.find((s) => s.id === id) || { id: '', label: '', name: '', text: '' };
 }
-`;
 
-const SAMPLE_LEX = `/* 词法演示：各类型记号 */
-int count;
-float ratio;
-bool flag;
-char mark;
-
-int main() {
-    count = 42;
-    ratio = 3.14;
-    flag = true;
-    mark = 'x';
-    while (count > 0) {
-        count = count - 1;
-    }
-    return count;
-}
-`;
-
-const SAMPLE_BAD = `/* 错误演示：缺少分号 + 未声明标识符 */
-int a;
-float b;
-
-int main() {
-    int x;
-    x = 36
-    y = 24;
-    return 0;
-}
-`;
+const SAMPLE_GCD = sampleById('gcd').text;
+const SAMPLE_LEX = sampleById('lex').text;
+const SAMPLE_BAD = sampleById('err-combined').text;
 
 /** 专用于格式化回归测试的"乱排版"源码 */
 const SAMPLE_MESSY = `/*格式化测试*/
@@ -1386,6 +1352,12 @@ function openMenu(anchor, items) {
   const rect = anchor.getBoundingClientRect();
   el.menuPop.style.top = rect.bottom + 2 + 'px';
   el.menuPop.style.left = Math.min(rect.left, window.innerWidth - 260) + 'px';
+  // 菜单比剩余空间高时向上翻，避免超出窗口底部
+  const popH = el.menuPop.offsetHeight;
+  if (popH > 0 && rect.bottom + 2 + popH > window.innerHeight - 8) {
+    const up = rect.top - 2 - popH;
+    el.menuPop.style.top = Math.max(8, up) + 'px';
+  }
   el.menuPop.querySelectorAll('.menu-row').forEach((row) => {
     row.onclick = () => {
       closeMenu();
@@ -1458,14 +1430,24 @@ function bindEvents() {
   // 语法手册
   bindBookEvents();
 
-  // 示例下拉
+  // 示例下拉：按分组渲染，分组之间自动插分隔线
   $('btn-sample').onclick = (e) => {
     e.stopPropagation();
-    openMenu($('btn-sample'), [
-      { label: '示例 1 · 最大公约数', action: () => loadSample(SAMPLE_GCD, 'gcd-demo.mc') },
-      { label: '示例 2 · 词法演示', action: () => loadSample(SAMPLE_LEX, 'lex-demo.mc') },
-      { label: '示例 3 · 错误演示', action: () => loadSample(SAMPLE_BAD, 'error-demo.mc') },
-    ]);
+    const items = [];
+    let lastGroup = null;
+    for (const s of SAMPLE_LIST) {
+      if (s.group !== lastGroup) {
+        if (lastGroup !== null) items.push({ sep: true });
+        lastGroup = s.group;
+      }
+      items.push({
+        label: s.label,
+        shortcut: s.name,
+        action: () => loadSample(s.text, s.name),
+      });
+    }
+    if (items.length === 0) items.push({ label: '（示例库未加载）', action: () => {} });
+    openMenu($('btn-sample'), items);
   };
 
   // 文件标签栏：点击切换、点 × 关闭、中键关闭

@@ -7,7 +7,9 @@
   "scripts": {
     "start": "electron . --no-sandbox --disable-gpu",
     "shot": "electron . --no-sandbox --disable-gpu --shot",
-    "test": "node test/compile-smoke.js"
+    "test": "node test/compile-smoke.js",
+    "test:book": "node test/book-smoke.js",
+    "test:samples": "node test/sample-smoke.js"
   },
   "author": "MiniC 实训小组",
   "license": "MIT",

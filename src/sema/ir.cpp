@@ -482,6 +482,8 @@ Operand IRGenerator::EvalExpr(const ASTNodePtr& node)
     case ASTNodeKind::AST_NODE_CALL:
     {
         // 函数调用：逐实参 QuadOp::Q_PARA → QuadOp::Q_CALL → 返回值临时量
+        // 约定：全部实参先求值，之后连续的 Q_PARA 紧邻 Q_CALL，中间不得插入其他四元式
+        // （详见下方 2026-10-24 修复注释与 docs/interface.md 第 17 条）。
         auto* call = static_cast<CallNode*>(node.get());
         if (call->m_children.empty())
         {

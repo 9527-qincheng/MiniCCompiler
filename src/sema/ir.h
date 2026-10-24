@@ -36,6 +36,9 @@ enum class QuadOp
     Q_PRINT,    // 打印（挑战版 print 语句）
     // ---- 阶段 07 中间代码模块新增（追加在末尾，不改变既有值；见 docs/interface.md）----
     Q_PARA,     // 实参压栈（函数调用前逐实参发出，挑战版）
+                //   硬约束：多个实参的 Q_PARA 必须按实参从左到右连续排列，且紧邻对应的
+                //   Q_CALL 之前，中间不得插入任何其他四元式（含内层调用的 Q_PARA/Q_CALL）。
+                //   目标代码侧 Q_PARA 只入 m_pendingArgs，Q_CALL 一次性取走整个列表落栈。
     Q_INDEX,    // 数组元素：取值 (INDEX, 数组, 下标, t) → t=数组[下标]；
                 //         存值 (INDEX, 值, 下标, 数组) → 数组[下标]=值
     Q_ITOF,     // int → float 类型转换

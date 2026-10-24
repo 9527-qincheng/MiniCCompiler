@@ -53,6 +53,35 @@ std::string BaseName(const std::string& path)
     return (sep == std::string::npos) ? path : path.substr(sep + 1);
 }
 
+// 四元式操作码文本名（--dump-quads；与 Quad::Print 的 opName 表保持一致）
+const char* QuadOpName(QuadOp op)
+{
+    static const char* opName[] = {
+        "NONE", "=", "+", "-", "*", "/",
+        "JMP", "JZ", "JNZ", "LABEL", "RETURN", "CALL", "PRINT",
+        "PARA", "INDEX", "ITOF", "FTOI",
+        "==", "!=", "<", "<=", ">", ">="
+    };
+    const int i = static_cast<int>(op);
+    return (i >= 0 && i < 23) ? opName[i] : "??";
+}
+
+// 四元式序列文本（Q6：操作数按索引转原文，供 --dump-quads 落盘）
+std::string DumpQuadsText(const IRGenerator& ir, const CodeList& codes)
+{
+    std::string out;
+    for (const auto& q : codes)
+    {
+        out += "(" + std::string(QuadOpName(q.m_eOp)) + ", " +
+               ir.OperandToString(q.m_Op1) + ", " +
+               ir.OperandToString(q.m_Op2) + ", " +
+               ir.OperandToString(q.m_Rslt) + ")  @" +
+               std::to_string(q.m_loc.m_iRow) + ":" +
+               std::to_string(q.m_loc.m_iCol) + "\n";
+    }
+    return out;
+}
+
 bool WriteTextFile(const std::string& path, const std::string& content)
 {
     std::ofstream ofs(path, std::ios::binary);
@@ -193,22 +222,30 @@ int main(int argc, char* argv[])
         WriteTextFile(base + ".sym.txt", oss.str());
     }
 
-    // ---------- 5. 中间代码：IRGenerator.Generate（骨架阶段 TODO） ----------
+    // ---------- 5. 中间代码：IRGenerator.Generate（阶段 07 已实现） ----------
     IRGenerator ir(symtab);
     ir.Generate(root);
     if (dumpQuads)
     {
         std::ostringstream oss;
-        oss << "// MiniC quads (TODO: generator core not implemented yet)\n";
-        for (const auto& q : ir.GetCodes())
+        // 全局（main 过程）四元式
+        oss << DumpQuadsText(ir, ir.GetCodes());
+        // 函数定义的四元式（GenFuncDef → FlushToProc 挂入过程表项）
+        for (const auto& p : symtab.m_ProcInfoTbl)
         {
-            q.Print(oss);
+            if (p.m_Codes.empty())
+            {
+                continue;
+            }
+            oss << "\n// --- proc: " << p.m_szName << " ---\n";
+            oss << DumpQuadsText(ir, p.m_Codes);
         }
         WriteTextFile(base + ".quad.txt", oss.str());
     }
 
     // ---------- 6. 挑战版：CCodeGen.Generate 输出汇编文件 ----------
     CCodeGen cg(ir.GetCodes());
+    cg.BindSymTab(symtab);          // 阶段 08：函数四元式在过程表里，需绑定符号表
     AsmOutput asmOut;
     if (cg.Generate(asmOut))
     {

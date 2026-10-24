@@ -12,7 +12,7 @@
 | SymbolTable | `EnterScope(ScopeType)` / `ExitScope()` / `RecVar(name,type,line,col)→VarEntry*` / `RecArray(name,type,size,line,col)→VarEntry*`（阶段⑥ 新增） / `RecConst(name,type,value,line,col)→ConstEntry*` / `SearchVar/SearchConst` / `BackfillConst(iConstIdx,name,type)` / `CheckAssign(lhs,rhs,line,col)` / `DumpSymTab(os)` | 符号信息 → IRGenerator |
 | SemanticAnalyzer | `explicit SemanticAnalyzer(SymbolTable&)` / `void Analyze(const ASTNodePtr&)`（阶段⑥ 新增，遍历 AST 填充符号表；不新增独立产物） | ASTNodePtr → 符号表 |
 | IRGenerator | `explicit IRGenerator(SymbolTable&)` / `Generate(const ASTNodePtr&)` / `GetTmpVar(TokenType)` / `GetTmpLabel()` / `EmitIR(op,op1,op2,rslt)` / `GetCodes() const` / `OperandToString(op)` | CodeList → CCodeGen / --dump-quads |
-| CCodeGen | `explicit CCodeGen(const CodeList&)` / `bool Generate(AsmOutput&)` | 汇编输出（挑战版） |
+| CCodeGen | `explicit CCodeGen(const CodeList&)` / `void BindSymTab(const SymbolTable&)` / `bool Generate(AsmOutput&)` | 汇编输出（挑战版） |
 
 ## 二、main 约定（第 6.7 节）
 
@@ -60,6 +60,42 @@
      自行 `RecConst` 登记解决，词法未改动。
      行为影响：语义报错会使退出码为 1（此前不报错）；`--dump-symtab` 的 `.sym.txt`
      从空表变为实际登记内容。
+13. **中间代码模块 IRGenerator 实现**（阶段⑦ 中间代码模块，张灏宇，2026-10-21）：
+     `Generate()` 递归遍历 AST 生成四元式（交付物④ `--dump-quads`），包含：
+     - 表达式：NUM/IDENT/BINOP（算术/关系/逻辑短路）/UNOP（取负、逻辑非）/INDEX（Q_INDEX）/CALL（Q_PARA+Q_CALL）；
+     - 语句：ASSIGN / IF（JZ+JMP+LABEL 标号）/ WHILE（入口 LABEL+JZ+回跳）/ PRINT / RETURN / FUNCDEF→FlushToProc；
+     - 类型转换（§8.1 表）：算术 int/float 混合插入 ITOF；赋值 FLOAT→INT 插入 FTOI；
+     - 控制流标号经 `GetTmpLabel()` 预先申请编号后直接引用（编号体系下无需两趟回填）。
+     **接口变更（均为新增，未破坏既有签名/值）**：
+     - `EmitIR` 新增带 `LineInfo` 的重载（原四元式 `m_loc` 恒为 0,0，无法定位源码；重载属新增，已登记）；
+     - `QuadOp` 追加 `Q_PARA / Q_INDEX / Q_ITOF / Q_FTOI / Q_EQ / Q_NE / Q_LT / Q_LE / Q_GT / Q_GE`
+       （追加在枚举末尾，既有值不变；`Quad::Print` 的 opName 表与 main.cpp 的 `QuadOpName` 同步扩展）；
+     - `IRGenerator` 增加私有辅助方法（EvalExpr/GenStmt/GenFuncDef/OperandType/类型转换/ConstInt）与
+       `m_TmpTypes` 临时量类型登记（GetTmpVar 补完类型记录 TODO）；
+     - `OperandToString` 的 OP_CONST 分支补浮点原文输出（语义 RecConst 未存 `m_szVal` 时按类型格式化，
+       修复浮点常量打印被截断为整数的缺陷）；
+     - main.cpp `--dump-quads` 改为 Q6 原文打印（去掉硬编码 TODO 首行），函数四元式按过程分组输出。
+     联调约定（与目标代码组王逸凡）：CodeList 只读消费；`(INDEX, 数组, 下标, t)` 为取值、
+     `(INDEX, 值, 下标, 数组)` 为存值（元素寻址，下标×元素宽度由目标代码处理）；新增操作码如需调整先对齐。
+14. **目标代码模块 CCodeGen 实现**（阶段⑧ 目标代码模块，王逸凡，2026-10-24）：
+     `IRtoASM()` 把四元式翻译为 x86-64 汇编（AT&T 语法 / GNU as / Windows MinGW 链接）：
+     - 朴素栈式翻译：每个变量与临时量固定 rbp 栈槽，逐四元式 load→运算→store，不做寄存器分配；
+     - 入口为 `main`（`.globl main` + `main:`，与已敲定的 A 方案一致），可用 `gcc -x assembler` 直接汇编链接；
+     - 全局变量/数组按 `VarEntry.m_iScope == 1` 且名字不在过程表中判定，落 `.bss`；
+       局部变量与临时量入栈帧，栈帧按 16 字节对齐，分配顺序按变量表下标/临时编号升序以保证输出稳定；
+     - 过程调用用自定义栈传参：调用方按 `i*8(%rsp)` 落第 i 个实参（槽位 16 字节对齐），
+       被调用方从 `16+8*(i-1)(%rbp)` 取形参；`print` 走 Win64 ABI 调用 `printf`；
+     - 数组寻址 `(%rax,%rcx,元素宽度)`，元素宽度由数组声明类型决定（char 1 / int·float 4）；
+     - 关系运算支持 int 与 float 混用（IR 不插转换，目标代码就地 `cvtsi2ss`）；
+     - `Q_ASSIGN` 两端类型不一致时就地补 `cvtsi2ss` / `cvttss2si`（兜住 IR 在 int→float 处缺 ITOF 的缺陷）。
+     **接口变更（新增，未破坏既有签名）**：
+     - `CCodeGen` 新增 `void BindSymTab(const SymbolTable&)`：函数四元式存放在 `SymbolTable::m_ProcInfoTbl[i].m_Codes`，
+       而构造函数只接收顶层 CodeList；main.cpp 在 `CCodeGen cg(ir.GetCodes());` 后补一行 `cg.BindSymTab(symtab);`。
+       未绑定符号表时退化为「仅生成顶层语句」，不崩溃。
+     - `src/symbol/symbol.cpp` 的 `RecConst()` 修正 `m_bIsFloat` 判定：语义阶段传入 `TOKEN_FLOAT`
+       （`NumType()` 的结果），原先只认词法阶段的 `TOKEN_NUM_FLOAT`，导致浮点常量被当作整数截断。
+       该修复同时改善 `--dump-quads` 的浮点常量原文输出。
+     - 产物后缀 `<源文件名>.asm`（第 7 条约定），已在 `.gitignore` 中排除 `*.asm` 与 `*.quad.txt`。
 
 > 说明：本节第 8–10 条为 2026-10-13 阶段⑤ 收尾时同步；**下面的"四、词法识别集合"仍是 v3.1 骨架版内容**，
 > 词法 v4.0 的现状（17 个挑战版终结符等）见 `README.md` 的模块状态表与《词法模块待改进清单.md》，

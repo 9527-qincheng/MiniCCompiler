@@ -239,6 +239,11 @@ pwsh -NoProfile -File "tests\run_symtab_tests.ps1"
 if errorlevel 1 set "TESTRC=1"
 
 echo.
+echo [TEST] target code (asm assemble + link + run) ...
+pwsh -NoProfile -File "tests\run_codegen_tests.ps1"
+if errorlevel 1 set "TESTRC=1"
+
+echo.
 echo ============================================================
 if "%TESTRC%"=="0" (
     echo  ALL TEST SUITES PASSED

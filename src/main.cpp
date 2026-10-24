@@ -245,6 +245,7 @@ int main(int argc, char* argv[])
 
     // ---------- 6. 挑战版：CCodeGen.Generate 输出汇编文件 ----------
     CCodeGen cg(ir.GetCodes());
+    cg.BindSymTab(symtab);          // 阶段 08：函数四元式在过程表里，需绑定符号表
     AsmOutput asmOut;
     if (cg.Generate(asmOut))
     {

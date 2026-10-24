@@ -24,5 +24,9 @@ compile_commands.json
 *.tmp
 *.log
 
+# 目标代码产物（编译时按源文件同名生成，不入库）
+*.asm
+*.quad.txt
+
 # GUI（Electron）依赖
 gui/node_modules/

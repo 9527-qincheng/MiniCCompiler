@@ -104,7 +104,8 @@ ConstEntry* SymbolTable::RecConst(const std::string& name, TokenType type, doubl
     ConstEntry ce;
     ce.m_szName = name;
     ce.m_constType = type;
-    ce.m_bIsFloat = (type == TokenType::TOKEN_NUM_FLOAT);
+    // 语义阶段传入的是 TOKEN_FLOAT（NumType 的结果），词法阶段是 TOKEN_NUM_FLOAT，两者都算浮点常量
+    ce.m_bIsFloat = (type == TokenType::TOKEN_NUM_FLOAT || type == TokenType::TOKEN_FLOAT);
     ce.m_fValue = value;
     ce.m_iValue = static_cast<long long>(value);
     ce.m_iProcIndex = m_curProcIndex;

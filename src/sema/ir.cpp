@@ -233,6 +233,55 @@ Operand IRGenerator::FloatToIntConv(const Operand& op, const LineInfo& loc)
 }
 
 // ----------------------------------------------------------------------------
+// 形参类型表（P2 缺陷修复用）
+// 符号表的 ParamEntry 没有过程归属，m_ParamInfoTbl 是所有函数形参混在一起的一张
+// 扁平表，无法按被调函数定位形参类型。故在 IR 阶段自己扫一遍 AST 的
+// FuncDefNode/ParamNode 建「函数名 → 形参类型列表」，供 Q_PARA 插类型转换。
+// ----------------------------------------------------------------------------
+void IRGenerator::BuildParamTypeTable(const ASTNodePtr& root)
+{
+    m_ParamTypes.clear();
+    if (!root)
+    {
+        return;
+    }
+    // 顶层 Program 的子节点里找 FUNCDEF（MiniC 不支持嵌套函数定义）
+    const ASTNode* prog = root.get();
+    if (prog->m_kind != ASTNodeKind::AST_NODE_PROGRAM)
+    {
+        return;
+    }
+    for (const auto& c : prog->m_children)
+    {
+        if (!c || c->m_kind != ASTNodeKind::AST_NODE_FUNCDEF)
+        {
+            continue;
+        }
+        auto* fn = static_cast<const FuncDefNode*>(c.get());
+        std::vector<TokenType> types;
+        for (const auto& p : fn->m_children)
+        {
+            if (p && p->m_kind == ASTNodeKind::AST_NODE_PARAM)
+            {
+                types.push_back(static_cast<const ParamNode*>(p.get())->m_type);
+            }
+        }
+        m_ParamTypes[fn->m_szName] = types;
+    }
+}
+
+TokenType IRGenerator::ParamTypeOf(const std::string& procName, int pos) const
+{
+    const auto it = m_ParamTypes.find(procName);
+    if (it == m_ParamTypes.end() || pos < 0 ||
+        static_cast<std::size_t>(pos) >= it->second.size())
+    {
+        return TokenType::TOKEN_NONE;   // 查不到 → 不插转换（保持原行为）
+    }
+    return it->second[static_cast<std::size_t>(pos)];
+}
+
+// ----------------------------------------------------------------------------
 // 表达式 → Operand（递归求值，含类型转换插入）
 // ----------------------------------------------------------------------------
 Operand IRGenerator::EvalExpr(const ASTNodePtr& node)
@@ -269,6 +318,45 @@ Operand IRGenerator::EvalExpr(const ASTNodePtr& node)
         {
             return Operand();
         }
+        const TokenType op = bin->m_op;
+        const LineInfo& loc = bin->m_loc;
+
+        // 逻辑运算 && / ||：短路求值（JZ/JNZ + 标号 + 常量 0/1）
+        // 关键：右操作数必须在跳转四元式之后才展开求值，否则会「先算 b 再判 a」，
+        // 右操作数里的函数调用/副作用就失去短路语义（P1 缺陷修复）。
+        if (op == TokenType::TOKEN_AND || op == TokenType::TOKEN_OR)
+        {
+            Operand lo = EvalExpr(bin->m_children[0]);
+            if (lo.m_kind == OperandKind::OP_NONE)
+            {
+                return Operand();
+            }
+            const int tIdx = GetTmpVar(TokenType::TOKEN_BOOL);
+            const int lMid = GetTmpLabel();   // && 的假出口 / || 的真出口
+            const int lEnd = GetTmpLabel();
+            if (op == TokenType::TOKEN_AND)
+            {
+                // t = a && b :  a 假 → 置 0 结束；a 真 → t = b
+                EmitIR(QuadOp::Q_JZ, lo, Operand(), Operand::Label(lMid), loc);
+            }
+            else
+            {
+                // t = a || b :  a 真 → 置 1 结束；a 假 → t = b
+                EmitIR(QuadOp::Q_JNZ, lo, Operand(), Operand::Label(lMid), loc);
+            }
+            Operand ro = EvalExpr(bin->m_children[1]);
+            if (ro.m_kind != OperandKind::OP_NONE)
+            {
+                EmitIR(QuadOp::Q_ASSIGN, ro, Operand(), Operand::Temp(tIdx, TokenType::TOKEN_BOOL), loc);
+            }
+            EmitIR(QuadOp::Q_JMP, Operand(), Operand(), Operand::Label(lEnd), loc);
+            EmitIR(QuadOp::Q_LABEL, Operand::Label(lMid), Operand(), Operand(), loc);
+            EmitIR(QuadOp::Q_ASSIGN, ConstInt(op == TokenType::TOKEN_AND ? 0 : 1, loc), Operand(),
+                   Operand::Temp(tIdx, TokenType::TOKEN_BOOL), loc);
+            EmitIR(QuadOp::Q_LABEL, Operand::Label(lEnd), Operand(), Operand(), loc);
+            return Operand::Temp(tIdx, TokenType::TOKEN_BOOL);
+        }
+
         Operand lo = EvalExpr(bin->m_children[0]);
         Operand ro = EvalExpr(bin->m_children[1]);
         if (lo.m_kind == OperandKind::OP_NONE || ro.m_kind == OperandKind::OP_NONE)
@@ -277,38 +365,6 @@ Operand IRGenerator::EvalExpr(const ASTNodePtr& node)
         }
         const TokenType lt = OperandType(lo);
         const TokenType rt = OperandType(ro);
-        const TokenType op = bin->m_op;
-        const LineInfo& loc = bin->m_loc;
-
-        // 逻辑运算 && / ||：短路求值（JZ/JNZ + 标号 + 常量 0/1）
-        if (op == TokenType::TOKEN_AND || op == TokenType::TOKEN_OR)
-        {
-            const int tIdx = GetTmpVar(TokenType::TOKEN_BOOL);
-            const int lMid = GetTmpLabel();   // && 的假出口 / || 的真出口
-            const int lEnd = GetTmpLabel();
-            if (op == TokenType::TOKEN_AND)
-            {
-                // t = a && b :  a 假 → 置 0 结束；a 真 → t = b
-                EmitIR(QuadOp::Q_JZ, lo, Operand(), Operand::Label(lMid), loc);
-                EmitIR(QuadOp::Q_ASSIGN, ro, Operand(), Operand::Temp(tIdx, TokenType::TOKEN_BOOL), loc);
-                EmitIR(QuadOp::Q_JMP, Operand(), Operand(), Operand::Label(lEnd), loc);
-                EmitIR(QuadOp::Q_LABEL, Operand::Label(lMid), Operand(), Operand(), loc);
-                EmitIR(QuadOp::Q_ASSIGN, ConstInt(0, loc), Operand(),
-                       Operand::Temp(tIdx, TokenType::TOKEN_BOOL), loc);
-            }
-            else
-            {
-                // t = a || b :  a 真 → 置 1 结束；a 假 → t = b
-                EmitIR(QuadOp::Q_JNZ, lo, Operand(), Operand::Label(lMid), loc);
-                EmitIR(QuadOp::Q_ASSIGN, ro, Operand(), Operand::Temp(tIdx, TokenType::TOKEN_BOOL), loc);
-                EmitIR(QuadOp::Q_JMP, Operand(), Operand(), Operand::Label(lEnd), loc);
-                EmitIR(QuadOp::Q_LABEL, Operand::Label(lMid), Operand(), Operand(), loc);
-                EmitIR(QuadOp::Q_ASSIGN, ConstInt(1, loc), Operand(),
-                       Operand::Temp(tIdx, TokenType::TOKEN_BOOL), loc);
-            }
-            EmitIR(QuadOp::Q_LABEL, Operand::Label(lEnd), Operand(), Operand(), loc);
-            return Operand::Temp(tIdx, TokenType::TOKEN_BOOL);
-        }
 
         // 关系运算：结果 T_BOOL；int/float 混合不插转换（§8.1 表：无）
         if (op == TokenType::TOKEN_EQ || op == TokenType::TOKEN_NE ||
@@ -448,6 +504,17 @@ Operand IRGenerator::EvalExpr(const ASTNodePtr& node)
             Operand arg = EvalExpr(call->m_children[i]);
             if (arg.m_kind != OperandKind::OP_NONE)
             {
+                // 实参 → 形参类型转换（P2 缺陷修复）：符号表 ParamEntry 无过程归属，
+                // 故用 IR 阶段自建的 m_ParamTypes 按「被调函数名 + 实参序号」查形参类型。
+                const TokenType pt = ParamTypeOf(id->m_szName, static_cast<int>(i) - 1);
+                if (IsFloatType(pt) && IsIntType(OperandType(arg)))
+                {
+                    arg = IntToFloatConv(arg, call->m_loc);
+                }
+                else if (IsIntType(pt) && IsFloatType(OperandType(arg)))
+                {
+                    arg = FloatToIntConv(arg, call->m_loc);
+                }
                 EmitIR(QuadOp::Q_PARA, arg, Operand(), Operand(), call->m_loc);
             }
         }
@@ -527,6 +594,11 @@ void IRGenerator::GenStmt(const ASTNodePtr& node)
             {
                 val = FloatToIntConv(val, a->m_loc);
             }
+            // INT → FLOAT：插入 ITOF（§8.1；原先缺失导致赋值后按位解释成垃圾浮点）
+            else if (IsFloatType(lhsT) && IsIntType(OperandType(val)))
+            {
+                val = IntToFloatConv(val, a->m_loc);
+            }
             EmitIR(QuadOp::Q_ASSIGN, val, Operand(), Operand::Var(id->m_iSymIdx, lhsT), a->m_loc);
         }
         else if (target->m_kind == ASTNodeKind::AST_NODE_INDEX)
@@ -557,6 +629,10 @@ void IRGenerator::GenStmt(const ASTNodePtr& node)
             if (IsIntType(elemT) && IsFloatType(OperandType(val)))
             {
                 val = FloatToIntConv(val, a->m_loc);
+            }
+            else if (IsFloatType(elemT) && IsIntType(OperandType(val)))
+            {
+                val = IntToFloatConv(val, a->m_loc);
             }
             EmitIR(QuadOp::Q_INDEX, val, idxOp, Operand::Var(id->m_iSymIdx, elemT), a->m_loc);
         }
@@ -647,6 +723,17 @@ void IRGenerator::GenStmt(const ASTNodePtr& node)
         {
             return;
         }
+        // 返回值 → 函数返回类型转换（P3 缺陷修复）：
+        // 形如 `float f(){ return 7; }` 原先直接把整数 7 放进返回值寄存器，
+        // 调用方按 float 读就成了垃圾浮点。此处按 m_curRetType 补 ITOF/FTOI。
+        if (IsFloatType(m_curRetType) && IsIntType(OperandType(e)))
+        {
+            e = IntToFloatConv(e, rn->m_loc);
+        }
+        else if (IsIntType(m_curRetType) && IsFloatType(OperandType(e)))
+        {
+            e = FloatToIntConv(e, rn->m_loc);
+        }
         EmitIR(QuadOp::Q_RETURN, e, Operand(), Operand(), rn->m_loc);
         return;
     }
@@ -684,11 +771,15 @@ void IRGenerator::GenFuncDef(FuncDefNode* fn)
         return;
     }
     m_Codes.clear();
+    // 当前函数返回类型（return 语句据此插类型转换）
+    const TokenType savedRet = m_curRetType;
+    m_curRetType = proc->m_retType;
     // 函数体 = children 末元素（BLOCK）
     if (!fn->m_children.empty())
     {
         GenStmt(fn->m_children.back());
     }
+    m_curRetType = savedRet;
     FlushToProc(*proc);
 }
 
@@ -702,6 +793,9 @@ void IRGenerator::Generate(const ASTNodePtr& root)
         return;
     }
     m_Codes.clear();
+    m_curRetType = TokenType::TOKEN_NONE;
+    // 形参类型表必须在翻译任何语句之前建好（Q_PARA 要用）
+    BuildParamTypeTable(root);
     GenStmt(root);
     // 顶层全局语句的四元式保留在 m_Codes（--dump-quads 输出）；
     // 函数定义的四元式已由 GenFuncDef → FlushToProc 挂入 m_ProcInfoTbl。

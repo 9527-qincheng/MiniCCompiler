@@ -10,6 +10,7 @@
 #include "parser/ast.h"
 #include "symbol/symbol.h"
 
+#include <map>
 #include <stack>
 #include <string>
 #include <vector>
@@ -117,6 +118,15 @@ private:
     Operand IntToFloatConv(const Operand& op, const LineInfo& loc); // 插入 ITOF
     Operand FloatToIntConv(const Operand& op, const LineInfo& loc); // 插入 FTOI
     Operand ConstInt(int value, const LineInfo& loc); // 取整型常量 0/1（无则登记）
+    void    BuildParamTypeTable(const ASTNodePtr& root); // 扫描 AST 建「函数名 → 形参类型表」
+    // 形参类型查询：按「被调函数名 + 实参序号」取形参声明类型（供 Q_PARA 插类型转换）
+    TokenType ParamTypeOf(const std::string& procName, int pos) const;
+    // 形参类型表：函数名 → 形参类型列表（下标 0 = 第 1 个形参）
+    // 由 Generate 入口按 AST 的 FuncDefNode/ParamNode 建表（ParamEntry 无过程归属，符号表查不到）
+    std::map<std::string, std::vector<TokenType>> m_ParamTypes;
+    // 当前正在翻译的函数的返回类型（GenFuncDef 设置；顶层语句为 TOKEN_NONE）
+    // 供 return 语句插类型转换（P3 缺陷修复：float 函数 return 整型表达式要插 ITOF）
+    TokenType   m_curRetType = TokenType::TOKEN_NONE;
 
 public:
     explicit IRGenerator(SymbolTable& symtab);

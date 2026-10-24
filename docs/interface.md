@@ -96,6 +96,30 @@
        （`NumType()` 的结果），原先只认词法阶段的 `TOKEN_NUM_FLOAT`，导致浮点常量被当作整数截断。
        该修复同时改善 `--dump-quads` 的浮点常量原文输出。
      - 产物后缀 `<源文件名>.asm`（第 7 条约定），已在 `.gitignore` 中排除 `*.asm` 与 `*.quad.txt`。
+15. **中间代码模块缺陷修复（阶段⑦ 收尾，鲍方乐，2026-10-24）**：修复 IR 三处类型转换/短路缺陷，
+    均为实现缺陷而非接口变更，`IRGenerator` 对外签名不变。
+    - **P1 `&&` / `||` 未真短路**：原 `EvalExpr` 在判断操作符之前就先把左右操作数都 `EvalExpr` 展开，
+      右操作数里的函数调用/副作用在跳转前已执行。改为 `TOKEN_AND`/`TOKEN_OR` 分支内先只求左操作数、
+      发 `Q_JZ`/`Q_JNZ`，**再**展开右操作数，之后才 `Q_JMP`/`Q_LABEL` 收口。
+      实测 `a=false; b = a && side();`（side 打印 888）只输出 `0`，四种真假组合全部符合短路语义。
+    - **P2 实参不做类型转换**：`(PARA, 实参, -, -)` 原先只 `EvalExpr` 不看形参类型，
+      `float half(float x); half(5)` 把整数 5 的位模式当浮点传进去（输出 `2.8026e-45`）。
+      根因是符号表的 `ParamEntry` **没有过程归属**（`m_ParamInfoTbl` 是所有函数形参混在一起的一张扁平表），
+      无法按被调函数定位形参类型。故新增私有方法 `BuildParamTypeTable(root)`，
+      在 `Generate` 入口扫 AST 的 `FuncDefNode`/`ParamNode` 建「函数名 → 形参类型列表」，
+      再由 `ParamTypeOf(procName, pos)` 查询，`Q_PARA` 前按需插 `Q_ITOF`/`Q_FTOI`。
+      **这是 IR 内部的临时补丁**：若后续给 `ParamEntry` 补过程归属字段，应改为直接查符号表。
+    - **P3 返回值不做类型转换**：`float f() { return 7; }` 直接把整数 7 放进 `%eax`，
+      调用方按 float 读 `%xmm0` 得到 `0`（实测）。新增私有成员 `m_curRetType`，
+      由 `GenFuncDef` 在翻译函数体前设置为 `ProcEntry::m_retType`，`return` 语句据此插 `Q_ITOF`/`Q_FTOI`。
+    - **P4 赋值 int→float 补 ITOF**：`f = i`（f 为 float、i 为 int）原先不插 `Q_ITOF`，
+      靠目标代码侧 `Q_ASSIGN` 兜底转换。现在 IR 侧补插，`Q_ASSIGN` 的两端类型在正常路径下已一致。
+      数组写 `arr[k] = i`（元素为 float）同样补插。
+    - 回归：新增 `tests/codegen/short_circuit.mc`、`arg_conv.mc`、`ret_conv.mc` 三个用例，
+      `tests/run_codegen_tests.ps1` 从 17 例增至 **20 例全通过**；前端回归中
+      词法 6/6、语法自检、40 例 AST 基线均无差异。
+    - 顺带清理：`src/main.cpp` 末尾的完成提示由 `minic: compilation finished (skeleton demo)`
+      改为 `minic: compilation finished`（骨架期的残留措辞）。
 
 > 说明：本节第 8–10 条为 2026-10-13 阶段⑤ 收尾时同步；**下面的"四、词法识别集合"仍是 v3.1 骨架版内容**，
 > 词法 v4.0 的现状（17 个挑战版终结符等）见 `README.md` 的模块状态表与《词法模块待改进清单.md》，

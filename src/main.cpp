@@ -244,16 +244,23 @@ int main(int argc, char* argv[])
     }
 
     // ---------- 6. 挑战版：CCodeGen.Generate 输出汇编文件 ----------
-    CCodeGen cg(ir.GetCodes());
-    cg.BindSymTab(symtab);          // 阶段 08：函数四元式在过程表里，需绑定符号表
-    AsmOutput asmOut;
-    if (cg.Generate(asmOut))
+    // 只在前面各阶段全部无错时才生成汇编。
+    // 否则语法/语义有错的输入（如 `print(1); int late(int x){...}`）会让
+    // 残缺 AST 也走完 IR 与代码生成，落下一份只有空 main 的 .asm —— 那份文件
+    // 能被 gcc 汇编、也能跑起来，但和用户写的程序毫无关系，属于误导性产物。
+    if (g_ErrorList.empty())
     {
-        std::string asmText;
-        for (const auto& line : asmOut.m_FileHeader) { asmText += line + "\n"; }
-        for (const auto& line : asmOut.m_DataSection) { asmText += line + "\n"; }
-        for (const auto& line : asmOut.m_CodeSection) { asmText += line + "\n"; }
-        WriteTextFile(base + ".asm", asmText);
+        CCodeGen cg(ir.GetCodes());
+        cg.BindSymTab(symtab);          // 阶段 08：函数四元式在过程表里，需绑定符号表
+        AsmOutput asmOut;
+        if (cg.Generate(asmOut))
+        {
+            std::string asmText;
+            for (const auto& line : asmOut.m_FileHeader) { asmText += line + "\n"; }
+            for (const auto& line : asmOut.m_DataSection) { asmText += line + "\n"; }
+            for (const auto& line : asmOut.m_CodeSection) { asmText += line + "\n"; }
+            WriteTextFile(base + ".asm", asmText);
+        }
     }
 
     // ---------- 7. 错误汇总：有错误按非零退出码结束 ----------

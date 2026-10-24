@@ -865,10 +865,13 @@ void AsmEmitter::Run(AsmOutput& out)
     {
         for (const ProcEntry& pe : m_sym->m_ProcInfoTbl)
         {
-            if (pe.m_Codes.empty())
-            {
-                continue;
-            }
+            // 【2026-10-24 修复】不能因为 m_Codes 为空就跳过整个函数体。
+            // 空函数（void f() { }）没有任何四元式，若跳过则符号 f 在汇编里
+            // 根本没有定义，而调用点仍然会生成 `call f`，链接期报
+            //   ld: undefined reference to `f'
+            // （实测 `void nothing() { } nothing(); print(1);` 汇编链接失败）。
+            // ProcEntry 只为「已定义的函数」创建（MiniC 不支持函数原型），
+            // 因此这里必须无条件为每个 ProcEntry 输出一份函数体。
             EmitFunction(pe.m_szName, pe.m_Codes, false);
         }
     }

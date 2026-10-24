@@ -499,24 +499,39 @@ Operand IRGenerator::EvalExpr(const ASTNodePtr& node)
         {
             retT = m_symtab.m_VarInfoTbl[id->m_iSymIdx].m_type;
         }
+        // 【2026-10-24 修复】必须先求值完全部实参，再统一发 Q_PARA。
+        // 旧实现「边求值边发 PARA」，遇到嵌套调用会产出错序的四元式，例如
+        //   add3(inc(0), inc(1), inc(2)) →
+        //     (PARA,0)(CALL,inc,_T4)(PARA,_T4)(PARA,1)(CALL,inc,_T5)...
+        // 内层 (PARA,0) 会被内层 (CALL,inc) 消费掉，而外层实参 _T4 又混进了下一次
+        // 内层调用的实参列表（Q_CALL 取走当时 m_pendingArgs 的全部内容），
+        // 表现为第二个实参起全部错乱（实测输出 -1719689691 这类垃圾值）。
+        // 求值完再逐个发 PARA，PARA 与 CALL 才严格配对。
+        std::vector<Operand> args;
+        args.reserve(call->m_children.size() - 1);
         for (std::size_t i = 1; i < call->m_children.size(); ++i)
         {
             Operand arg = EvalExpr(call->m_children[i]);
-            if (arg.m_kind != OperandKind::OP_NONE)
+            if (arg.m_kind == OperandKind::OP_NONE)
             {
-                // 实参 → 形参类型转换（P2 缺陷修复）：符号表 ParamEntry 无过程归属，
-                // 故用 IR 阶段自建的 m_ParamTypes 按「被调函数名 + 实参序号」查形参类型。
-                const TokenType pt = ParamTypeOf(id->m_szName, static_cast<int>(i) - 1);
-                if (IsFloatType(pt) && IsIntType(OperandType(arg)))
-                {
-                    arg = IntToFloatConv(arg, call->m_loc);
-                }
-                else if (IsIntType(pt) && IsFloatType(OperandType(arg)))
-                {
-                    arg = FloatToIntConv(arg, call->m_loc);
-                }
-                EmitIR(QuadOp::Q_PARA, arg, Operand(), Operand(), call->m_loc);
+                continue;
             }
+            // 实参 → 形参类型转换（P2 缺陷修复）：符号表 ParamEntry 无过程归属，
+            // 故用 IR 阶段自建的 m_ParamTypes 按「被调函数名 + 实参序号」查形参类型。
+            const TokenType pt = ParamTypeOf(id->m_szName, static_cast<int>(i) - 1);
+            if (IsFloatType(pt) && IsIntType(OperandType(arg)))
+            {
+                arg = IntToFloatConv(arg, call->m_loc);
+            }
+            else if (IsIntType(pt) && IsFloatType(OperandType(arg)))
+            {
+                arg = FloatToIntConv(arg, call->m_loc);
+            }
+            args.push_back(arg);
+        }
+        for (const Operand& a : args)
+        {
+            EmitIR(QuadOp::Q_PARA, a, Operand(), Operand(), call->m_loc);
         }
         if (retT == TokenType::TOKEN_VOID)
         {

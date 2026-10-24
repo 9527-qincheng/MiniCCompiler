@@ -85,6 +85,7 @@ MiniCCompiler/
 │   ├── MiniC语法支持清单.md                     # 语言规格：92 条产生式实测支持矩阵、与 C 的 15 条差异
 │   ├── 词法模块待改进清单.md                    # 词法模块实测复审记录（4 项问题的修复依据）
 │   ├── stage5_ast_review.md                     # 阶段⑤ AST 形状评审
+│   ├── 验收报告.md                              # 测试验收报告：交付物核对/五模块记录/11 套回归/偏差与遗留
 │   ├── 语法分析过程_示例.xlsx                   # 分析过程示例（LL(1) 逐步推导）
 │   ├── 语法分析过程_ll1_411.xlsx                # §4.11 的 82 步分析轨迹
 │   ├── gui-implementation/                      # GUI 实现截图（01~11）
@@ -110,7 +111,7 @@ build.bat
 | 命令 | 作用 |
 |---|---|
 | `build.bat` | 编译，产出 `build\minic.exe` |
-| `build.bat test` | 编译后跑全部 9 套测试 + 2 套 GUI 冒烟，任一失败即返回 1 |
+| `build.bat test` | 编译后跑全部 11 套测试（9 套编译阶段回归 + 2 套 GUI 冒烟），任一失败即返回 1 |
 | `build.bat run tests\test.mc` | 编译后运行指定源文件 |
 | `build.bat list` | 列出参与编译的源文件 |
 | `build.bat clean` | 清理 `build` 目录 |
@@ -443,8 +444,8 @@ pwsh -File tests/run_quad_tests.ps1 -Update
 |---|---|---|
 | ① 编译器源码 | `src/`（六段流水线） | ✅ 完成 |
 | ② 技术文档 | [docs/MiniC编译器设计文档_v4.0_挑战版LL1.md](docs/MiniC编译器设计文档_v4.0_挑战版LL1.md)（系统架构设计）、[docs/MiniC编译器数据结构设计.md](docs/MiniC编译器数据结构设计.md)、[docs/interface.md](docs/interface.md)（模块接口定义）、[docs/MiniC语法支持清单.md](docs/MiniC语法支持清单.md)（语言规格） | ✅ 完成 |
-| ③ 测试用例集 | `tests/`，9 套回归（见「构建」一节的 `build.bat test`） | ✅ 完成 |
-| ④ 验收报告 | 待补 | 🟡 数据已齐 |
+| ③ 测试用例集 | `tests/`，11 套回归（9 套编译阶段 + 2 套 GUI 冒烟，见「构建」一节的 `build.bat test`） | ✅ 完成 |
+| ④ 验收报告 | [docs/验收报告.md](docs/验收报告.md)（交付物核对 / 五模块十字段记录 / 11 套回归 / 偏差与遗留） | ✅ 完成 |
 | ⑤ 答辩材料 | 待补 | ⬜ |
 | 个人任务计划（附录 A） | [docs/plans/](docs/plans/README.md)，12 人各一份 | ✅ 完成 |
 

@@ -1,7 +1,7 @@
 
 # MiniC 编译器（挑战版，C++17）—— 项目说明
 
-**当前进度**：词法模块已按 v4.0 挑战版完成（17 个新终结符、编码映射、双字符运算符、字符常量）；语法模块已按 v4.0 挑战版落地为 **LL(1) 预测分析表驱动**（92 条产生式，非递归分析栈 + `src/parser/grammar.cpp` 预测表，`--dump-parse` 输出分析过程）；符号表模块已实现多表登记、作用域链查找与数组登记；**语义分析模块已实现并接入主流程**（`src/sema/semantic.cpp`，遍历 AST 登记变量/数组/函数/常量并做类型检查）；其余模块（中间代码、目标代码）保留完整接口实现，核心逻辑留 TODO。
+**当前进度**：六个阶段全部打通，**编译器已可端到端运行**。词法模块已按 v4.0 挑战版完成（17 个新终结符、编码映射、双字符运算符、字符常量）；语法模块已按 v4.0 挑战版落地为 **LL(1) 预测分析表驱动**（92 条产生式，非递归分析栈 + `src/parser/grammar.cpp` 预测表，`--dump-parse` 输出分析过程）；符号表模块已实现多表登记、作用域链查找与数组登记；语义分析模块已实现并接入主流程（`src/sema/semantic.cpp`，遍历 AST 登记变量/数组/函数/常量并做类型检查）；**中间代码模块已实现**（`src/sema/ir.cpp`，四元式含 ITOF/FTOI 类型转换、`&&`/`||` 真短路、数组读写、函数调用与递归，`--dump-quads` 输出）；**目标代码模块已实现**（`src/codegen/codegen.cpp`，x86-64 / GNU as 汇编，产物可直接用 gcc 汇编链接成 exe 运行）。
 
 依据：《MiniC编译器数据结构设计.md》第 4 章（数据结构）与第 6 章（接口契约，Q1~Q12 定稿）；挑战版文法见《MiniC编译器设计文档_v4.0_挑战版LL1.md》。
 
@@ -44,9 +44,9 @@ MiniCCompiler/
 │   │   └── symbol.h/cpp    # SymbolTable 多表（Var/Const/Type/Proc/Param/Label）+ 语义接口
 │   ├── sema/
 │   │   ├── semantic.h/cpp  # SemanticAnalyzer（遍历 AST 填充符号表 + 类型检查）
-│   │   └── ir.h/cpp        # Quad/Operand/QuadOp + IRGenerator（核心 TODO）
+│   │   └── ir.h/cpp        # Quad/Operand/QuadOp + IRGenerator（四元式生成）
 │   └── codegen/
-│       └── codegen.h/cpp   # AsmOutput + CCodeGen（挑战版骨架）
+│       └── codegen.h/cpp   # AsmOutput + CCodeGen（x86-64 / GNU as 汇编生成）
 ├── tests/
 │   ├── test.mc             # 最小示例：int a; float b; a = b + 1;
 │   ├── lex_test.mc         # 词法测试（注释/字符串/关键字）
@@ -61,12 +61,17 @@ MiniCCompiler/
 │   ├── parser/             # Parser 回归用例（40 个 .mc）与期望结果
 │   │   ├── *.mc            #   合法 21 条 + 非法 19 条
 │   │   └── expected/       #   *.ast.txt / *.err.txt / ll1_411.parse.txt
+│   ├── codegen/            # 目标代码端到端用例（20 个 .mc + 期望输出）
 │   ├── grammar_selfcheck.cpp      # 文法表自检（21 项断言）
 │   ├── parser_unit_test.cpp       # Parser 单元测试（AST 字段级）
-│   ├── run_lexer_tests.ps1        # 词法回归测试脚本（需 PowerShell 7）
-│   ├── run_parser_tests.ps1       # 回归测试脚本（需 PowerShell 7）
-│   ├── run_parser_unit.ps1        # 单元测试脚本（需 PowerShell 7）
-│   └── run_grammar_selfcheck.ps1  # 文法自检脚本（需 PowerShell 7）
+│   ├── symbol_test.cpp            # 符号表作用域链断言
+│   ├── run_lexer_tests.ps1        # 词法回归（6 例）
+│   ├── run_grammar_selfcheck.ps1  # 文法表自检
+│   ├── run_parser_tests.ps1       # 语法回归（40 例 AST / 错误基线）
+│   ├── run_parser_unit.ps1        # Parser 单元测试
+│   ├── run_symbol_tests.ps1       # 符号表作用域链断言
+│   ├── run_symtab_tests.ps1       # 符号表 DumpSymTab 回归
+│   └── run_codegen_tests.ps1      # 目标代码端到端（编译→gcc 链接→运行→比对输出）
 ├── examples/
 │   └── example.mc          # 挑战版关键字示例
 ├── docs/
@@ -91,14 +96,15 @@ build.bat
 | 命令 | 作用 |
 |---|---|
 | `build.bat` | 编译，产出 `build\minic.exe` |
-| `build.bat test` | 编译后跑全部 4 套测试，任一失败即返回 1 |
+| `build.bat test` | 编译后跑全部 7 套测试，任一失败即返回 1 |
 | `build.bat run tests\test.mc` | 编译后运行指定源文件 |
 | `build.bat list` | 列出参与编译的源文件 |
 | `build.bat clean` | 清理 `build` 目录 |
 | `build.bat rebuild` | 先清理再编译 |
 
 > `build.bat test` 等价于依次执行 `run_lexer_tests.ps1`、`run_grammar_selfcheck.ps1`、
-> `run_parser_tests.ps1`、`run_parser_unit.ps1`，适合提交前自检与 CI。
+> `run_parser_tests.ps1`、`run_parser_unit.ps1`、`run_symbol_tests.ps1`、`run_symtab_tests.ps1`、
+> `run_codegen_tests.ps1`，适合提交前自检与 CI。
 > 退出码会如实传播（**注意**：`build.bat run` 也传播 `minic` 的退出码，
 > 早前版本因 `endlocal`/`exit` 分行书写会吞掉退出码恒返回 0，现已修复）。
 
@@ -180,9 +186,11 @@ build\minic.exe tests\test.mc --dump-tokens --dump-ast --dump-symtab --dump-quad
 | `--dump-ast` | `tests/test.ast.txt` | 已实现（LL(1) 表驱动解析产出的 AST） |
 | `--dump-parse` | `tests/test.parse.txt` | 已实现（分析栈/剩余输入/动作 逐步轨迹，对齐设计文档 §4.11） |
 | `--dump-symtab` | `tests/test.sym.txt` | 已实现（语义分析填充的多表符号表） |
-| `--dump-quads` | `tests/test.quad.txt` | 骨架占位（TODO） |
+| `--dump-quads` | `tests/test.quad.txt` | 已实现（四元式，含顶层代码与各函数过程） |
 
-- 默认同时生成 `<源文件名>.asm`（挑战版汇编骨架占位）。
+- 默认同时生成 `<源文件名>.asm`（x86-64 / GNU as 汇编）。
+- 汇编产物可直接交给 gcc 汇编链接后运行：`Copy-Item tests\test.asm tests\test.s; gcc -x assembler -o tests\test.exe tests\test.s; .\tests\test.exe`
+  （Windows 上 gcc 不认 `.asm` 后缀，须先改名为 `.s` 或用 `-x assembler` 显式指定语言）。
 - 出错时退出码为 1（错误含行列号，汇总于 `g_ErrorList`）；成功退出码 0。
 
 ### Token 输出示例（tests/test.mc）
@@ -209,7 +217,7 @@ npm install        :: 首次安装 Electron（.npmrc 已配置 npmmirror 镜像�
 | 页签 | 数据来源 |
 |---|---|
 | Token / 语法分析 / 语法树 / 符号表 | `--dump-tokens` / `--dump-parse` / `--dump-ast` / `--dump-symtab` 产物 |
-| 四元式 / 汇编 | `--dump-quads` 与默认 `.asm` 产物（当前为 TODO 占位） |
+| 四元式 / 汇编 | `--dump-quads` 与默认 `.asm` 产物（均为真实输出） |
 | 诊断 | stderr 的 `minic: error/warning: 行:列: 消息`，点击跳到源码行 |
 
 - 用法、快捷键、目录结构与启动器原理见 [gui/README.md](gui/README.md)。
@@ -334,8 +342,8 @@ pwsh -File tests/run_parser_unit.ps1
 | CParser（语法） | CParser(TokenList&) / Parse / HasError / GetErrors / GetTrace | **已实现（v4.0 挑战版 LL(1) 预测分析表驱动）**：92 条产生式驱动的非递归分析栈（`StackItem{TERM/NTERM/ACTION}` + 内部规约标记），语义动作 semantic000–027 按设计文档 §8 位置调度（符号表/IR 类动作登记占位，待阶段⑥⑦）；支持声明（含 `int a, b;` 多声明符与一维数组）、赋值/下标赋值/调用语句、表达式优先级与结合性、一元 `- !`、比较与逻辑运算符、`bool`/`char`/`true`/`false`、`print`、`if/else`（就近配对）、`while`、`return`、复合语句、函数定义与调用；恐慌式错误恢复可连续报错不崩溃；`GetTrace()` 输出分析轨迹供 `--dump-parse` 使用。公开签名与 §7.2 一致，`GetTrace()` 为新增 |
 | SymbolTable（符号表） | EnterScope / ExitScope / RecVar / RecArray / RecConst / SearchVar / SearchConst / BackfillConst / CheckAssign / DumpSymTab | **已实现**：多表登记、作用域链自内向外查找（内层可遮蔽外层）、数组登记（m_bIsArray / m_iArraySize）、常量回填、float→int 告警（Q9） |
 | SemanticAnalyzer（语义分析） | SemanticAnalyzer(SymbolTable&) / Analyze(const ASTNodePtr&) | **已实现**：遍历 AST 登记变量/数组/函数/形参/常量，未声明与重复声明报错，按 §8.1 类型系统做运算与赋值检查 |
-| IRGenerator（中间代码） | Generate / GetTmpVar / GetTmpLabel / EmitIR / GetCodes / OperandToString | 骨架：计数器/EmitIR/OperandToString 可用，遍历 AST 生成留 TODO |
-| CCodeGen（目标代码，挑战版） | Generate / IRtoASM / AsmOutput | 骨架：输出结构完整，x86 翻译留 TODO |
+| IRGenerator（中间代码） | IRGenerator(SymbolTable&) / Generate / GetTmpVar / GetTmpLabel / EmitIR / GetCodes / OperandToString | **已实现**：遍历 AST 生成四元式（23 种 `QuadOp`），含算术/关系/逻辑、`&&`/`||` 真短路（`Q_JZ`/`Q_JNZ`）、`ITOF`/`FTOI` 类型转换（赋值、实参、返回值三处均插）、一维数组读写（`Q_INDEX` 双向）、`if/else`、`while`、`print`、函数定义（四元式存入 `ProcEntry::m_Codes`）与调用（`Q_PARA` + `Q_CALL`）、递归；`--dump-quads` 输出顶层代码与各过程 |
+| CCodeGen（目标代码，挑战版） | CCodeGen(const CodeList&) / BindSymTab / Generate / IRtoASM / AsmOutput | **已实现**：x86-64 / GNU as（AT&T 语法），栈帧 + `%rbp` 基址寻址、整型 `%eax` / 浮点 `%xmm0` 双通道、数组按 `元素宽度×下标` 的 `(%rax,%rcx,4)` 寻址、调用按 System V 风格落栈（`16+8*(pos-1)(%rbp)`）、`printf` 输出（浮点同时放 `%xmm` 与第 2 个整型槽以适配 Windows ABI）；产物可被 gcc 直接汇编链接 |
 
 > **词法现状说明**：17 个挑战版终结符（`bool` `char` `print` `true` `false` `[` `]` `==` `!=` `<` `<=` `>` `>=` `&&` `||` `!` 字符常量）**词法层已全部支持**；
 > **语法层现状**：挑战版文法（92 条产生式）已由 LL(1) 预测分析驱动器全部覆盖，
@@ -354,7 +362,7 @@ pwsh -File tests/run_parser_unit.ps1
 4. **SymbolTable 接口差异**：文档第 4.4 为 `RecVar(name,type,line)→int`、含 `RecConstTbl/SearchVarInfoTbl`；第 6 章契约为 `RecVar(name,type,line,col)→VarEntry*`、含 `EnterScope/ExitScope` 等。本骨架以**第 6 章契约为主**，同时保留第 4 章扩展接口（RecVarTbl/RecConstTbl/SearchXxxTbl）为兼容附加接口。
 5. **IRGenerator 构造**：第 4.5.4 为无参构造，第 6.5 契约为 `explicit IRGenerator(SymbolTable&)`；按第 6 章契约实现（绑定符号表以支持 OperandToString 转原文）。
 6. **ScopeType 枚举**：第 6 章 EnterScope 需要 `ScopeType t` 参数，文档未定义该枚举；本骨架补充 `ScopeType{SCOPE_GLOBAL, SCOPE_FUNCTION}`。
-7. **main 输出 asm**：第 6.7 约定挑战版输出汇编文件但未给后缀；本骨架固定输出 `<源文件名>.asm`（挑战版占位）。
+7. **main 输出 asm**：第 6.7 约定挑战版输出汇编文件但未给后缀；本骨架固定输出 `<源文件名>.asm`（现已按此约定实现）。
 8. **v3.1 二叉树 AST 无法表达挑战版结构**（阶段④ 记录 → **阶段⑤ 已解决**）：挑战版的函数定义/形参、
    `print`、下标 `a[i]`、调用 `f(x)`、数组声明、空语句在 v3.1 的 11 类节点中没有对应类型。
    阶段④ 曾在 `src/parser/parser.cpp` 内用局部桥接节点 `BridgeNode : ASTNode`（`m_kind = AST_NODE_NONE`）承载；
@@ -371,7 +379,7 @@ pwsh -File tests/run_parser_unit.ps1
     并新增内部 `Kind::REDUCE` 哨兵（用于在规约时组装 AST，静默处理、不进 `GetTrace()` 轨迹，
     以保证 §4.11 的 82 步与文档逐行一致）。文档字段语义与算法未变。
 
-## 下一步（TODO 路线）
+## 各阶段完成情况
 
 - 阶段 1（已完成，v4.0 已变更）：CParser 最初为递归下降（声明→赋值→算术表达式）；
   **v4.0 起改为 LL(1) 预测分析表驱动**（详见下方"挑战版语法"）
@@ -385,11 +393,14 @@ pwsh -File tests/run_parser_unit.ps1
      `tests/run_lexer_tests.ps1` 纳入自动回归（6/6 通过）
   5. 字符/布尔常量未回填 `m_iConstIdx`（词法只为整型/实型登记常量表下标），
      语义阶段 semantic003 需按 token 自行登记 — P2（跨模块，已在 Parser 单元测试注释中记录）
-- 阶段 2：语义动作（符号表登记/查重/类型检查/常量回填）接入
-- 阶段 3：IRGenerator 遍历 AST 生成四元式（--dump-quads）
-- 挑战版（Q5 顺序）：控制流(if/while) → print → 数组 → 函数 → x86 汇编
+- **阶段 2（已完成）**：语义动作（符号表登记/查重/类型检查/常量回填）接入 — `src/sema/semantic.cpp`
+- **阶段 3（已完成）**：IRGenerator 遍历 AST 生成四元式（`--dump-quads`）— `src/sema/ir.cpp`
+- **挑战版（Q5 顺序）：控制流(if/while) → print → 数组 → 函数 → x86 汇编 —— 五步全部落地**
   - **语法侧已全部落地**：复合语句/if/while/return/一元运算、比较与逻辑运算符、
     `bool`/`char`/`true`/`false`、`print(表达式);`、一维数组声明与下标、函数定义/形参/调用
+  - **目标代码侧已全部落地**：`src/codegen/codegen.cpp`，`tests/run_codegen_tests.ps1` 20 例
+    （算术/比较/if-else/while/浮点/混合类型/逻辑/函数调用/递归/数组读写/字符/嵌套分支/短路/实参转换/返回值转换）
+    全部编译成汇编、经 gcc 链接、运行并比对输出，**20/20 通过**
 - **挑战版语法**：文法已定稿（92 条产生式、LL(1) 预测分析表，见《MiniC编译器设计文档_v4.0_挑战版LL1.md》）。
   - 阶段③ 编码层 + 文法表（`src/parser/grammar.h/.cpp`）**已完成**：产生式/FIRST/FOLLOW/SELECT/预测分析表，
     由 `tools/generate_grammar.py` 从 xlsx 生成（**禁止手工编辑 grammar.cpp**），
@@ -402,4 +413,22 @@ pwsh -File tests/run_parser_unit.ps1
     PRINT/INDEX/CALL/EMPTY/ARRAYDECL，UNARY 改名 UNOP，删除 LIST），解析器内的桥接节点全部删除，
     Print 由基类统一实现（各节点只提供 `Label()`）；37 条 `expected/*.ast.txt` 与 `tests/test.ast.txt` 重定，
     **`*.err.txt` 与 §4.11 的 82 步轨迹逐字未变**；单元测试新增新 AST 不变量断言（17/17 通过）。
-  - 待实现：阶段⑥ 符号表扩展 → 阶段⑦ 语义动作与 IR → 阶段⑧ 目标码
+  - 阶段⑥ 符号表扩展 **已完成**（多表 + 作用域链 + 数组/常量/过程/形参/标号登记）
+  - 阶段⑦ 语义动作与 IR **已完成**（2026-10-24 修复短路求值与三处类型转换缺陷，见 `docs/interface.md` 第 15 条）
+  - 阶段⑧ 目标代码 **已完成**（2026-10-24，x86-64 / GNU as）
+
+## 已知限制
+
+MiniC 是教学子集语言，下列写法**不在文法/语义支持范围内**，属预期行为而非缺陷：
+
+- 不支持：`++` `--` `+=` 等复合赋值、`%` 取模、`?:`、`for`、`do-while`、`break`、`continue`、
+  `switch`、`goto`、多维数组、字符串字面量、逗号表达式、链式赋值、函数原型声明、赋值表达式（`a = b = 1`）。
+- 声明必须全部位于语句之前（`int a; a=1; int b;` 报 `unexpected 'int'`）。
+- 数组长度只能是整型常量（`int b[3+5];` 报 `expected ']'`）。
+- 逻辑运算符 `&&` `||` 要求 `bool` 操作数（`int` 直接参与会报 `logical operators require bool operands`）。
+- `char` 不能参与算术/关系运算。
+- 语义阶段**不检查**：数组下标越界、函数实参个数、`return` 类型匹配。
+- 浮点字面量：`1.` 合法、`.5` 不合法；不支持 `0x1F` 十六进制与 `1e5` 指数形式。
+
+完整语法支持清单（92 条产生式、类型规则、与 C 的 15 条差异、报错速查、实测记录）见
+[docs/MiniC语法支持清单.md](docs/MiniC语法支持清单.md)。

@@ -88,7 +88,8 @@ MiniCCompiler/
 │   ├── 语法分析过程_示例.xlsx                   # 分析过程示例（LL(1) 逐步推导）
 │   ├── 语法分析过程_ll1_411.xlsx                # §4.11 的 82 步分析轨迹
 │   ├── gui-implementation/                      # GUI 实现截图（01~11）
-│   └── gui-acceptance/                          # GUI 验收截图（S1~S5）
+│   ├── gui-acceptance/                          # GUI 验收截图（S1~S5）
+│   └── plans/                                   # 个人任务计划（12 人各一份，见 docs/plans/README.md）
 └── build/                  # 构建产物目录（已被 .gitignore 排除）
 ```
 
@@ -433,6 +434,23 @@ pwsh -File tests/run_quad_tests.ps1 -Update
 > `print` 必须带括号（`print a;` 非法）、数组仅一维（`int b[2][3];` 非法）、
 > 声明必须全部位于语句之前（`程序 → 声明部分 语句部分`）。
 > 详见 [docs/词法模块待改进清单.md](docs/词法模块待改进清单.md)（词法侧 4 个问题的实测与修复记录）。
+
+## 交付文档
+
+项目书表 5 列了 5 项交付物，对应到仓库里的位置如下：
+
+| 交付物 | 位置 | 状态 |
+|---|---|---|
+| ① 编译器源码 | `src/`（六段流水线） | ✅ 完成 |
+| ② 技术文档 | [docs/MiniC编译器设计文档_v4.0_挑战版LL1.md](docs/MiniC编译器设计文档_v4.0_挑战版LL1.md)（系统架构设计）、[docs/MiniC编译器数据结构设计.md](docs/MiniC编译器数据结构设计.md)、[docs/interface.md](docs/interface.md)（模块接口定义）、[docs/MiniC语法支持清单.md](docs/MiniC语法支持清单.md)（语言规格） | ✅ 完成 |
+| ③ 测试用例集 | `tests/`，9 套回归（见「构建」一节的 `build.bat test`） | ✅ 完成 |
+| ④ 验收报告 | 待补 | 🟡 数据已齐 |
+| ⑤ 答辩材料 | 待补 | ⬜ |
+| 个人任务计划（附录 A） | [docs/plans/](docs/plans/README.md)，12 人各一份 | ✅ 完成 |
+
+个人计划的模板字段为**姓名 / 负责模块 / 任务目标 / 关键交付物 / 验收标准 / 时间节点 / 完成情况**；
+每份文末附「可核验的 Git 记录」，可用 `git log --author=<账号>` 或 `git log -- <路径>` 直接核对，
+不是只看文档自述。12 人清单与模块对应关系见 [docs/plans/README.md](docs/plans/README.md)。
 
 ## 冲突记录与待决策项（不擅自变更接口）
 

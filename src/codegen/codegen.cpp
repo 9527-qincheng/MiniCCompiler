@@ -84,6 +84,8 @@ private:
     std::unordered_set<int>      m_localTemps;  // 本函数引用的临时量
     int                          m_iFrame = 0;  // 栈帧大小（16 字节对齐）
     std::string                  m_szRetLabel;  // 本函数统一出口标号
+    bool                         m_bCurIsMain = false;   // 当前正在发射的是入口 main
+    bool                         m_bCurRetFloat = false; // 当前函数的返回类型是否 float
 
     // --- 调用现场 ---
     std::vector<Operand> m_pendingArgs;         // Q_PARA 暂存（Q_CALL 时统一落栈）
@@ -712,6 +714,17 @@ void AsmEmitter::GenReturn(const Quad& q)
             LoadInt(q.m_Op1, "%eax");
         }
     }
+    else
+    {
+        // 【2026-10-24 修复】裸 `return;`（Q_RETURN 的操作数为 OP_NONE）原实现
+        // 什么都不发，于是把 %eax/%xmm0 里的残值当返回值带出去。
+        // 顶层语句与 void 函数里的裸 return 很常见（既有用例 arg_conv / ret_conv /
+        // short_circuit 的顶层结尾都是 `return;`），必须显式清零：
+        //   - main 的裸 return 等价于 return 0；
+        //   - 其余函数按声明的返回类型清零（float 清 %xmm0，int/char/bool/void 清 %eax）。
+        const bool bFloat = m_bCurIsMain ? false : m_bCurRetFloat;
+        Emit(bFloat ? "xorps %xmm0, %xmm0" : "xorl %eax, %eax");
+    }
     Emit("jmp " + m_szRetLabel);
 }
 
@@ -817,6 +830,21 @@ void AsmEmitter::EmitFunction(const std::string& name, const CodeList& codes, bo
     m_pendingArgs.clear();
     m_szRetLabel = ".Lret" + std::to_string(m_iRetSeq++);
 
+    // 当前函数的返回约定（供裸 `return;` 与落空出口补默认值使用）
+    m_bCurIsMain   = bIsMain;
+    m_bCurRetFloat = false;
+    if (!bIsMain && m_sym)
+    {
+        for (const ProcEntry& pe : m_sym->m_ProcInfoTbl)
+        {
+            if (pe.m_szName == name)
+            {
+                m_bCurRetFloat = IsFloatType(pe.m_retType);
+                break;
+            }
+        }
+    }
+
     EmitRaw("");
     EmitRaw("# ----------------------------------------------------------------");
     EmitRaw("# " + name + (bIsMain ? "（顶层语句）" : "（函数）") +
@@ -838,11 +866,28 @@ void AsmEmitter::EmitFunction(const std::string& name, const CodeList& codes, bo
     }
 
     // 统一出口
-    EmitRaw(m_szRetLabel + ":");
-    if (bIsMain)
+    //
+    // 【2026-10-24 修复】原实现在出口标号「之后」无条件 `xorl %eax, %eax`，
+    // 把 `return 5;` 已经装进 %eax 的返回值清零了 —— 实测
+    //   `int main() { return 5; }` 编译运行后退出码是 0 而不是 5。
+    // 现改为：只有控制流能「落到」出口时才补默认返回值，且必须在标号之前补，
+    // 否则显式 return 的 jmp 又会被清零。
+    //
+    // 判据只看最后一条四元式是不是 Q_RETURN：Q_RETURN 自带返回值并跳转，
+    // 其后没有落空路径；而 Q_JMP **不能**当作不可达判据 —— 循环体末尾回跳到
+    // 循环头的 Q_JMP 之后，循环的出口标号仍然会落到函数末尾
+    // （实测按 Q_JMP 判定会让 arg_conv / ret_conv / short_circuit 三个用例
+    //  main 的返回码变成残值，全部报 run exit≠0）。
+    const bool bFallThrough = codes.empty() || codes.back().m_eOp != QuadOp::Q_RETURN;
+    if (bFallThrough)
     {
-        Emit("xorl %eax, %eax");        // main 默认返回 0
+        // 落空出口时的默认值：main 返回 0；非 main 取过程表里的返回类型，
+        // 浮点用 %xmm0，其余（int/char/bool/void）用 %eax。
+        // 这样 `int f() { }` 这类无 return 的函数也返回确定的 0，而不是 %eax 里的残值
+        // （实测修复前 `int f() { } print(f());` 输出 2043900272）。
+        Emit(m_bCurRetFloat ? "xorps %xmm0, %xmm0" : "xorl %eax, %eax");
     }
+    EmitRaw(m_szRetLabel + ":");
     Emit("movq %rbp, %rsp");
     Emit("popq %rbp");
     Emit("ret");

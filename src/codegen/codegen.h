@@ -76,7 +76,10 @@ public:
 private:
     const CodeList& m_codes;                    // 绑定 IR 输入
     const SymbolTable* m_symtab = nullptr;      // 绑定符号表（阶段 08 新增，可为空）
-    std::vector<InstPattern> m_TemplateLib;     // 指令模板库（参考书 Pattern，挑战版）
+    std::vector<InstPattern> m_TemplateLib;     // 指令模板库（参考书 Pattern 的预留结构）
+                                                // 说明：挑战版按 QuadOp 的 switch 直接翻译
+                                                // （见 codegen.cpp 的 AsmEmitter），本表未填充，
+                                                // 保留仅为对齐设计文档 §4.6.2 的数据结构定义。
 };
 
 #endif // MINIC_CODEGEN_CODEGEN_H

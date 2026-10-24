@@ -1,0 +1,982 @@
+/* ============================================================================
+ * MiniC 语法手册（语言参考书）数据
+ * ----------------------------------------------------------------------------
+ * 每个条目都在 build/minic.exe 上实测过，status 取值：
+ *   'ok'    支持（能编译，且给出可运行示例）
+ *   'no'    不支持（实测报错，给出真实报错原文）
+ *   'limit' 支持但有限制（能编译，行为与 C 不同或不做检查）
+ *   'info'  纯说明（无代码）
+ *
+ * 字段：
+ *   id       锚点唯一名
+ *   title    条目标题
+ *   status   ok / no / limit / info
+ *   syntax   语法模板（可省略）
+ *   example  示例代码（可省略）
+ *   output   示例运行输出（可省略）
+ *   err      报错原文（不支持条目用）
+ *   notes    补充说明数组
+ *   related  相关条目 id 数组
+ * ==========================================================================*/
+'use strict';
+
+const SYNTAX_BOOK = [
+  /* ══════════════════════ 第 1 章 开始使用 ══════════════════════ */
+  {
+    id: 'ch1',
+    title: '第 1 章　开始使用',
+    entries: [
+      {
+        id: 'hello',
+        title: '1.1　最小的程序',
+        status: 'ok',
+        syntax: 'int main() { 语句... }',
+        example: 'int main() {\n    print(1 + 2 * 3);\n    return 0;\n}',
+        output: '7',
+        notes: [
+          '这是最推荐的写法：一个 int main() 函数包住全部代码。',
+          'return 0 表示程序正常结束；返回值会作为进程退出码。',
+          '不需要 #include，print 是语言内置关键字，不是库函数。',
+        ],
+        related: ['top-level', 'stmt-print'],
+      },
+      {
+        id: 'top-level',
+        title: '1.2　顶层语句（不写 main 也能跑）',
+        status: 'limit',
+        syntax: '声明部分 语句部分',
+        example: 'int a;\na = 3;\nprint(a * 10);',
+        output: '30',
+        notes: [
+          'MiniC 的程序 = 声明部分 + 语句部分，两部分都可以为空。',
+          '所以不写 main 也能编译、能运行 —— 顶层语句按书写顺序直接执行。',
+          '空文件、只有注释的文件也能编译通过（退出码 0）。',
+          '⚠ 但顶层「声明必须排在所有语句之前」：`int a; a = 1; int b;` 会报错。',
+        ],
+        related: ['hello', 'decl-order'],
+      },
+      {
+        id: 'run-it',
+        title: '1.3　怎么编译和运行',
+        status: 'info',
+        notes: [
+          '① 在 GUI 里点「运行」（F5）：自动完成 编译 → 汇编链接 → 执行，print 的输出显示在「运行输出」页签。',
+          '② 命令行三步：`build\\minic.exe 你的文件.mc` 生成 `你的文件.asm`；改后缀为 `.s` 后用 `gcc -x assembler -o 你的文件.exe 你的文件.s` 汇编链接；再执行 exe。',
+          '③ 只想看中间产物：勾选 `--dump-tokens` / `--dump-ast` / `--dump-parse` / `--dump-symtab` / `--dump-quads`，产物写在源文件旁边。',
+          '⚠ `--dump-quads` 是复数，写成 `--dump-quad` 不会报错，但也不产出 .quad.txt。',
+        ],
+        related: ['hello'],
+      },
+    ],
+  },
+
+  /* ══════════════════════ 第 2 章 词法 ══════════════════════ */
+  {
+    id: 'ch2',
+    title: '第 2 章　词法（怎么写才被认成记号）',
+    entries: [
+      {
+        id: 'ident',
+        title: '2.1　标识符',
+        status: 'ok',
+        syntax: '字母或下划线开头，后接字母 / 数字 / 下划线',
+        example: 'int a;\nint x1;\nint _tmp;\nint sum_2;\nint Main;\na = 1;\nprint(a);',
+        output: '1',
+        notes: [
+          '区分大小写：`Main` 与 `main` 是两个不同的名字。',
+          '不能以数字开头：`1a` 会被切成常量 `1` 加标识符 `a`。',
+          '不能与关键字同名。',
+          '不支持中文变量名（源文件可以是 UTF-8，但标识符只认 ASCII）。',
+        ],
+        related: ['keywords'],
+      },
+      {
+        id: 'keywords',
+        title: '2.2　关键字（共 12 个）',
+        status: 'info',
+        syntax: 'int  float  bool  char  void  if  else  while  print  return  true  false',
+        notes: [
+          '`print` 是关键字而不是函数，所以 `print` 不能当变量名。',
+          '`true` / `false` 是关键字而不是常量名，所以也不能被重定义。',
+          '没有 `for` `break` `continue` `switch` `goto` `const` `static` `struct`。',
+        ],
+        related: ['ident', 'bool-lit'],
+      },
+      {
+        id: 'int-lit',
+        title: '2.3　整型常量',
+        status: 'ok',
+        syntax: '十进制数字序列',
+        example: 'print(0);\nprint(123);\nprint(007);',
+        output: '0\n123\n7',
+        notes: [
+          '只支持十进制。前导零没有特殊含义：`007` 就是 7（不是八进制）。',
+          '⚠ 不支持十六进制 `0x1F`、不支持指数 `1e5`、不支持 `L`/`U` 后缀。',
+          '范围是 32 位有符号：`2147483647 + 1` 溢出回绕成 `-2147483648`。',
+        ],
+        related: ['float-lit', 'hex'],
+      },
+      {
+        id: 'float-lit',
+        title: '2.4　实型常量',
+        status: 'limit',
+        syntax: '数字 . 数字',
+        example: 'float f;\nf = 1.5;\nprint(f);\nf = 1.;\nprint(f);',
+        output: '1.5\n1',
+        notes: [
+          '必须有小数点，但小数点后可以没有数字：`1.` 合法。',
+          '⚠ 小数点前必须有数字：`.5` 报 `unexpected character \'.\'`。',
+          '⚠ 不支持指数写法 `1e5`（会被切成 `1` 和标识符 `e5`）。',
+          '`1.2.3` 报 `malformed number`。',
+          '默认按单精度 float 处理，打印用 %g，最多 6 位有效数字。',
+        ],
+        related: ['int-lit', 'dot5'],
+      },
+      {
+        id: 'char-lit',
+        title: '2.5　字符常量',
+        status: 'ok',
+        syntax: "'字符'　或　'\\转义'",
+        example: "char c;\nc = 'A';\nprint(c);\nc = '\\n';\nprint(c);\nprint('Z');",
+        output: 'A\n\n\nZ',
+        notes: [
+          '支持的转义：`\\n` `\\t` `\\0` `\\\\` `\\\'`。',
+          '未知转义报 `unknown escape sequence`。',
+          '多字符写法 `\'ab\'` 报 `multi-character char literal`。',
+          '⚠ char 不能参与算术和比较，见「类型规则」。',
+        ],
+        related: ['char-type', 'char-arith'],
+      },
+      {
+        id: 'bool-lit',
+        title: '2.6　布尔常量',
+        status: 'ok',
+        syntax: 'true　false',
+        example: 'bool b;\nb = true;\nprint(b);\nb = false;\nprint(b);',
+        output: '1\n0',
+        notes: [
+          '是关键字，不是 `TRUE`，也不能用 `1` / `0` 代替（`bool b = 1;` 的声明初始化本身也不支持）。',
+          '打印时输出 1 / 0。',
+        ],
+        related: ['bool-type'],
+      },
+      {
+        id: 'str-lit',
+        title: '2.7　字符串常量（不支持）',
+        status: 'no',
+        example: 'print("hi");',
+        err: "minic: error: 1:7: unexpected '\"hi\"' (STRING); expected one of: true false ( - ! 标识符 整型常量 实型常量 字符常量 (in 表达式)",
+        notes: [
+          '词法层能正确切出 STRING 记号，但语法层不接受它 —— 这是设计文档 §15.1 的既定决策（保留词法、不入文法）。',
+          '替代方案：用 char 变量逐个打印，`print(\'h\'); print(\'i\');`。',
+        ],
+        related: ['char-lit'],
+      },
+      {
+        id: 'operators',
+        title: '2.8　运算符（共 16 个）',
+        status: 'info',
+        syntax: '+  -  *  /          算术\n==  !=  <  <=  >  >=  关系\n&&  ||  !              逻辑\n=                      赋值（仅作语句）',
+        notes: [
+          '⚠ 没有 `%` 取模、`++` `--`、复合赋值 `+=` `-=` `*=` `/=`、位运算 `& | ^ ~ << >>`、三目 `?:`。',
+          '⚠ 没有一元 `+`：`print(+5);` 报 `unexpected \'+\'`。',
+          '`-` 既是一元取负也是二元减法，`!` 只能用于 bool。',
+        ],
+        related: ['arith', 'relational', 'logical', 'unsupported-ops'],
+      },
+      {
+        id: 'delimiters',
+        title: '2.9　界符（共 8 个）',
+        status: 'info',
+        syntax: '(  )  {  }  [  ]  ;  ,',
+        notes: [
+          '分号是语句结束符，`if` / `while` 的条件后面**不加**分号。',
+          '逗号只用于：一条声明多个变量、多个形参、多个实参。',
+        ],
+        related: ['stmt-assign'],
+      },
+      {
+        id: 'comments',
+        title: '2.10　注释',
+        status: 'ok',
+        example: '// 单行注释，到行尾结束\nint a; /* 块注释\n         可以跨行 */\na = 1; // 尾随注释\nprint(a);',
+        output: '1',
+        notes: [
+          '两种注释都支持，块注释可以跨行。',
+          '未闭合的块注释报 `unterminated comment`。',
+          '注释在词法阶段就被丢弃，不产生记号。',
+        ],
+        related: ['ident'],
+      },
+    ],
+  },
+
+  /* ══════════════════════ 第 3 章 类型 ══════════════════════ */
+  {
+    id: 'ch3',
+    title: '第 3 章　数据类型',
+    entries: [
+      {
+        id: 'types',
+        title: '3.1　五种类型',
+        status: 'info',
+        syntax: 'int    32 位有符号整数，print 用 %d\nfloat  32 位单精度，print 用 %g\nbool   布尔，打印 1 / 0\nchar   单字符，print 用 %c\nvoid   仅用于函数返回类型与形参类型',
+        notes: [
+          '没有 long / short / double / unsigned / 指针 / 结构体 / 枚举。',
+          '`void` 只能修饰函数返回值 —— 但注意：编译器**没有拦截** `void v;` 这种声明，见「已知漏洞」。',
+        ],
+        related: ['void-type', 'int-type', 'float-type', 'bool-type', 'char-type'],
+      },
+      {
+        id: 'int-type',
+        title: '3.2　int',
+        status: 'ok',
+        example: 'int a;\na = 7;\nprint(a);\nprint(a / 2);\nprint(-7 / 2);\nprint(2147483647 + 1);',
+        output: '7\n3\n-3\n-2147483648',
+        notes: [
+          '整数除法向零截断：`7/2 = 3`、`-7/2 = -3`。',
+          '溢出静默回绕（与 C 的未定义行为不同，这里是确定的补码回绕）。',
+          '⚠ 除数为 0 时进程直接崩溃（0xC0000094 整数除零），不是编译错误。',
+        ],
+        related: ['arith', 'float-type'],
+      },
+      {
+        id: 'float-type',
+        title: '3.3　float',
+        status: 'ok',
+        example: 'float f;\nint i;\nf = 1.0 / 3.0;\nprint(f);\nf = 3.99;\nprint(f);\ni = 3.99;\nprint(i);',
+        output: '0.333333\n3.99\n3',
+        notes: [
+          '单精度，打印用 %g：`1.0/3.0` 显示 `0.333333`。',
+          'float 赋给 int 会**截断**并产生 Q9 告警（stderr 输出 `implicit conversion from float to int (truncated, Q9)`，退出码仍是 0）。',
+          'int 与 float 混算时 int 自动提升为 float。',
+        ],
+        related: ['int-type', 'type-rules'],
+      },
+      {
+        id: 'bool-type',
+        title: '3.4　bool',
+        status: 'ok',
+        example: 'bool a;\nbool b;\na = true;\nb = false;\nprint(a);\nprint(b);\nprint(a && b);',
+        output: '1\n0\n0',
+        notes: [
+          '`&&` `||` `!` 只接受 bool 操作数。',
+          '`if` / `while` 的条件可以是任意表达式（int 也行），不强制 bool。',
+          '⚠ bool 不能参与算术 `b + 1`，也不能用 `==` 比较 `a == b`。',
+        ],
+        related: ['logical', 'bool-lit'],
+      },
+      {
+        id: 'char-type',
+        title: '3.5　char',
+        status: 'limit',
+        example: "char c;\nchar arr[3];\nc = 'A';\nprint(c);\narr[0] = 'x';\nprint(arr[0]);",
+        output: 'A\nx',
+        notes: [
+          '可以声明、赋值、打印、做数组元素。',
+          '⚠ 不能参与算术：`c + 1` 报 `arithmetic operands must be numeric`。',
+          '⚠ 不能参与比较：`c == \'a\'` 报 `relational operands must be numeric`。',
+          '需要按字符码运算时，改用 int 变量存码值。',
+        ],
+        related: ['char-lit', 'char-arith'],
+      },
+      {
+        id: 'void-type',
+        title: '3.6　void',
+        status: 'limit',
+        example: 'void say() {\n    print(7);\n}\nvoid empty() { }\nsay();\nempty();',
+        output: '7',
+        notes: [
+          '作返回类型：函数不返回值，调用语句末尾加分号。',
+          '⚠ `void f(void)` 这种「显式无参」写法**不支持**，无参就写 `()`。',
+          '⚠ void 函数可以用在表达式里（`print(f());`），编译通过但不打印任何值 —— 语义检查没做。',
+        ],
+        related: ['void-hole', 'func-def'],
+      },
+    ],
+  },
+
+  /* ══════════════════════ 第 4 章 声明 ══════════════════════ */
+  {
+    id: 'ch4',
+    title: '第 4 章　声明',
+    entries: [
+      {
+        id: 'var-decl',
+        title: '4.1　变量声明',
+        status: 'ok',
+        syntax: '类型 标识符 ;',
+        example: 'int a;\nfloat f;\nbool b;\nchar c;\na = 1;\nf = 2.5;\nb = true;\nc = \'z\';\nprint(a);\nprint(f);\nprint(b);\nprint(c);',
+        output: '1\n2.5\n1\nz',
+        notes: [
+          '声明只分配空间，**不初始化**（全局变量是 0，局部变量是未定义值）。',
+          '同一作用域内重复声明报 `duplicate variable \'a\'`。',
+          '内层作用域可以重名（遮蔽外层），合法。',
+        ],
+        related: ['multi-decl', 'scope-shadow', 'decl-init'],
+      },
+      {
+        id: 'multi-decl',
+        title: '4.2　一条语句声明多个变量',
+        status: 'ok',
+        syntax: '类型 标识符 , 标识符 , ... ;',
+        example: 'int a, b, c;\na = 1;\nb = 2;\nc = 3;\nprint(a + b + c);',
+        output: '6',
+        notes: [
+          '用逗号分隔，最后一个后面必须是分号。',
+          '⚠ 不支持尾随逗号：`int a, b,;` 报 `expected \'标识符\', but found \';\'`。',
+          '⚠ 不支持声明时初始化：`int a = 1;` 报错，见下一条。',
+        ],
+        related: ['var-decl', 'decl-init'],
+      },
+      {
+        id: 'decl-init',
+        title: '4.3　声明时初始化（不支持）',
+        status: 'no',
+        example: 'int a = 1;\nprint(a);',
+        err: "minic: error: 1:7: unexpected '=' (ASSIGN); expected one of: ( [ ; , (in 声明后续)",
+        notes: [
+          '⚠ 这是最容易踩的坑：MiniC **没有** `int a = 1;` 这种写法。',
+          '必须拆成两句：`int a;` 然后 `a = 1;`。',
+          '数组初始化 `int a[3] = {1,2,3};` 同样不支持。',
+        ],
+        related: ['var-decl', 'multi-decl'],
+      },
+      {
+        id: 'arr-decl',
+        title: '4.4　数组声明',
+        status: 'limit',
+        syntax: '类型 标识符 [ 整型常量 ] ;',
+        example: 'int a[10];\nint i;\ni = 0;\nwhile (i < 10) {\n    a[i] = i * i;\n    i = i + 1;\n}\ni = 0;\nwhile (i < 10) {\n    print(a[i]);\n    i = i + 1;\n}',
+        output: '0\n1\n4\n9\n16\n25\n36\n49\n64\n81',
+        notes: [
+          '只支持**一维**数组。',
+          '长度必须是**整型常量字面量**，不能是表达式或变量。',
+          '元素类型可以是 int / float / bool / char。',
+          '⚠ 不做下标越界检查：`a[99]`（长 10）静默读写越界内存。',
+          '⚠ `print(a);`（整个数组）能编译，打印的是 `a[0]`。',
+        ],
+        related: ['arr-const-len', 'arr-2d', 'arr-param'],
+      },
+      {
+        id: 'arr-const-len',
+        title: '4.5　数组长度用表达式（不支持）',
+        status: 'no',
+        example: 'int b[3 + 5];',
+        err: "minic: error: 1:8: expected ']', but found '+' (PLUS)",
+        notes: [
+          '长度位置只接受单个整型常量记号。',
+          '`int n; int b[n];` 报 `expected \'整型常量\', but found \'n\'`。',
+        ],
+        related: ['arr-decl'],
+      },
+      {
+        id: 'arr-2d',
+        title: '4.6　多维数组（不支持）',
+        status: 'no',
+        example: 'int m[2][3];',
+        err: "minic: error: 1:9: unexpected '[' (LBRACKET); expected one of: ,",
+        notes: [
+          '下标赋值也只能有一个：`b[0][0] = 1;` 报 `unexpected \'[\' (LBRACKET); expected one of: =`。',
+          '替代方案：用一维数组加下标换算 `a[i * 列数 + j]`。',
+        ],
+        related: ['arr-decl'],
+      },
+      {
+        id: 'arr-param',
+        title: '4.7　数组作形参（不支持）',
+        status: 'no',
+        example: 'int first(int a[3]) {\n    return a[0];\n}',
+        err: "minic: error: 1:26: 'a' is not an array",
+        notes: [
+          '语法上能过（形参文法允许数组后缀），但语义阶段报错。',
+          '替代方案：把数组声明为全局变量，函数直接访问它。',
+        ],
+        related: ['func-def', 'arr-decl'],
+      },
+      {
+        id: 'func-def',
+        title: '4.8　函数定义',
+        status: 'ok',
+        syntax: '返回类型 函数名 ( 形参列表 ) { 函数体 }',
+        example: 'int add(int x, int y) {\n    return x + y;\n}\n\nvoid say() {\n    print(1);\n}\n\nprint(add(3, 4));\nsay();',
+        output: '7\n1',
+        notes: [
+          '形参写法：`类型 标识符`，多个用逗号分隔；`()` 表示无参。',
+          '函数必须先定义后使用 —— 没有函数原型，所以不能前向调用。',
+          '⚠ 函数定义必须在**最外层**，不能嵌套在另一个函数里（语义阶段拦截）。',
+          '⚠ 顶层语句里调用函数时，函数定义要写在语句之前。',
+        ],
+        related: ['func-proto', 'func-nested', 'func-param', 'recursion'],
+      },
+      {
+        id: 'func-param',
+        title: '4.9　形参',
+        status: 'limit',
+        syntax: '类型 标识符 [, 类型 标识符 ...]',
+        example: 'int f(int x, int y, int z) {\n    return x + y + z;\n}\nprint(f(1, 2, 3));',
+        output: '6',
+        notes: [
+          '形参在函数内是局部变量，可以遮蔽同名的全局变量。',
+          '⚠ 不检查实参个数：`int f(int x, int y)` 用 `f(1)` 调用不报错（缺的实参是垃圾值）。',
+          '⚠ 不支持数组形参。',
+          '⚠ 同名形参（`f(int x, int x)`）报 `duplicate variable \'x\'`。',
+        ],
+        related: ['func-def', 'arr-param'],
+      },
+      {
+        id: 'func-proto',
+        title: '4.10　函数原型（不支持）',
+        status: 'no',
+        example: 'int f(int x);\nf(1);',
+        err: "minic: error: 1:13: unexpected ';' (SEMI); expected one of: { (in 复合语句)",
+        notes: [
+          '没有「先声明后定义」的机制，函数必须带函数体。',
+          '所以相互递归（A 调 B、B 调 A）无法直接写 —— 只能在最外层按顺序定义。',
+        ],
+        related: ['func-def'],
+      },
+      {
+        id: 'func-nested',
+        title: '4.11　嵌套函数定义（不支持）',
+        status: 'no',
+        example: 'int main() {\n    int f() {\n        return 1;\n    }\n    return 0;\n}',
+        err: 'minic: error: 2:5: function definition is only allowed at the outermost level: f',
+        notes: [
+          '文法上允许（产生式 28 `块项 → 声明`），由语义阶段拦截。',
+          '⚠ 不拦截会出真实故障：嵌套函数会破坏外层局部变量的栈帧偏移，读出的值是垃圾。',
+        ],
+        related: ['func-def'],
+      },
+      {
+        id: 'decl-order',
+        title: '4.12　声明的书写顺序',
+        status: 'no',
+        example: 'int a;\na = 1;\nint b;\nb = 2;\nprint(a + b);',
+        err: "minic: error: 3:1: unexpected 'int' (INT); expected one of: if while print return { ; 标识符 (in 语句部分)",
+        notes: [
+          '⚠ **顶层**：声明必须全部排在语句之前，`int a; a = 1; int b;` 报错。',
+          '✓ **函数体内 / 块内**：声明和语句可以任意混排，`{ int a; a=1; int b; b=2; }` 合法（见 5.8 复合语句）。',
+          '✓ 所以把变量声明都挪到最前面，或在函数/块里写，都能绕开这个限制。',
+        ],
+        related: ['top-level', 'var-decl', 'stmt-block'],
+      },
+    ],
+  },
+
+  /* ══════════════════════ 第 5 章 语句 ══════════════════════ */
+  {
+    id: 'ch5',
+    title: '第 5 章　语句',
+    entries: [
+      {
+        id: 'stmt-assign',
+        title: '5.1　赋值语句',
+        status: 'ok',
+        syntax: '标识符 = 表达式 ;',
+        example: 'int a;\na = 1 + 2 * 3;\nprint(a);',
+        output: '7',
+        notes: [
+          '左值只能是**裸标识符**，不能是 `*p`、`a[i]`（下标赋值另算）、函数调用结果。',
+          '⚠ 赋值不是表达式：`a = b = 1;` 报错，`if (a = 1)` 也报错。',
+          '没有复合赋值：`a += 1;` 报错。',
+        ],
+        related: ['stmt-index-assign', 'chain-assign'],
+      },
+      {
+        id: 'stmt-index-assign',
+        title: '5.2　下标赋值语句',
+        status: 'ok',
+        syntax: '标识符 [ 表达式 ] = 表达式 ;',
+        example: 'int a[3];\na[0] = 10;\na[1] = 20;\nprint(a[0] + a[1]);',
+        output: '30',
+        notes: [
+          '下标可以是任意整型表达式，包括变量和函数调用。',
+          '⚠ 只能有一个下标：`b[i][j] = 1;` 报错。',
+          '⚠ 下标是 float 时报 `array subscript must be an integer`。',
+          '⚠ 不做越界检查。',
+        ],
+        related: ['stmt-assign', 'arr-decl'],
+      },
+      {
+        id: 'stmt-call',
+        title: '5.3　函数调用语句',
+        status: 'ok',
+        syntax: '函数名 ( 实参列表 ) ;',
+        example: 'void say() {\n    print(1);\n}\nsay();\nsay();',
+        output: '1\n1',
+        notes: [
+          '⚠ 必须带分号：`say()` 报 `expected \';\', but found \'<eof>\'`。',
+          '实参之间用逗号分隔，`()` 表示无参。',
+        ],
+        related: ['func-def', 'expr-call'],
+      },
+      {
+        id: 'stmt-if',
+        title: '5.4　条件语句 if / else',
+        status: 'ok',
+        syntax: 'if ( 表达式 ) 语句\nif ( 表达式 ) 语句 else 语句',
+        example: 'int a;\na = 5;\nif (a > 3) {\n    print(1);\n} else {\n    print(2);\n}\n\nif (a > 10) print(99); else print(0);',
+        output: '1\n0',
+        notes: [
+          '条件可以是任意表达式，不强制 bool（`if (a)` 当 a 是 int 时合法）。',
+          '花括号可以省略（单条语句时）。',
+          '`else` 就近配对（悬垂 else）。',
+          '可以嵌套任意层。',
+        ],
+        related: ['stmt-while', 'logical'],
+      },
+      {
+        id: 'stmt-while',
+        title: '5.5　循环语句 while',
+        status: 'ok',
+        syntax: 'while ( 表达式 ) 语句',
+        example: 'int i;\ni = 1;\nwhile (i <= 5) {\n    print(i);\n    i = i + 1;\n}',
+        output: '1\n2\n3\n4\n5',
+        notes: [
+          '条件为真（非 0）时循环，条件每轮重新求值。',
+          '⚠ 没有 `for`、`do-while`、`break`、`continue` —— 只能靠条件变量控制退出。',
+          '⚠ 循环体内可以声明变量，但每轮进入都会重新分配（值不保留）。',
+          '⚠ 死循环会让 GUI「运行」在 5 秒后超时终止。',
+        ],
+        related: ['stmt-if', 'unsupported-stmt'],
+      },
+      {
+        id: 'stmt-print',
+        title: '5.6　输出语句 print',
+        status: 'limit',
+        syntax: 'print ( 表达式 ) ;',
+        example: "bool b;\nb = true;\nprint(42);\nprint(3.5);\nprint('A');\nprint(b);",
+        output: '42\n3.5\nA\n1',
+        notes: [
+          '格式按表达式类型自动选择：int → %d、float → %g、char → %c、bool → %d（1/0）。',
+          '⚠ 只能打印**一个**表达式：`print(1, 2);` 报 `expected \')\', but found \',\'`。',
+          '⚠ 不能空参：`print();` 报错。',
+          '⚠ 必须带括号：`print 1;` 报错。',
+          '输出到 stdout，GUI 里看「运行输出」页签。',
+        ],
+        related: ['run-it', 'hello'],
+      },
+      {
+        id: 'stmt-return',
+        title: '5.7　返回语句 return',
+        status: 'limit',
+        syntax: 'return 表达式 ;\nreturn ;',
+        example: 'int f(int n) {\n    if (n > 0) {\n        return 1;\n    }\n    return 2;\n}\nprint(f(1));\nprint(f(0));',
+        output: '1\n2',
+        notes: [
+          '可以在函数中间提前返回。',
+          '⚠ 不检查返回类型：`int f() { return 3.7; }` 编译通过（会截断）。',
+          '⚠ 不检查 void 函数带值返回：`void f() { return 5; }` 编译通过。',
+          '⚠ `int` 函数可以写裸 `return;`，返回 0。',
+          '⚠ 没有 return 的 int 函数返回 0（不会返回垃圾值）。',
+          '`main` 的返回值就是进程退出码。',
+        ],
+        related: ['func-def', 'ret-mismatch'],
+      },
+      {
+        id: 'stmt-block',
+        title: '5.8　复合语句（块）',
+        status: 'ok',
+        syntax: '{ 块项序列 }',
+        example: 'int a;\na = 1;\n{\n    int b;\n    b = 2;\n    print(a + b);\n}\nprint(a);',
+        output: '3\n1',
+        notes: [
+          '块内声明的变量作用域只在这个块内。',
+          '块内可以混排声明与语句（不受顶层「声明必须在前」的限制）。',
+          '支持任意嵌套。',
+        ],
+        related: ['scope-shadow', 'decl-order'],
+      },
+      {
+        id: 'stmt-empty',
+        title: '5.9　空语句',
+        status: 'ok',
+        syntax: ';',
+        example: 'int a;\na = 1;;;\nprint(a);',
+        output: '1',
+        notes: [
+          '单独的分号是一条空语句，可以出现在任意语句位置。',
+          '⚠ 常见坑：`while (i < 3);` 后面的循环体其实没写，会死循环。',
+        ],
+        related: ['stmt-block'],
+      },
+      {
+        id: 'unsupported-stmt',
+        title: '5.10　不支持的语句',
+        status: 'no',
+        example: 'int i;\nfor (i = 0; i < 3; i = i + 1) { }',
+        err: "minic: error: 2:8: unexpected '=' (ASSIGN); expected one of: ( [ (in 后缀表达式1)",
+        notes: [
+          '`for`　`do-while`　`break`　`continue`　`switch`　`goto` —— 全部不支持。',
+          '⚠ `for` 不在关键字表里，被切成**标识符**，于是 `for (i = 0; ...)` 被当成函数调用解析，报错落在 `=` 上。',
+          '替代：`for` 用 `while` 改写；`break` 用条件变量控制。',
+          '例：`for (i=0;i<n;i++)` → `i = 0; while (i < n) { ...; i = i + 1; }`',
+        ],
+        related: ['stmt-while', 'unsupported-ops'],
+      },
+    ],
+  },
+
+  /* ══════════════════════ 第 6 章 表达式 ══════════════════════ */
+  {
+    id: 'ch6',
+    title: '第 6 章　表达式',
+    entries: [
+      {
+        id: 'precedence',
+        title: '6.1　优先级总表（从低到高）',
+        status: 'info',
+        syntax: '1（最低）  ||           左结合\n2          &&           左结合\n3          == != < <= > >=   左结合（六个同级！）\n4          +  -         左结合\n5          *  /         左结合\n6          !  -（一元）  右结合\n7          []  ()       后缀\n8（最高）  标识符 常量 true false ( )',
+        notes: [
+          '⚠ 与 C 的关键差异：**六个关系运算符在同一层**。C 里 `==`/`!=` 低于 `<`/`<=`/`>`/`>=`。',
+          '所以 `a == b < c` 在 MiniC 里是 `(a == b) < c`，在 C 里是 `a == (b < c)`。',
+          '⚠ 没有赋值表达式，所以赋值不参与优先级。',
+        ],
+        related: ['arith', 'relational', 'logical'],
+      },
+      {
+        id: 'arith',
+        title: '6.2　算术表达式',
+        status: 'ok',
+        syntax: '表达式 (+ | - | * | /) 表达式',
+        example: 'print(1 + 2 * 3);\nprint((1 + 2) * 3);\nprint(10 / 3);\nprint(10 - 3 * 2);\nprint(-(-5));',
+        output: '7\n9\n3\n4\n5',
+        notes: [
+          '`*` `/` 优先级高于 `+` `-`，同级左结合。',
+          '括号可以改变优先级。',
+          '整数除法向零截断；除数为 0 进程崩溃。',
+          '⚠ 没有 `%` 取模，用 `a - (a / b) * b` 自己算。',
+          '一元 `-` 可以叠加：`-(-(-a))`。',
+        ],
+        related: ['precedence', 'int-type', 'mod'],
+      },
+      {
+        id: 'relational',
+        title: '6.3　关系表达式',
+        status: 'ok',
+        syntax: '表达式 (== | != | < | <= | > | >=) 表达式',
+        example: 'int a;\na = 5;\nprint(a == 5);\nprint(a != 3);\nprint(a < 10);\nprint(a <= 5);\nprint(a > 1);\nprint(a >= 5);',
+        output: '1\n1\n1\n1\n1\n1',
+        notes: [
+          '结果类型是 int（1 / 0），不是 bool。',
+          '⚠ 六个运算符同级，左结合 —— 与 C 不同，见「优先级总表」。',
+          '⚠ 操作数必须是数值（int / float）。char 和 bool 不能比较。',
+        ],
+        related: ['precedence', 'char-arith'],
+      },
+      {
+        id: 'logical',
+        title: '6.4　逻辑表达式',
+        status: 'ok',
+        syntax: '表达式 (&& | ||) 表达式\n! 表达式',
+        example: 'bool t() {\n    print(1);\n    return true;\n}\nbool f() {\n    print(2);\n    return false;\n}\nprint(f() && t());\nprint(t() || f());',
+        output: '2\n0\n1\n1',
+        notes: [
+          '✓ **真短路**：`f() && t()` 里 t() 不会执行（只打印了 2）；`t() || f()` 里 f() 不会执行。',
+          '⚠ 操作数必须是 bool：`a && true`（a 是 int）报 `logical operators require bool operands`。',
+          '`!` 也只接受 bool：`!a`（a 是 int）报 `\'!\' requires a bool operand`。',
+          '结果类型是 bool，打印 1 / 0。',
+        ],
+        related: ['bool-type', 'stmt-if', 'precedence'],
+      },
+      {
+        id: 'expr-index',
+        title: '6.5　下标表达式',
+        status: 'ok',
+        syntax: '数组名 [ 表达式 ]',
+        example: 'int a[3];\nint i;\na[0] = 7;\na[1] = 8;\ni = 1;\nprint(a[0]);\nprint(a[i]);\nprint(a[i - 1]);',
+        output: '7\n8\n7',
+        notes: [
+          '下标可以是任意整型表达式。',
+          '下标必须是整型：float 报 `array subscript must be an integer`。',
+          '⚠ 不做越界检查。',
+        ],
+        related: ['arr-decl', 'stmt-index-assign'],
+      },
+      {
+        id: 'expr-call',
+        title: '6.6　函数调用表达式',
+        status: 'ok',
+        syntax: '函数名 ( 实参列表 )',
+        example: 'int inc(int x) {\n    return x + 1;\n}\nprint(inc(1));\nprint(inc(inc(1)));\nprint(inc(inc(inc(1))));',
+        output: '2\n3\n4',
+        notes: [
+          '调用结果可以直接参与运算，也可以嵌套调用。',
+          '⚠ 不支持数组形参，所以不能把数组传给函数。',
+          '⚠ 实参个数不检查。',
+        ],
+        related: ['func-def', 'stmt-call'],
+      },
+      {
+        id: 'unsupported-ops',
+        title: '6.7　不支持的运算符',
+        status: 'no',
+        example: 'int a;\na++;',
+        err: "minic: error: 2:2: unexpected '+' (PLUS); expected one of: ( [ = (in 标识符后续)",
+        notes: [
+          '`++` `--`　`+=` `-=` `*=` `/=`　`%`　`?:`　`&` `|` `^` `~` `<<` `>>`　一元 `+` —— 全部不支持。',
+          '`a++` 会被切成 `a` `+` `+`，报 `unexpected \'+\' (PLUS)`。',
+          '`a % 2` 的 `%` 直接报 `unexpected character`（词法层就没有 `%`）。',
+          '`?` `:` 同样报 `unexpected character`。',
+        ],
+        related: ['mod', 'chain-assign', 'ternary'],
+      },
+      {
+        id: 'mod',
+        title: '6.8　取模 %（不支持）',
+        status: 'no',
+        example: 'print(a % 2);',
+        err: "minic: error: 1:9: unexpected character '%'",
+        notes: [
+          '替代写法：`a - (a / 2) * 2`。',
+          '实测 `print(7 - (7 / 2) * 2);` 输出 1，与 `7 % 2` 等价。',
+        ],
+        related: ['arith', 'unsupported-ops'],
+      },
+      {
+        id: 'chain-assign',
+        title: '6.9　链式赋值（不支持）',
+        status: 'no',
+        example: 'int a;\nint b;\na = b = 1;',
+        err: "minic: error: 3:7: unexpected '=' (ASSIGN); expected one of: ( [ (in 后缀表达式1)",
+        notes: [
+          '赋值不是表达式，所以不能连写。',
+          '拆成两句：`a = 1; b = 1;`。',
+          '同理 `if (a = 1)` 也报错（括号救不回来）。',
+        ],
+        related: ['stmt-assign', 'ternary'],
+      },
+      {
+        id: 'ternary',
+        title: '6.10　三目运算符 ?:（不支持）',
+        status: 'no',
+        example: 'print(c ? x : y);',
+        err: "minic: error: 1:9: unexpected character '?'",
+        notes: ['用 if / else 改写。'],
+        related: ['unsupported-ops'],
+      },
+      {
+        id: 'hex',
+        title: '6.11　十六进制 / 指数常量（不支持）',
+        status: 'no',
+        example: 'print(0x1F);\nprint(1e5);',
+        err: "minic: error: 1:8: unexpected 'x1F' (IDENT); expected one of: ( [ (in 后缀表达式1)",
+        notes: [
+          '`0x1F` 被切成 `0` 和标识符 `x1F`。',
+          '`1e5` 被切成 `1` 和标识符 `e5`。',
+          '只用十进制。',
+        ],
+        related: ['int-lit', 'float-lit'],
+      },
+      {
+        id: 'dot5',
+        title: '6.12　.5 这种写法（不支持）',
+        status: 'no',
+        example: 'float f;\nf = .5;',
+        err: "minic: error: 2:5: unexpected character '.'",
+        notes: [
+          '小数点前必须有数字：写 `0.5`。',
+          '反过来 `1.` 是合法的。',
+        ],
+        related: ['float-lit'],
+      },
+    ],
+  },
+
+  /* ══════════════════════ 第 7 章 作用域 ══════════════════════ */
+  {
+    id: 'ch7',
+    title: '第 7 章　作用域与变量',
+    entries: [
+      {
+        id: 'scope-global',
+        title: '7.1　全局变量',
+        status: 'ok',
+        example: 'int g;\nint get() {\n    return g;\n}\ng = 42;\nprint(get());',
+        output: '42',
+        notes: [
+          '在最外层声明的变量是全局变量，所有函数都能访问。',
+          '全局变量在 .bss 段分配，默认初始化为 0。',
+        ],
+        related: ['scope-local', 'scope-shadow'],
+      },
+      {
+        id: 'scope-local',
+        title: '7.2　局部变量',
+        status: 'ok',
+        example: 'int f() {\n    int a;\n    a = 9;\n    return a;\n}\nprint(f());',
+        output: '9',
+        notes: [
+          '函数体内声明的变量是局部变量，在栈上分配。',
+          '⚠ 局部变量**不初始化**，未赋值的局部变量读到的是垃圾值。',
+          '局部变量和全局变量可以同名，局部优先（遮蔽）。',
+        ],
+        related: ['scope-global', 'scope-shadow'],
+      },
+      {
+        id: 'scope-shadow',
+        title: '7.3　遮蔽（同名优先级）',
+        status: 'ok',
+        example: 'int x;\nint f(int x) {\n    return x;\n}\nx = 5;\nprint(f(9));\nprint(x);',
+        output: '9\n5',
+        notes: [
+          '形参遮蔽同名全局变量：函数内的 x 是形参，函数外的 x 是全局。',
+          '内层块声明的变量遮蔽外层同名变量，合法不报错。',
+          '同一作用域内重名才报 `duplicate variable`。',
+        ],
+        related: ['scope-global', 'scope-local', 'stmt-block'],
+      },
+      {
+        id: 'recursion',
+        title: '7.4　递归',
+        status: 'ok',
+        example: 'int fact(int n) {\n    if (n <= 1) {\n        return 1;\n    }\n    return n * fact(n - 1);\n}\nprint(fact(5));',
+        output: '120',
+        notes: [
+          '函数可以直接调用自己。',
+          '⚠ 相互递归做不到（没有函数原型，后定义的函数在前面的函数里看不见）。',
+          '深递归会爆栈：实测 20000 层正常，更深的没有验证。',
+        ],
+        related: ['func-def', 'func-proto'],
+      },
+    ],
+  },
+
+  /* ══════════════════════ 第 8 章 类型规则 ══════════════════════ */
+  {
+    id: 'ch8',
+    title: '第 8 章　类型规则（哪些会报错）',
+    entries: [
+      {
+        id: 'type-rules',
+        title: '8.1　类型规则一览',
+        status: 'info',
+        syntax: '场景                              结果\n────────────────────────────────  ─────────────────────────────\nint 与 float 混算                 ✓ int 提升为 float\nfloat 赋给 int                    ⚠ 截断 + Q9 告警，退出码仍 0\nchar 参与算术  c + 1              ✗ arithmetic operands must be numeric\nchar 参与关系  c == \'a\'           ✗ relational operands must be numeric\nbool 参与算术  b + 1              ✗ arithmetic operands must be numeric\nbool 参与关系  a == b             ✗ relational operands must be numeric\nbool 做逻辑    a && true          ✗ logical operators require bool operands\n! 用于 int                        ✗ \'!\' requires a bool operand\nvoid 参与算术  v + 1              ✗ arithmetic operands must be numeric\n数组下标是 float                  ✗ array subscript must be an integer\n未声明就使用                      ✗ undefined identifier z\n同作用域重复声明                  ✗ duplicate variable \'a\'\n内层遮蔽外层                      ✓ 合法\n下标越界                          — 不检查\n实参个数不符                      — 不检查\nreturn 类型不符                   — 不检查',
+        notes: [
+          '「✗」= 编译失败，退出码 1。',
+          '「⚠」= 编译成功但有 warning，退出码 0。',
+          '「—」= 完全不检查，可能运行期出错。',
+        ],
+        related: ['int-type', 'float-type', 'bool-type', 'char-type', 'void-type'],
+      },
+      {
+        id: 'char-arith',
+        title: '8.2　char 不能参与运算',
+        status: 'no',
+        example: "char c;\nc = 'a';\nprint(c + 1);",
+        err: 'minic: error: 3:9: arithmetic operands must be numeric',
+        notes: [
+          'char 既不参与算术，也不参与关系比较（`c == \'a\'` 同样报错）。',
+          '替代：用 int 变量存字符码。',
+        ],
+        related: ['char-type', 'type-rules'],
+      },
+      {
+        id: 'ret-mismatch',
+        title: '8.3　return 类型不匹配（不检查）',
+        status: 'limit',
+        example: 'int f() {\n    return 3.7;\n}\nvoid g() {\n    return 5;\n}\nprint(f());\ng();',
+        output: '3',
+        notes: [
+          '⚠ 语义阶段不检查返回类型，`int` 函数返回 float 会被静默截断成 3。',
+          '⚠ `void` 函数带值返回也编译通过（值被丢弃）。',
+          '⚠ `int` 函数写裸 `return;` 返回 0。',
+        ],
+        related: ['stmt-return', 'type-rules'],
+      },
+      {
+        id: 'void-hole',
+        title: '8.4　已知漏洞：void 变量',
+        status: 'limit',
+        example: 'void v;\nv = 1;\nprint(v);',
+        output: '1',
+        notes: [
+          '⚠ C 语言禁止 void 变量，但 MiniC **没有拦截** —— `void v;` 能编译、能赋值、能打印。',
+          '⚠ `void a[3];` 同样能过，`void f(void x)` 也能过。',
+          '这是当前已发现的语义检查缺口，已在语法支持清单中标注。',
+          '写代码时不要这么用 —— 它不是设计特性，是漏检。',
+        ],
+        related: ['void-type', 'type-rules'],
+      },
+    ],
+  },
+
+  /* ══════════════════════ 第 9 章 与 C 的差异 ══════════════════════ */
+  {
+    id: 'ch9',
+    title: '第 9 章　与 C 的差异一览',
+    entries: [
+      {
+        id: 'diff-c',
+        title: '9.1　从 C 过来必须改的习惯',
+        status: 'info',
+        syntax: '#   项目                    C                    MiniC\n─── ─────────────────────── ──────────────────── ──────────────────────────\n1   ++ / --                 有                   无\n2   复合赋值 +=            有                   无\n3   % 取模                  有                   无\n4   三目 ?:                 有                   无\n5   关系运算符分层          == 低于 <            六个同级\n6   赋值作表达式            是                   否\n7   for / break / switch    有                   无\n8   多维数组                有                   仅一维，长度须常量\n9   数组作形参              有                   语义拒绝\n10  函数原型                有                   无，必须带函数体\n11  字符串                  有                   词法识别、语法不接受\n12  char 参与运算           按整数参与           算术/关系全部禁止\n13  声明与语句顺序          任意                 顶层声明必须先于语句\n14  入口函数检查            需要 main            不检查\n15  声明时初始化            int a = 1;           不支持\n16  下标越界                未定义行为           不检查、不报错',
+        notes: [
+          '最常踩的三个坑：① `int a = 1;` ② `for` 循环 ③ `a++`。',
+          '三者都有直白的替代写法，见各条目。',
+        ],
+        related: ['decl-init', 'unsupported-stmt', 'unsupported-ops'],
+      },
+    ],
+  },
+
+  /* ══════════════════════ 第 10 章 完整示例 ══════════════════════ */
+  {
+    id: 'ch10',
+    title: '第 10 章　完整示例',
+    entries: [
+      {
+        id: 'ex-min',
+        title: '10.1　最小程序',
+        status: 'ok',
+        example: 'int main() {\n    print(1 + 2 * 3);\n    return 0;\n}',
+        output: '7',
+        notes: ['最少的可运行程序。'],
+        related: ['hello'],
+      },
+      {
+        id: 'ex-loop',
+        title: '10.2　循环 + 数组',
+        status: 'ok',
+        example: 'int i;\nint a[10];\n\nint main() {\n    i = 0;\n    while (i < 10) {\n        a[i] = i * i;\n        i = i + 1;\n    }\n    i = 0;\n    while (i < 10) {\n        print(a[i]);\n        i = i + 1;\n    }\n    return 0;\n}',
+        output: '0\n1\n4\n9\n16\n25\n36\n49\n64\n81',
+        notes: ['全局数组 + 两个 while 循环填充与输出。'],
+        related: ['arr-decl', 'stmt-while'],
+      },
+      {
+        id: 'ex-fact',
+        title: '10.3　函数 + 递归',
+        status: 'ok',
+        example: 'int fact(int n) {\n    if (n <= 1) {\n        return 1;\n    }\n    return n * fact(n - 1);\n}\n\nint main() {\n    print(fact(5));\n    return 0;\n}',
+        output: '120',
+        notes: ['递归求阶乘。'],
+        related: ['recursion'],
+      },
+      {
+        id: 'ex-gcd',
+        title: '10.4　最大公约数（辗转相减）',
+        status: 'ok',
+        example: 'int gcd(int a, int b) {\n    while (a != b) {\n        if (a > b) {\n            a = a - b;\n        } else {\n            b = b - a;\n        }\n    }\n    return a;\n}\n\nint main() {\n    print(gcd(24, 36));\n    print(gcd(100, 75));\n    return 0;\n}',
+        output: '12\n25',
+        notes: ['用 while + if-else 实现的辗转相减法（没有 % 取模）。'],
+        related: ['stmt-while', 'stmt-if'],
+      },
+      {
+        id: 'ex-mixed',
+        title: '10.5　综合：数组 + 函数 + 浮点',
+        status: 'ok',
+        example: 'int a[5];\nfloat avg;\n\nint sum(int n) {\n    int i;\n    int s;\n    s = 0;\n    i = 0;\n    while (i < n) {\n        s = s + a[i];\n        i = i + 1;\n    }\n    return s;\n}\n\nint main() {\n    a[0] = 10;\n    a[1] = 20;\n    a[2] = 30;\n    a[3] = 40;\n    a[4] = 50;\n    print(sum(5));\n    avg = sum(5) / 5.0;\n    print(avg);\n    return 0;\n}',
+        output: '150\n30',
+        notes: [
+          '全局数组 + 函数求和 + 浮点平均。',
+          '注意 `sum(5) / 5.0` 里 int 与 float 混算，结果是 float。',
+        ],
+        related: ['arr-decl', 'func-def', 'float-type'],
+      },
+    ],
+  },
+];
+
+/* 兼容 CommonJS（node 冒烟测试用）与浏览器全局 */
+if (typeof module !== 'undefined' && module.exports) module.exports = { SYNTAX_BOOK };

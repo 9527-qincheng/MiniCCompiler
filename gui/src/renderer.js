@@ -127,6 +127,14 @@ const el = {
   topDot: $('top-dot'),
   topStatus: $('top-status-text'),
   menuPop: $('menu-pop'),
+  // 语法手册
+  bookOverlay: $('book-overlay'),
+  bookToc: $('book-toc'),
+  bookContent: $('book-content'),
+  bookSearch: $('book-search'),
+  bookFoot: $('book-foot'),
+  btnBook: $('btn-book'),
+  bookClose: $('book-close'),
 };
 
 /* ------------------------- 工具 ------------------------- */
@@ -1357,6 +1365,8 @@ const MENUS = {
     { label: () => (state.autoFormatOnSave ? '✓ 保存时自动格式化' : '　保存时自动格式化'), action: toggleAutoFormat },
   ],
   help: [
+    { label: '语法手册', shortcut: 'F1', action: () => openBook() },
+    { sep: true },
     { label: '关于 MiniC 编译器 GUI', action: showAbout },
   ],
 };
@@ -1444,6 +1454,9 @@ function bindEvents() {
   $('btn-clear').onclick = clearOutputs;
   $('btn-theme').onclick = toggleTheme;
   $('btn-font').onclick = () => applyFontSize(state.fontSize >= 18 ? 12 : state.fontSize + 1);
+
+  // 语法手册
+  bindBookEvents();
 
   // 示例下拉
   $('btn-sample').onclick = (e) => {
@@ -1671,16 +1684,372 @@ function bindEvents() {
     else if (ctrl && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(); }
     else if (ctrl && e.key === 'Enter') { e.preventDefault(); doCompile(); }
     else if (e.key === 'F5') { e.preventDefault(); doRun(); }
+    else if (e.key === 'F1') { e.preventDefault(); toggleBook(); }
+    else if (ctrl && e.key.toLowerCase() === 'f' && bookState.open) { e.preventDefault(); el.bookSearch.focus(); el.bookSearch.select(); }
     else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'l') { e.preventDefault(); toggleTheme(); }
     else if (ctrl && (e.key === '=' || e.key === '+')) { e.preventDefault(); applyFontSize(state.fontSize + 1); }
     else if (ctrl && e.key === '-') { e.preventDefault(); applyFontSize(state.fontSize - 1); }
-    else if (e.key === 'Escape') closeMenu();
+    else if (e.key === 'Escape') {
+      closeMenu();
+      if (bookState.open) closeBook();
+    }
   });
 
   // 窗口尺寸变化
   window.addEventListener('resize', () => {
     renderMarks();
     syncScroll();
+  });
+}
+
+/* ============================================================
+   语法手册（语言参考书）
+   ------------------------------------------------------------
+   数据来自 syntax-book.js 的 SYNTAX_BOOK；本段只负责渲染与交互：
+   目录、搜索、代码块高亮、插入编辑器、载入为新文件。
+   ============================================================ */
+
+const BOOK = (typeof SYNTAX_BOOK !== 'undefined' && Array.isArray(SYNTAX_BOOK)) ? SYNTAX_BOOK : [];
+
+/* 把「章 → 条目」摊平，便于搜索与跳转 */
+const BOOK_INDEX = (() => {
+  const list = [];
+  for (const ch of BOOK) {
+    for (const entry of (ch.entries || [])) {
+      list.push({ chId: ch.id, chTitle: ch.title, entry });
+    }
+  }
+  return list;
+})();
+
+const BOOK_BADGE = {
+  ok: '✓ 支持',
+  no: '✗ 不支持',
+  limit: '⚠ 有限制',
+  info: '· 说明',
+};
+
+const bookState = { open: false, query: '', current: null };
+
+/* 说明文字里的 `反引号` 转成行内代码 */
+function bookInlineCode(text) {
+  return escapeHtml(String(text)).replace(/`([^`]+)`/g, '<code>$1</code>');
+}
+
+function bookEntryHtml(item) {
+  const e = item.entry;
+  const parts = [];
+
+  parts.push(`<section class="book-entry" id="entry-${e.id}" data-entry="${e.id}">`);
+  parts.push('<div class="book-entry-head">');
+  parts.push(`<h3 class="book-entry-title">${escapeHtml(e.title)}</h3>`);
+  if (e.status && BOOK_BADGE[e.status]) {
+    parts.push(`<span class="book-badge ${e.status}">${BOOK_BADGE[e.status]}</span>`);
+  }
+  parts.push('</div>');
+
+  if (e.syntax) {
+    parts.push(`<pre class="book-syntax">${escapeHtml(e.syntax)}</pre>`);
+  }
+
+  if (e.example) {
+    parts.push('<div class="book-code">');
+    parts.push('<div class="book-code-bar">');
+    parts.push('<span class="book-code-label">示例</span><span class="spacer"></span>');
+    parts.push(`<button class="book-code-btn" data-book-act="insert" data-entry="${e.id}">插入到编辑器</button>`);
+    parts.push(`<button class="book-code-btn" data-book-act="load" data-entry="${e.id}">载入为新文件</button>`);
+    parts.push(`<button class="book-code-btn" data-book-act="copy" data-entry="${e.id}">复制</button>`);
+    parts.push('</div>');
+    parts.push(`<pre>${highlightMiniC(e.example)}</pre>`);
+    parts.push('</div>');
+  }
+
+  if (e.err) {
+    parts.push(`<pre class="book-err">${escapeHtml(e.err)}</pre>`);
+  }
+
+  if (e.output) {
+    parts.push('<pre class="book-out"><span class="book-out-label">运行输出</span>');
+    parts.push(escapeHtml(e.output));
+    parts.push('</pre>');
+  }
+
+  if (e.notes && e.notes.length) {
+    parts.push('<ul class="book-notes">');
+    for (const n of e.notes) parts.push(`<li>${bookInlineCode(n)}</li>`);
+    parts.push('</ul>');
+  }
+
+  if (e.related && e.related.length) {
+    const links = e.related
+      .map((rid) => {
+        const target = BOOK_INDEX.find((x) => x.entry.id === rid);
+        if (!target) return '';
+        return `<button class="book-rel-link" data-book-act="goto" data-target="${rid}">${escapeHtml(target.entry.title)}</button>`;
+      })
+      .join('');
+    if (links) parts.push(`<div class="book-related"><span>相关：</span>${links}</div>`);
+  }
+
+  parts.push('</section>');
+  return parts.join('');
+}
+
+function bookMatch(item, q) {
+  if (!q) return true;
+  const e = item.entry;
+  const hay = [
+    e.title,
+    e.syntax || '',
+    e.example || '',
+    e.err || '',
+    (e.notes || []).join(' '),
+    item.chTitle,
+  ].join('\n').toLowerCase();
+  // 空格分词，全部命中才算匹配
+  return q.toLowerCase().split(/\s+/).filter(Boolean).every((t) => hay.includes(t));
+}
+
+function renderBookToc(matched) {
+  if (!matched.length) {
+    el.bookToc.innerHTML = '<div class="book-toc-empty">没有匹配的条目。<br>换个关键词试试，比如 <code>for</code>、<code>数组</code>、<code>print</code>。</div>';
+    return;
+  }
+  const byCh = new Map();
+  for (const item of matched) {
+    if (!byCh.has(item.chId)) byCh.set(item.chId, { title: item.chTitle, items: [] });
+    byCh.get(item.chId).items.push(item);
+  }
+  const out = [];
+  for (const [chId, group] of byCh) {
+    out.push(`<button class="book-toc-ch" data-book-act="goto" data-target="ch-${chId}">${escapeHtml(group.title)}</button>`);
+    for (const item of group.items) {
+      out.push(`<button class="book-toc-item" data-book-act="goto" data-target="entry-${item.entry.id}">${escapeHtml(item.entry.title)}</button>`);
+    }
+  }
+  el.bookToc.innerHTML = out.join('');
+  syncBookTocActive();
+}
+
+function renderBookContent(matched) {
+  if (!matched.length) {
+    el.bookContent.innerHTML = '<div class="book-empty">没有匹配的条目。<br>试试 <code>for</code>、<code>取模</code>、<code>数组</code>、<code>print</code>、<code>报错</code>。</div>';
+    return;
+  }
+  const byCh = new Map();
+  for (const item of matched) {
+    if (!byCh.has(item.chId)) byCh.set(item.chId, { title: item.chTitle, items: [] });
+    byCh.get(item.chId).items.push(item);
+  }
+  const out = [];
+  for (const [chId, group] of byCh) {
+    out.push(`<div class="book-chapter" id="ch-${chId}">`);
+    out.push(`<h2>${escapeHtml(group.title)}</h2>`);
+    for (const item of group.items) out.push(bookEntryHtml(item));
+    out.push('</div>');
+  }
+  el.bookContent.innerHTML = out.join('');
+}
+
+function renderBookFoot(count) {
+  const total = BOOK_INDEX.length;
+  const shown = count === total ? `共 ${total} 条` : `匹配 ${count} / ${total} 条`;
+  el.bookFoot.innerHTML =
+    `<span>${shown}</span>` +
+    `<span>全部条目均在 <code>minic.exe</code> 上实测</span>` +
+    '<span class="spacer"></span>' +
+    '<span><kbd>F1</kbd> 开关手册　<kbd>Esc</kbd> 关闭　<kbd>Ctrl+F</kbd> 搜索</span>';
+}
+
+function renderBook() {
+  if (!BOOK.length) {
+    el.bookToc.innerHTML = '';
+    el.bookContent.innerHTML = '<div class="book-empty">手册数据未加载（syntax-book.js 缺失）。</div>';
+    el.bookFoot.innerHTML = '';
+    return;
+  }
+  const q = bookState.query.trim();
+  const matched = BOOK_INDEX.filter((item) => bookMatch(item, q));
+  renderBookToc(matched);
+  renderBookContent(matched);
+  renderBookFoot(matched.length);
+}
+
+/* 高亮目录里当前可见的条目 */
+function syncBookTocActive() {
+  const nodes = el.bookContent.querySelectorAll('.book-entry');
+  if (!nodes.length) return;
+  const top = el.bookContent.scrollTop + 12;
+  let activeId = nodes[0].id;
+  for (const n of nodes) {
+    if (n.offsetTop - el.bookContent.offsetTop <= top) activeId = n.id;
+    else break;
+  }
+  for (const b of el.bookToc.querySelectorAll('.book-toc-item')) {
+    b.classList.toggle('active', b.dataset.target === activeId);
+  }
+}
+
+function bookScrollTo(targetId) {
+  const target = document.getElementById(targetId);
+  if (!target) return;
+  target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  if (targetId.startsWith('entry-')) {
+    bookState.current = targetId.slice(6);
+    for (const b of el.bookToc.querySelectorAll('.book-toc-item')) {
+      b.classList.toggle('active', b.dataset.target === targetId);
+    }
+  }
+}
+
+function openBook(entryId) {
+  if (!el.bookOverlay) return;
+  bookState.open = true;
+  el.bookOverlay.classList.remove('hidden');
+  if (!el.bookToc.dataset.rendered) {
+    renderBook();
+    el.bookToc.dataset.rendered = '1';
+  }
+  if (entryId) {
+    // 若被搜索过滤掉了，先清空搜索再跳
+    if (!document.getElementById(`entry-${entryId}`)) {
+      bookState.query = '';
+      el.bookSearch.value = '';
+      renderBook();
+    }
+    bookScrollTo(`entry-${entryId}`);
+  } else if (el.bookContent) {
+    el.bookContent.scrollTop = 0;
+  }
+  syncBookTocActive();
+  setTimeout(() => el.bookSearch && el.bookSearch.focus(), 30);
+}
+
+function closeBook() {
+  if (!el.bookOverlay) return;
+  bookState.open = false;
+  el.bookOverlay.classList.add('hidden');
+}
+
+function toggleBook() {
+  if (bookState.open) closeBook();
+  else openBook();
+}
+
+function bookFindEntry(id) {
+  const item = BOOK_INDEX.find((x) => x.entry.id === id);
+  return item ? item.entry : null;
+}
+
+/* 把示例插入当前编辑器光标处 */
+function bookInsertExample(id) {
+  const entry = bookFindEntry(id);
+  if (!entry || !entry.example) return;
+  const ta = el.source;
+  const start = ta.selectionStart;
+  const end = ta.selectionEnd;
+  const cur = ta.value;
+  const before = cur.slice(0, start);
+  const after = cur.slice(end);
+  const needNl = before.length && !before.endsWith('\n') ? '\n' : '';
+  const tail = after.length && !after.startsWith('\n') ? '\n' : '';
+  const text = before + needNl + entry.example + tail + after;
+  ta.value = text;
+  const caret = (before + needNl).length + entry.example.length;
+  ta.selectionStart = ta.selectionEnd = caret;
+  ta.focus();
+  // 触发一次输入事件，让高亮/脏标记/行号刷新
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+  closeBook();
+  statusNote(`已插入示例：${entry.title}`);
+  el.topDot.className = 'dot ok';
+  el.topStatus.textContent = '已插入示例';
+}
+
+/* 把示例载入为一个新文件（不动当前文件） */
+function bookLoadExample(id) {
+  const entry = bookFindEntry(id);
+  if (!entry || !entry.example) return;
+  const safeName = entry.id.replace(/[^A-Za-z0-9_-]/g, '_') + '.mc';
+  reuseOrCreateDoc({ name: safeName, content: entry.example });
+  closeBook();
+  selectTab('token');
+  statusNote(`已载入示例：${entry.title}`);
+  el.topDot.className = 'dot ok';
+  el.topStatus.textContent = '已载入示例';
+}
+
+async function bookCopyExample(id) {
+  const entry = bookFindEntry(id);
+  if (!entry || !entry.example) return;
+  try {
+    await navigator.clipboard.writeText(entry.example);
+    statusNote('示例已复制到剪贴板');
+  } catch {
+    statusNote('复制失败：剪贴板不可用');
+  }
+}
+
+function bindBookEvents() {
+  if (!el.bookOverlay) return;
+
+  el.btnBook && el.btnBook.addEventListener('click', () => toggleBook());
+  el.bookClose && el.bookClose.addEventListener('click', closeBook);
+
+  // 点遮罩空白处关闭
+  el.bookOverlay.addEventListener('mousedown', (e) => {
+    if (e.target === el.bookOverlay) closeBook();
+  });
+
+  // 正文区所有按钮走事件委托
+  el.bookContent.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-book-act]');
+    if (!btn) return;
+    const act = btn.dataset.bookAct;
+    if (act === 'goto') bookScrollTo(btn.dataset.target);
+    else if (act === 'insert') bookInsertExample(btn.dataset.entry);
+    else if (act === 'load') bookLoadExample(btn.dataset.entry);
+    else if (act === 'copy') bookCopyExample(btn.dataset.entry);
+  });
+
+  // 目录点击
+  el.bookToc.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-book-act]');
+    if (btn && btn.dataset.bookAct === 'goto') bookScrollTo(btn.dataset.target);
+  });
+
+  // 搜索（防抖 120ms）
+  let timer = null;
+  el.bookSearch.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      bookState.query = el.bookSearch.value;
+      renderBook();
+      el.bookContent.scrollTop = 0;
+    }, 120);
+  });
+  el.bookSearch.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (el.bookSearch.value) {
+        el.bookSearch.value = '';
+        bookState.query = '';
+        renderBook();
+      } else {
+        closeBook();
+      }
+      e.stopPropagation();
+    } else if (e.key === 'Enter') {
+      const first = el.bookContent.querySelector('.book-entry');
+      if (first) bookScrollTo(first.id);
+    }
+  });
+
+  // 滚动时同步目录高亮（节流）
+  let scrollTick = false;
+  el.bookContent.addEventListener('scroll', () => {
+    if (scrollTick) return;
+    scrollTick = true;
+    requestAnimationFrame(() => { scrollTick = false; syncBookTocActive(); });
   });
 }
 

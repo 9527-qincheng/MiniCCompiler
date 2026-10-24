@@ -105,7 +105,7 @@ build.bat
 | 命令 | 作用 |
 |---|---|
 | `build.bat` | 编译，产出 `build\minic.exe` |
-| `build.bat test` | 编译后跑全部 7 套测试，任一失败即返回 1 |
+| `build.bat test` | 编译后跑全部 7 套测试 + 2 套 GUI 冒烟，任一失败即返回 1 |
 | `build.bat run tests\test.mc` | 编译后运行指定源文件 |
 | `build.bat list` | 列出参与编译的源文件 |
 | `build.bat clean` | 清理 `build` 目录 |
@@ -113,7 +113,8 @@ build.bat
 
 > `build.bat test` 等价于依次执行 `run_lexer_tests.ps1`、`run_grammar_selfcheck.ps1`、
 > `run_parser_tests.ps1`、`run_parser_unit.ps1`、`run_symbol_tests.ps1`、`run_symtab_tests.ps1`、
-> `run_codegen_tests.ps1`，适合提交前自检与 CI。
+> `run_codegen_tests.ps1`，再跑 GUI 的 `gui\test\book-smoke.js`（语法手册数据与渲染，纯 Node，
+> 不需要 Electron 窗口；PATH 里没有 `node` 时跳过），适合提交前自检与 CI。
 > 退出码会如实传播（**注意**：`build.bat run` 也传播 `minic` 的退出码，
 > 早前版本因 `endlocal`/`exit` 分行书写会吞掉退出码恒返回 0，现已修复）。
 
@@ -226,7 +227,7 @@ npm install        :: 首次安装 Electron（.npmrc 已配置 npmmirror 镜像�
 
 | 页签 | 数据来源 |
 |---|---|
-| Token / 语法分析 / 语法树 / 符号表 | `--dump-tokens` / `--dump-parse` / `--dump-ast` / `--dump-symtab` 产物 |
+| Token / 语法树 / 符号表 | `--dump-tokens` / `--dump-ast` / `--dump-symtab` 产物 |
 | 四元式 / 汇编 | `--dump-quads` 与默认 `.asm` 产物（均为真实输出） |
 | **运行输出** | **点「运行」（F5）：minic 编译 → gcc 汇编链接 → 执行 exe，抓 stdout/stderr** |
 | 诊断 | stderr 的 `minic: error/warning: 行:列: 消息`，点击跳到源码行 |
@@ -238,9 +239,15 @@ npm install        :: 首次安装 Electron（.npmrc 已配置 npmmirror 镜像�
 > 运行需要 MinGW 的 `gcc`（自动从 PATH 查找；也可用环境变量 `MINIC_GCC` 指定完整路径）。
 > 程序若死循环，5 秒后被强制结束并提示超时。
 
+**内建语法手册**：工具栏「语法手册」或 `F1` 打开全屏参考书，10 章 67 条，每条标注
+`✓ 支持` / `✗ 不支持` / `⚠ 有限制` / `· 说明`；不支持的直接给真实报错原文，支持的给可运行示例
+（可一键插入编辑器 / 载入为新文档 / 复制）。支持多关键词搜索与目录跳转。全部 59 条示例都在
+`build\minic.exe` 上实测过编译退出码与运行输出。
+
 - 用法、快捷键、目录结构与启动器原理见 [gui/README.md](gui/README.md)。
 - 界面规范板（S1~S5）与验收截图见 [`docs/gui-acceptance/`](docs/gui-acceptance/)。
-- 冒烟测试：`cd gui && node test\compile-smoke.js`（校验各类产物齐全、Token 格式与错误诊断格式）。
+- 冒烟测试：`cd gui && node test\compile-smoke.js`（校验各类产物齐全、Token 格式与错误诊断格式）；
+  `node test\run-smoke.js`（校验编译→链接→执行链路、编译失败、除零崩溃与死循环超时）。
 - 注意：本机实测原生程序在含中文的路径下文件 I/O 会失效，启动脚本会把 Electron 运行时部署到
   `%LOCALAPPDATA%\minic-gui\runtime`、`lib/compiler.js` 会把 `minic.exe` 复制到 `%TEMP%\minic-gui`，首次启动稍慢。
 

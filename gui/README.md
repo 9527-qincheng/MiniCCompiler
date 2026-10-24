@@ -71,9 +71,11 @@ gui/
   preload.js         contextBridge 暴露的最小 API
   lib/compiler.js    编译调度（纯 Node，可单测）：调用 minic.exe、回读产物、编码处理
   src/index.html     界面结构
-  src/styles.css     设计令牌（S5 色值）+ 布局 + 组件
-  src/renderer.js    编辑器高亮、Token 表、7 标签、诊断解析、菜单与快捷键
+  src/styles.css     设计令牌（S5 色值）+ 布局 + 组件 + 语法手册浮层
+  src/syntax-book.js 语法手册数据（10 章 67 条，纯数据、可 require 校验）
+  src/renderer.js    编辑器高亮、Token 表、7 标签、诊断解析、菜单与快捷键、语法手册
   test/compile-smoke.js  编译管线冒烟测试
+  test/run-smoke.js      运行链路冒烟测试（编译→链接→执行）
   启动GUI.bat        启动器（部署 ASCII 运行时）
 ```
 
@@ -88,6 +90,26 @@ gui/
 | 汇编 | `<src>.asm` | x86-64 / GNU as 汇编（MinGW `main` 入口） |
 | **运行输出** | 执行编译出的 `.exe` 抓 stdout/stderr | **`print` 的输出显示在这里**；页脚给各阶段耗时与退出码 |
 | 诊断 | stderr | `minic: error/warning: 行:列: 消息`，点击跳转 |
+
+## 语法手册（内建参考书）
+
+工具栏 **语法手册** 按钮（或 `F1`）打开一本全屏参考书，共 **10 章 67 条**，每条都标注状态：
+
+| 徽标 | 含义 | 条数 |
+|---|---|---|
+| ✓ 支持 | 可直接使用，附可运行示例 | 33 |
+| ✗ 不支持 | 附真实报错原文 | 15 |
+| ⚠ 有限制 | 能用但有约束 | 11 |
+| · 说明 | 纯概念说明 | 8 |
+
+- **左侧目录**：按章分组，滚动正文时自动高亮当前条目。
+- **搜索框**：`Ctrl+F` 聚焦，支持多关键词（空格分隔，全部命中才显示），匹配范围含标题、语法、示例、报错原文与说明。
+- **每个示例块**右侧三个按钮：**插入**（插到编辑器光标处）、**载入**（作为新文档打开并编译）、**复制**。
+- **相关条目**是可点击的胶囊，点击跳转到对应条目。
+
+全部 59 条示例都在 `build\minic.exe` 上实测过：编译退出码、`gcc` 汇编链接、运行 stdout 与文档标注逐字一致。
+
+手册数据在 `src/syntax-book.js`，界面逻辑在 `renderer.js` 的 `// ══ 语法手册 ══` 段，样式在 `styles.css` 的 `.book-*` 段。改内容只需编辑 `syntax-book.js` 的 `SYNTAX_BOOK` 数组。
 
 ## 编辑体验（类 VS Code）
 
@@ -104,7 +126,7 @@ gui/
 ## 快捷键
 
 `Ctrl+N` 新建 · `Ctrl+O` 打开 · `Ctrl+S` 保存 · `Ctrl+Shift+S` 另存为 · `Ctrl+Enter` 编译 ·
-`F5` 运行 · `Shift+Alt+F` 格式化文档 · `Ctrl+Shift+L` 切换主题 · `Ctrl+滚轮` 缩放编辑器字号 ·
+`F5` 运行 · `F1` 语法手册 · `Shift+Alt+F` 格式化文档 · `Ctrl+Shift+L` 切换主题 · `Ctrl+滚轮` 缩放编辑器字号 ·
 `Ctrl+=` / `Ctrl+-` 同样可调字号
 
 ## 测试

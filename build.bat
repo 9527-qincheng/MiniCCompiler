@@ -243,6 +243,21 @@ echo [TEST] target code (asm assemble + link + run) ...
 pwsh -NoProfile -File "tests\run_codegen_tests.ps1"
 if errorlevel 1 set "TESTRC=1"
 
+rem  GUI smoke tests are pure Node and need no Electron window. They cover the
+rem  syntax book data/render path and (when gcc is present) the run pipeline.
+where node >nul 2>nul
+if errorlevel 1 (
+    echo.
+    echo [SKIP] GUI smoke tests - node not found on PATH
+) else (
+    echo.
+    echo [TEST] GUI syntax book ...
+    pushd "gui"
+    node "test\book-smoke.js"
+    if errorlevel 1 set "TESTRC=1"
+    popd
+)
+
 echo.
 echo ============================================================
 if "%TESTRC%"=="0" (

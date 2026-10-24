@@ -264,6 +264,6 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    std::cout << "minic: compilation finished (skeleton demo)\n";
+    std::cout << "minic: compilation finished\n";
     return 0;
 }

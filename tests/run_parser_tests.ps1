@@ -132,10 +132,18 @@ function Invoke-Case([string]$srcPath, [string]$tag, [int]$expectedExit) {
         -ArgumentList @("`"$workSrc`"", "--dump-ast", "--dump-parse") `
         -Wait -NoNewWindow -PassThru `
         -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+    $exitCode = $proc.ExitCode
+    # 受限环境（Windows 沙箱 / 精简权限）下 Start-Process -PassThru 取不到 .ExitCode，
+    # 返回 $null，症状是全部用例都报 `exit code: expected 0, got `（got 后为空）。
+    # 此时用直接调用重跑一次拿真实退出码（& 调用在当前进程内执行，$LASTEXITCODE 可靠）。
+    if ($null -eq $exitCode) {
+        & $Exe $workSrc --dump-ast --dump-parse 1>$outFile 2>$errFile | Out-Null
+        $exitCode = $LASTEXITCODE
+    }
     $astPath = [System.IO.Path]::ChangeExtension($workSrc, ".ast.txt")
     $parsePath = [System.IO.Path]::ChangeExtension($workSrc, ".parse.txt")
     return @{
-        code  = $proc.ExitCode
+        code  = $exitCode
         ast   = (Read-Text $astPath)
         parse = (Read-Text $parsePath)
         err   = (Read-Text $errFile)

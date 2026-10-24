@@ -78,6 +78,14 @@ $proc = Start-Process -FilePath $Exe `
     -ArgumentList @("`"$workSrc`"", "--dump-symtab") `
     -Wait -NoNewWindow -PassThru `
     -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+$exitCode = $proc.ExitCode
+# 受限环境（Windows 沙箱 / 精简权限）下 Start-Process -PassThru 取不到 .ExitCode，
+# 返回 $null，症状是 `expected exit code 0, got `（got 后为空）。
+# 此时用直接调用重跑一次拿真实退出码（& 调用在当前进程内执行，$LASTEXITCODE 可靠）。
+if ($null -eq $exitCode) {
+    & $Exe $workSrc --dump-symtab 1>$outFile 2>$errFile | Out-Null
+    $exitCode = $LASTEXITCODE
+}
 # 产物与源文件同目录：build\_symtab_scratch\test.sym.txt
 $symPath = [System.IO.Path]::ChangeExtension($workSrc, ".sym.txt")
 $got = Read-Text $symPath
@@ -104,8 +112,8 @@ $problems = @()
 if ($exp -ne $gotN) {
     $problems += "symtab dump mismatch (`"$golden`")"
 }
-if ($proc.ExitCode -ne 0) {
-    $problems += "expected exit code 0, got $($proc.ExitCode)"
+if ($exitCode -ne 0) {
+    $problems += "expected exit code 0, got $exitCode"
 }
 
 if ($problems.Count -eq 0) {
@@ -120,7 +128,7 @@ if ($problems.Count -eq 0) {
         Write-Host "      --- actual --dump-symtab ---" -ForegroundColor DarkGray
         Write-Host $gotN -ForegroundColor DarkGray
     }
-    if ($proc.ExitCode -ne 0) {
+    if ($exitCode -ne 0) {
         Write-Host "      --- actual stderr ---" -ForegroundColor DarkGray
         Write-Host $err -ForegroundColor DarkGray
     }

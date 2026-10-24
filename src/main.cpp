@@ -204,7 +204,7 @@ int main(int argc, char* argv[])
         WriteTextFile(base + ".ast.txt", oss.str());
     }
 
-    // ---------- 4. 语义阶段：SymbolTable（骨架阶段基础登记/查重可用） ----------
+    // ---------- 4. 语义阶段：符号表登记 + 类型/作用域检查 ----------
     SymbolTable symtab;
     // 语义分析只在语法阶段无错时执行。
     // 这个 if 判断不能省：语法已经报错的输入（如 tests/parser/err_recovery.mc

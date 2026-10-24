@@ -38,8 +38,8 @@ main:
     movl %eax, -24(%rbp)
     movl -24(%rbp), %eax
     movl %eax, a(%rip)
-.Lret0:
     xorl %eax, %eax
+.Lret0:
     movq %rbp, %rsp
     popq %rbp
     ret

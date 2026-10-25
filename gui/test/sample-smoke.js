@@ -78,6 +78,9 @@ function main() {
     } else if (!s.output) {
       badField.push(s.id + '.output');
     }
+    if (s.exitCode !== undefined && typeof s.exitCode !== 'number') {
+      badField.push(s.id + '.exitCode(非数字)');
+    }
   }
   check(dup.length === 0, `id 唯一（重复 ${dup.join(',') || 0}）`);
   check(badField.length === 0, `字段齐全（缺 ${badField.join(',') || 0}）`);
@@ -150,8 +153,11 @@ function main() {
     }
 
     const r = run(exeFile, []);
-    if (r.status !== 0) {
-      check(false, `${s.id}  运行退出码 ${r.status}`);
+    // 示例可以声明 exitCode：main 的返回值就是进程退出码，gcd 示例 return t=12 时退出码是 12。
+    // 这是 MiniC 返回值语义的正确体现，不是失败；未声明时默认要求 0。
+    const wantCode = typeof s.exitCode === 'number' ? s.exitCode : 0;
+    if (r.status !== wantCode) {
+      check(false, `${s.id}  运行退出码 ${r.status}（期望 ${wantCode}）`);
       continue;
     }
     const want = norm(s.output);

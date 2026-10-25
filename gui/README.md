@@ -91,6 +91,9 @@ gui/
 - 数据在 `src/samples.js`，渲染逻辑在 `renderer.js` 的示例下拉段。改示例只需编辑 `SAMPLES` 数组。
 - 每条都带 `output`（期望 stdout）或 `err`（期望 stderr 首行），**全部在真实工具链上跑通过**：
   `build\minic.exe` 编译 → `gcc -x assembler` 汇编链接 → 运行比对 stdout；错误示例比对退出码 1 与报错原文。
+- 可选 `exitCode`：`main` 的返回值就是进程退出码。`gcd` 示例是 `return t`（gcd(36,24)=12），
+  所以它标注了 `exitCode: 12`；未标注的示例默认要求退出码 0。
+  **这是 MiniC 返回值语义的正确体现，不是缺陷** —— 曾经把断言写死为 0，导致 `gcd` 被误判 FAIL。
 - 回归：`node test\sample-smoke.js`（数据层恒跑；实跑校验在允许启动子进程的环境才执行）。
 
 ## 产物与标签对应

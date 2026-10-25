@@ -32,6 +32,8 @@ int main() {
     label: '最大公约数',
     name: 'gcd-demo.mc',
     output: '12',
+    // return t; → gcd(36,24)=12，进程退出码也是 12（返回值语义的直接体现）
+    exitCode: 12,
     text: `/* 最大公约数：辗转相减法 */
 int a;
 int b;

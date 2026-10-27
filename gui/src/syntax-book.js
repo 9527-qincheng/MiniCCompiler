@@ -174,11 +174,11 @@ const SYNTAX_BOOK = [
       },
       {
         id: 'operators',
-        title: '2.8　运算符（共 16 个）',
+        title: '2.8　运算符（共 18 个）',
         status: 'info',
-        syntax: '+  -  *  /          算术\n==  !=  <  <=  >  >=  关系\n&&  ||  !              逻辑\n=                      赋值（仅作语句）',
+        syntax: '+  -  *  /          算术\n==  !=  <  <=  >  >=  关系\n&&  ||  !              逻辑\n++  --                 自增自减（前缀与后缀）\n=                      赋值（仅作语句）',
         notes: [
-          '⚠ 没有 `%` 取模、`++` `--`、复合赋值 `+=` `-=` `*=` `/=`、位运算 `& | ^ ~ << >>`、三目 `?:`。',
+          '⚠ 没有 `%` 取模、复合赋值 `+=` `-=` `*=` `/=`、位运算 `& | ^ ~ << >>`、三目 `?:`。',
           '⚠ 没有一元 `+`：`print(+5);` 报 `unexpected \'+\'`。',
           '`-` 既是一元取负也是二元减法，`!` 只能用于 bool。',
         ],
@@ -730,7 +730,7 @@ const SYNTAX_BOOK = [
         title: '6.8　不支持的运算符',
         status: 'no',
         example: 'int a;\na += 1;',
-        err: "minic: error: 2:3: unexpected '=' (ASSIGN); expected one of: ; (in 标识符后续)",
+        err: "minic: error: 2:3: unexpected '+' (PLUS); expected one of: ( [ = ++ -- (in 标识符后续)",
         notes: [
           '`+=` `-=` `*=` `/=`　`%`　`?:`　`&` `|` `^` `~` `<<` `>>`　一元 `+` —— 全部不支持。',
           '`++` `--` **已支持**（见 6.7），前缀与后缀都行。',
@@ -741,7 +741,7 @@ const SYNTAX_BOOK = [
       },
       {
         id: 'mod',
-        title: '6.8　取模 %（不支持）',
+        title: '6.9　取模 %（不支持）',
         status: 'no',
         example: 'print(a % 2);',
         err: "minic: error: 1:9: unexpected character '%'",
@@ -753,7 +753,7 @@ const SYNTAX_BOOK = [
       },
       {
         id: 'chain-assign',
-        title: '6.9　链式赋值（不支持）',
+        title: '6.10　链式赋值（不支持）',
         status: 'no',
         example: 'int a;\nint b;\na = b = 1;',
         err: "minic: error: 3:7: unexpected '=' (ASSIGN); expected one of: ( [ (in 后缀表达式1)",
@@ -766,7 +766,7 @@ const SYNTAX_BOOK = [
       },
       {
         id: 'ternary',
-        title: '6.10　三目运算符 ?:（不支持）',
+        title: '6.11　三目运算符 ?:（不支持）',
         status: 'no',
         example: 'print(c ? x : y);',
         err: "minic: error: 1:9: unexpected character '?'",
@@ -775,7 +775,7 @@ const SYNTAX_BOOK = [
       },
       {
         id: 'hex',
-        title: '6.11　十六进制 / 指数常量（不支持）',
+        title: '6.12　十六进制 / 指数常量（不支持）',
         status: 'no',
         example: 'print(0x1F);\nprint(1e5);',
         err: "minic: error: 1:8: unexpected 'x1F' (IDENT); expected one of: ( [ (in 后缀表达式1)",
@@ -788,7 +788,7 @@ const SYNTAX_BOOK = [
       },
       {
         id: 'dot5',
-        title: '6.12　.5 这种写法（不支持）',
+        title: '6.13　.5 这种写法（不支持）',
         status: 'no',
         example: 'float f;\nf = .5;',
         err: "minic: error: 2:5: unexpected character '.'",

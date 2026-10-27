@@ -229,6 +229,31 @@
       - **变异测试**：把 `EvalExpr` 里的 `GenIncDec(u, u->m_bPostfix)` 改成 `!u->m_bPostfix`
         （即前后缀语义对调），`tests/codegen/incdec.mc` 立刻报
         `expect: 5|6|7|7 / actual: 6|6|6|7`——证明该用例确实锁住了语义。
+ 21. **常量折叠（挑战版 C4 落地，2026-10-27，鲍方乐）**：设计文档特性表 C4 与 §9.2 的
+      `TypeSysInfo + OpConstSemantic` 都写了「常量折叠」，但 `src/sema/ir.cpp` 此前**一行实现都没有**。
+      本次补齐，**不改变任何对外签名、不新增 `QuadOp`、目标代码层零改动**。
+     - **新增私有接口**（`src/sema/ir.h`）：
+       `Operand ConstFloat(double value, const LineInfo& loc)`、
+       `bool ConstValueOf(const Operand& op, bool& bFloat, long long& iVal, double& fVal) const`、
+       `Operand FoldBinary(TokenType op, const Operand& lo, const Operand& ro, const LineInfo& loc)`。
+     - **插入点**：`EvalExpr` 的 `AST_NODE_BINOP` 分支，在 `OperandType(lo)`/`OperandType(ro)`
+       之后、关系与算术分支**之前**。必须在**类型转换之前**折叠——`FoldBinary` 内部已按 §8.1
+       的 Promote 规则处理 int/float；若先插 `ITOF`/`FTOI` 再折叠，会白生成一条转换四元式。
+     - **覆盖范围**：`+ - * /` 与六个关系运算符；两侧都是 `OP_CONST` 才折叠。
+       浮点走 `ConstFloat`（登记进 `m_ConstInfoTbl`，同时回填 `ConstEntry::m_szVal`，
+       否则 `--dump-quads` 会把常量打印成空串），整型走 `ConstInt`；除法为 C 语义向零截断
+       （`7 / 2` → `3`，不是 `3.5`）。
+     - **三条故意不折叠的边界**（理由写在代码注释里）：
+       ①**除数为 0** 不折叠——编译期算出 `Inf` 会把「运行时除零」变成「静默的错结果」；
+       ②**整型结果越界**（`> 2147483647 || < -2147483648`）不折叠——交给运行时按 x86 `addl`
+       自然回绕，与未折叠时**逐位一致**；③**`&&` / `||`** 不折叠——短路有副作用语义，
+       右侧可能不执行，必须保留 `Q_JZ`/`Q_JNZ` 分支。
+     - 回归：新增 `tests/quad/const_fold.mc`（折叠后的四元式结构）与
+       `tests/codegen/const_fold.mc`（期望 `7/3/3/1/5/11/-3`，证明折叠前后运行结果一致）；
+       既有 `tests/quad/arith_int.expected.quad.txt` 的 `(/, 4, 2, _T3)` 一行被折叠掉，
+       基线同步更新为 `(-, _T2, 2, _T3)`。quad 15 → **16 例**、codegen 26 → **27 例**，全绿。
+     - **变异测试**：把 `FoldBinary(op, lo, ro, loc)` 改成恒返回空 `Operand`，
+       `arith_int` 与 `const_fold` 两个用例立刻 FAIL——证明基线确实锁住了折叠行为。
 
 > 说明：本节第 8–10 条为 2026-10-13 阶段⑤ 收尾时同步；**下面的"四、词法识别集合"仍是 v3.1 骨架版内容**，
 > 词法 v4.0 的现状（17 个挑战版终结符等）见 `README.md` 的模块状态表与

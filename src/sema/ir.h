@@ -121,6 +121,12 @@ private:
     Operand IntToFloatConv(const Operand& op, const LineInfo& loc); // 插入 ITOF
     Operand FloatToIntConv(const Operand& op, const LineInfo& loc); // 插入 FTOI
     Operand ConstInt(int value, const LineInfo& loc); // 取整型常量 0/1（无则登记）
+    Operand ConstFloat(double value, const LineInfo& loc); // 取浮点常量（无则登记）
+    // ---- 常量折叠（挑战版 C4 / 设计文档 §8.1 TypeSysInfo + OpConstSemantic）----
+    // 取操作数的编译期常量值：bFloat 指示取值用 fVal 还是 iVal
+    bool    ConstValueOf(const Operand& op, bool& bFloat, long long& iVal, double& fVal) const;
+    // 二元折叠：两侧都是常量时在编译期求值；不可折叠（含除零、溢出）返回 OP_NONE
+    Operand FoldBinary(TokenType op, const Operand& lo, const Operand& ro, const LineInfo& loc);
     // 自增自减（挑战版 ++/--）：生成「旧值快照 + 原位 ±1」两条四元式，returnOld 决定返回哪个
     Operand GenIncDec(const UnOpNode* u, bool bReturnOld);
     void    BuildParamTypeTable(const ASTNodePtr& root); // 扫描 AST 建「函数名 → 形参类型表」

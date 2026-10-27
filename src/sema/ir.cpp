@@ -232,6 +232,154 @@ Operand IRGenerator::FloatToIntConv(const Operand& op, const LineInfo& loc)
     return Operand::Temp(t, TokenType::TOKEN_INT);
 }
 
+// 取浮点常量（常量折叠产生的新常量）：先在常量表中按数值查，未登记则登记
+// 与 ConstInt 同理——IR 阶段在 --dump-symtab 之后，登记不会污染符号表产物。
+Operand IRGenerator::ConstFloat(double value, const LineInfo& loc)
+{
+    for (std::size_t i = 0; i < m_symtab.m_ConstInfoTbl.size(); ++i)
+    {
+        const ConstEntry& ce = m_symtab.m_ConstInfoTbl[i];
+        if ((ce.m_bIsFloat || IsFloatType(ce.m_constType)) && ce.m_fValue == value)
+        {
+            return Operand::Const(static_cast<int>(i), TokenType::TOKEN_FLOAT);
+        }
+    }
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "%g", value);
+    ConstEntry* ce = m_symtab.RecConst(buf, TokenType::TOKEN_FLOAT, value,
+                                       loc.m_iRow, loc.m_iCol);
+    if (!ce)
+    {
+        return Operand();
+    }
+    // 折叠出的常量没有词法原文，补一份格式化文本供 --dump-quads 打印
+    ce->m_szVal = buf;
+    return Operand::Const(static_cast<int>(ce - m_symtab.m_ConstInfoTbl.data()),
+                          TokenType::TOKEN_FLOAT);
+}
+
+// ----------------------------------------------------------------------------
+// 常量折叠（挑战版 C4 / 设计文档 §8.1「TypeSysInfo + OpConstSemantic」）
+// ----------------------------------------------------------------------------
+// 边界约定（三条，都是「宁可不折叠，也不折叠错」）：
+//   1) 除数为 0 不折叠：编译期算出 Inf 会把运行时的错误变成静默的错误结果；
+//   2) 整型结果溢出 int 不折叠：超出 32 位范围时让运行时按补码自然回绕，
+//      与未折叠时的行为一致（x86 的 addl 本来就是回绕）；
+//   3) 逻辑运算 && / || 不折叠：它们要保留短路语义（右操作数可能有副作用），
+//      本来就由 EvalExpr 里的 Q_JZ/Q_JNZ 分支处理，不走这里。
+// 折叠只减少一条四元式，不改变任何可观测值，因此各层基线只在「四元式数量」上变化。
+bool IRGenerator::ConstValueOf(const Operand& op, bool& bFloat, long long& iVal,
+                               double& fVal) const
+{
+    if (op.m_kind != OperandKind::OP_CONST || op.m_iLink < 0 ||
+        static_cast<std::size_t>(op.m_iLink) >= m_symtab.m_ConstInfoTbl.size())
+    {
+        return false;
+    }
+    const ConstEntry& ce = m_symtab.m_ConstInfoTbl[static_cast<std::size_t>(op.m_iLink)];
+    bFloat = ce.m_bIsFloat || IsFloatType(ce.m_constType);
+    iVal = ce.m_iValue;
+    fVal = ce.m_fValue;
+    return true;
+}
+
+Operand IRGenerator::FoldBinary(TokenType op, const Operand& lo, const Operand& ro,
+                                const LineInfo& loc)
+{
+    bool lf = false;
+    bool rf = false;
+    long long li = 0;
+    long long ri = 0;
+    double lv = 0.0;
+    double rv = 0.0;
+    if (!ConstValueOf(lo, lf, li, lv) || !ConstValueOf(ro, rf, ri, rv))
+    {
+        return Operand();
+    }
+    // 按 §8.1 的 Promote：任一侧是浮点就整体按浮点求值
+    const bool bFloat = lf || rf;
+    const double dl = lf ? lv : static_cast<double>(li);
+    const double dr = rf ? rv : static_cast<double>(ri);
+
+    switch (op)
+    {
+    // ---- 关系运算：结果是 bool 域的 0/1，与未折叠时的 Q_EQ..Q_GE 结果一致 ----
+    case TokenType::TOKEN_EQ:
+    case TokenType::TOKEN_NE:
+    case TokenType::TOKEN_LT:
+    case TokenType::TOKEN_LE:
+    case TokenType::TOKEN_GT:
+    case TokenType::TOKEN_GE:
+    {
+        bool r = false;
+        if (bFloat)
+        {
+            switch (op)
+            {
+            case TokenType::TOKEN_EQ: r = (dl == dr); break;
+            case TokenType::TOKEN_NE: r = (dl != dr); break;
+            case TokenType::TOKEN_LT: r = (dl <  dr); break;
+            case TokenType::TOKEN_LE: r = (dl <= dr); break;
+            case TokenType::TOKEN_GT: r = (dl >  dr); break;
+            default:                  r = (dl >= dr); break;
+            }
+        }
+        else
+        {
+            switch (op)
+            {
+            case TokenType::TOKEN_EQ: r = (li == ri); break;
+            case TokenType::TOKEN_NE: r = (li != ri); break;
+            case TokenType::TOKEN_LT: r = (li <  ri); break;
+            case TokenType::TOKEN_LE: r = (li <= ri); break;
+            case TokenType::TOKEN_GT: r = (li >  ri); break;
+            default:                  r = (li >= ri); break;
+            }
+        }
+        return ConstInt(r ? 1 : 0, loc);
+    }
+    // ---- 算术运算 ----
+    case TokenType::TOKEN_PLUS:
+    case TokenType::TOKEN_MINUS:
+    case TokenType::TOKEN_MUL:
+    case TokenType::TOKEN_DIV:
+    {
+        const bool bDiv = (op == TokenType::TOKEN_DIV);
+        if (bDiv && (bFloat ? (dr == 0.0) : (ri == 0)))
+        {
+            return Operand();   // 边界 1：除零不折叠
+        }
+        if (bFloat)
+        {
+            double r = 0.0;
+            switch (op)
+            {
+            case TokenType::TOKEN_PLUS:  r = dl + dr; break;
+            case TokenType::TOKEN_MINUS: r = dl - dr; break;
+            case TokenType::TOKEN_MUL:   r = dl * dr; break;
+            default:                     r = dl / dr; break;
+            }
+            return ConstFloat(r, loc);
+        }
+        long long r = 0;
+        switch (op)
+        {
+        case TokenType::TOKEN_PLUS:  r = li + ri; break;
+        case TokenType::TOKEN_MINUS: r = li - ri; break;
+        case TokenType::TOKEN_MUL:   r = li * ri; break;
+        default:                     r = li / ri; break;   // C 语义：向零截断
+        }
+        if (r > 2147483647LL || r < -2147483648LL)
+        {
+            return Operand();   // 边界 2：溢出 int 不折叠
+        }
+        return ConstInt(static_cast<int>(r), loc);
+    }
+    default:
+        return Operand();       // 逻辑运算等：不参与折叠（边界 3）
+    }
+}
+
 // ----------------------------------------------------------------------------
 // 自增自减（挑战版 ++/--，B 方案：表达式有值）
 // ----------------------------------------------------------------------------
@@ -473,6 +621,17 @@ Operand IRGenerator::EvalExpr(const ASTNodePtr& node)
         }
         const TokenType lt = OperandType(lo);
         const TokenType rt = OperandType(ro);
+
+        // 常量折叠（挑战版 C4）：两侧都是编译期常量时直接求值，不生成四元式。
+        // 必须在类型转换之前做——FoldBinary 内部已按 §8.1 的 Promote 处理 int/float，
+        // 若先插 ITOF 就变成「先转换再折叠」，会多出一条无用四元式。
+        {
+            Operand folded = FoldBinary(op, lo, ro, loc);
+            if (folded.m_kind != OperandKind::OP_NONE)
+            {
+                return folded;
+            }
+        }
 
         // 关系运算：结果 T_BOOL；int/float 混合不插转换（§8.1 表：无）
         if (op == TokenType::TOKEN_EQ || op == TokenType::TOKEN_NE ||

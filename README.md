@@ -61,7 +61,7 @@ MiniCCompiler/
 │   ├── parser/             # Parser 回归用例（48 个 .mc）与期望结果
 │   │   ├── *.mc            #   合法 24 条 + 非法 24 条
 │   │   └── expected/       #   *.ast.txt / *.err.txt / ll1_411.parse.txt
-│   ├── codegen/            # 目标代码端到端用例（26 个 .mc + 期望输出）
+│   ├── codegen/            # 目标代码端到端用例（27 个 .mc + 期望输出）
 │   ├── grammar_selfcheck.cpp      # 文法表自检（21 项断言）
 │   ├── parser_unit_test.cpp       # Parser 单元测试（AST 字段级）
 │   ├── symbol_test.cpp            # 符号表作用域链断言
@@ -72,7 +72,7 @@ MiniCCompiler/
 │   ├── run_symbol_tests.ps1       # 符号表作用域链断言
 │   ├── run_symtab_tests.ps1       # 符号表 DumpSymTab 回归
 │   ├── run_sema_tests.ps1         # 语义诊断回归（12 例，含警告与多错并报）
-│   ├── run_quad_tests.ps1         # 四元式序列回归（15 例）
+│   ├── run_quad_tests.ps1         # 四元式序列回归（16 例）
 │   ├── sema/                      # 语义用例 *.mc + *.expected.diag.txt
 │   ├── quad/                      # 四元式用例 *.mc + *.expected.quad.txt
 │   └── run_codegen_tests.ps1      # 目标代码端到端（编译→gcc 链接→运行→比对输出）
@@ -407,7 +407,7 @@ pwsh -File tests/run_quad_tests.ps1 -Case arith_int
 pwsh -File tests/run_quad_tests.ps1 -Update
 ```
 
-- 用例输入：`tests/quad/*.mc` 共 14 条；期望序列：`tests/quad/<case>.expected.quad.txt`
+- 用例输入：`tests/quad/*.mc` 共 16 条；期望序列：`tests/quad/<case>.expected.quad.txt`
 - 校验收敛到 `.quad.txt` 的**结构**：表达式求值顺序、临时变量编号（`_T1`/`_T2`…）、
   标号编号（`L1`/`L2`…）、短路展开形态、`ITOF`/`FTOI` 插入位置、`PARA`/`CALL` 的相对次序。
   这些在端到端测试里完全测不出来（只比 stdout，结构变了照样输出对）
@@ -429,7 +429,7 @@ pwsh -File tests/run_quad_tests.ps1 -Update
 | CParser（语法） | CParser(TokenList&) / Parse / HasError / GetErrors / GetTrace | **已实现（v4.0 挑战版 LL(1) 预测分析表驱动）**：102 条产生式驱动的非递归分析栈（`StackItem{TERM/NTERM/ACTION}` + 内部规约标记），语义动作 semantic000–027 按设计文档 §8 位置调度（符号表/IR 类动作登记占位，待阶段⑥⑦）；支持声明（含 `int a, b;` 多声明符与一维数组）、赋值/下标赋值/调用语句、表达式优先级与结合性、一元 `- !`、比较与逻辑运算符、`bool`/`char`/`true`/`false`、`print`、`if/else`（就近配对）、`while`、`return`、复合语句、函数定义与调用；恐慌式错误恢复可连续报错不崩溃；`GetTrace()` 输出分析轨迹供 `--dump-parse` 使用。公开签名与 §7.2 一致，`GetTrace()` 为新增 |
 | SymbolTable（符号表） | EnterScope / ExitScope / RecVar / RecArray / RecConst / SearchVar / SearchConst / BackfillConst / CheckAssign / DumpSymTab | **已实现**：多表登记、作用域链自内向外查找（内层可遮蔽外层）、数组登记（m_bIsArray / m_iArraySize）、常量回填、float→int 告警（Q9） |
 | SemanticAnalyzer（语义分析） | SemanticAnalyzer(SymbolTable&) / Analyze(const ASTNodePtr&) | **已实现**：遍历 AST 登记变量/数组/函数/形参/常量，未声明与重复声明报错，按 §8.1 类型系统做运算与赋值检查 |
-| IRGenerator（中间代码） | IRGenerator(SymbolTable&) / Generate / GetTmpVar / GetTmpLabel / EmitIR / GetCodes / OperandToString | **已实现**：遍历 AST 生成四元式（23 种 `QuadOp`），含算术/关系/逻辑、`&&`/`||` 真短路（`Q_JZ`/`Q_JNZ`）、`ITOF`/`FTOI` 类型转换（赋值、实参、返回值三处均插）、一维数组读写（`Q_INDEX` 双向）、`if/else`、`while`、`print`、函数定义（四元式存入 `ProcEntry::m_Codes`）与调用（`Q_PARA` + `Q_CALL`）、递归；`--dump-quads` 输出顶层代码与各过程 |
+| IRGenerator（中间代码） | IRGenerator(SymbolTable&) / Generate / GetTmpVar / GetTmpLabel / EmitIR / GetCodes / OperandToString | **已实现**：遍历 AST 生成四元式（23 种 `QuadOp`），含算术/关系/逻辑、`&&`/`||` 真短路（`Q_JZ`/`Q_JNZ`）、`ITOF`/`FTOI` 类型转换（赋值、实参、返回值三处均插）、一维数组读写（`Q_INDEX` 双向）、`if/else`、`while`、`print`、函数定义（四元式存入 `ProcEntry::m_Codes`）与调用（`Q_PARA` + `Q_CALL`）、递归、`++`/`--` 前后缀（`GenIncDec`）、**常量折叠**（`FoldBinary`/`ConstFloat`，两侧皆为编译期常量时直接求值，除零与整型溢出保守不折、`&&`/`||` 不折以保短路）；`--dump-quads` 输出顶层代码与各过程 |
 | CCodeGen（目标代码，挑战版） | CCodeGen(const CodeList&) / BindSymTab / Generate / IRtoASM / AsmOutput | **已实现**：x86-64 / GNU as（AT&T 语法），栈帧 + `%rbp` 基址寻址、整型 `%eax` / 浮点 `%xmm0` 双通道、数组按 `元素宽度×下标` 的 `(%rax,%rcx,4)` 寻址、**自定义栈传参**（调用方按 `i*8(%rsp)` 落第 i 个实参、槽位 16 字节对齐，被调方从 `16+8*(pos-1)(%rbp)` 取形参；不走 System V 寄存器传参）、`printf` 输出（浮点同时放 `%xmm` 与第 2 个整型槽以适配 Windows ABI）；`QuadOp` 24 个值全部覆盖；产物可被 gcc 直接汇编链接 |
 
 > **词法现状说明**：17 个挑战版终结符（`bool` `char` `print` `true` `false` `[` `]` `==` `!=` `<` `<=` `>` `>=` `&&` `||` `!` 字符常量）**词法层已全部支持**；
@@ -503,7 +503,7 @@ pwsh -File tests/run_quad_tests.ps1 -Update
 - **挑战版（Q5 顺序）：控制流(if/while) → print → 数组 → 函数 → x86 汇编 —— 五步全部落地**
   - **语法侧已全部落地**：复合语句/if/while/return/一元运算、比较与逻辑运算符、
     `bool`/`char`/`true`/`false`、`print(表达式);`、一维数组声明与下标、函数定义/形参/调用
-  - **目标代码侧已全部落地**：`src/codegen/codegen.cpp`，`tests/run_codegen_tests.ps1` 26 例
+  - **目标代码侧已全部落地**：`src/codegen/codegen.cpp`，`tests/run_codegen_tests.ps1` 27 例
     （算术/比较/if-else/while/浮点/混合类型/逻辑/函数调用/递归/数组读写/字符/嵌套分支/短路/实参转换/返回值转换/
     嵌套调用实参顺序/空函数/用户自定义 `main`/返回值语义/char 与 bool 返回/变量遮蔽/大栈帧）全部编译成汇编、经 gcc 链接、运行并比对输出，**26/26 通过**
   - **差分测试验证**（2026-10-24，未入库，脚本在 `build/_s2/`）：除固定用例，另用「同一程序 MiniC 版 vs gcc 编译的等价 C 版」逐行比对 stdout，

@@ -93,6 +93,10 @@ MiniCCompiler/
 │   ├── 语法分析过程_ll1_411.xlsx                # §4.11 的 82 步分析轨迹
 │   ├── gui-implementation/                      # GUI 实现截图（01~11）
 │   ├── gui-acceptance/                          # GUI 验收截图（S1~S5）
+│   ├── archive/                                 # 过程文档存档：协作说明/审查报告/整改说明/模块任务书
+│   │   ├── guides/                              #   组员使用指南、Git 协作须知、build.bat 说明
+│   │   ├── reviews/                             #   7 轮提交审查报告 + 分支检查记录
+│   │   └── taskbriefs/                          #   整改说明 8 份 + modules/ 各模块任务书 8 份
 │   └── plans/                                   # 个人任务计划（12 人各一份，见 docs/plans/README.md）
 └── build/                  # 构建产物目录（已被 .gitignore 排除）
 ```
@@ -260,9 +264,9 @@ npm install        :: 首次安装 Electron（.npmrc 已配置 npmmirror 镜像�
 `build\minic.exe` 编译 → `gcc -x assembler` 汇编链接 → 运行比对输出。
 示例数据在 `gui/src/samples.js`，回归脚本 `gui/test/sample-smoke.js`。
 
-**内建语法手册**：工具栏「语法手册」或 `F1` 打开全屏参考书，10 章 67 条，每条标注
+**内建语法手册**：工具栏「语法手册」或 `F1` 打开全屏参考书，10 章 68 条，每条标注
 `✓ 支持` / `✗ 不支持` / `⚠ 有限制` / `· 说明`；不支持的直接给真实报错原文，支持的给可运行示例
-（可一键插入编辑器 / 载入为新文档 / 复制）。支持多关键词搜索与目录跳转。全部 59 条示例都在
+（可一键插入编辑器 / 载入为新文档 / 复制）。支持多关键词搜索与目录跳转。全部 60 条示例都在
 `build\minic.exe` 上实测过编译退出码与运行输出。
 
 - 用法、快捷键、目录结构与启动器原理见 [gui/README.md](gui/README.md)。
@@ -454,6 +458,7 @@ pwsh -File tests/run_quad_tests.ps1 -Update
 | ⑤ 答辩材料 | 答辩 PPT：[docs/MiniC编译器_答辩演示.pptx](docs/MiniC编译器_答辩演示.pptx)（17 页）<br>项目总结：[docs/项目总结.md](docs/项目总结.md) | ✅ 完成 |
 | 个人任务计划（附录 A） | [docs/plans/](docs/plans/README.md)，12 人各一份 | ✅ 完成 |
 | 小组分工表（项目书表 3） | [docs/小组分工表.md](docs/小组分工表.md)，12 人 + 模块人数 + 署名差异说明 | ✅ 完成 |
+| 过程文档存档 | [docs/archive/](docs/archive/README.md)，协作说明 4 + 审查报告 9 + 整改说明 8 + 模块任务书 8 | ✅ 完成 |
 
 个人计划的模板字段为**姓名 / 负责模块 / 任务目标 / 关键交付物 / 验收标准 / 时间节点 / 完成情况**；
 每份文末附「可核验的 Git 记录」，可用 `git log --author=<账号>` 或 `git log -- <路径>` 直接核对，

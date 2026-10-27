@@ -1,0 +1,8 @@
+Program  @1:1
+  FuncDef(INT main)  @1:1
+    Block  @1:12
+      ArrayDecl(INT c[0])  @2:3
+        Decl(INT c)  @2:3
+        Num(0)  @2:8
+      Return  @3:3
+        Num(0)  @3:10

@@ -206,15 +206,19 @@ int main(int argc, char* argv[])
 
     // ---------- 4. 语义阶段：符号表登记 + 类型/作用域检查 ----------
     SymbolTable symtab;
-    // 语义分析只在语法阶段无错时执行。
-    // 这个 if 判断不能省：语法已经报错的输入（如 tests/parser/err_recovery.mc
-    // 里的 `a = ;`），AST 是残缺的，硬跑语义会额外报出 "undefined identifier b"
-    // 之类的次生错误，把 parser 的黄金基线 err_recovery.err.txt 弄脏。
-    if (g_ErrorList.empty())
+    // 语义阶段无条件执行：一个语法错不应该把语义阶段该报的问题全部掩盖掉
+    // （用户要求「把代码里的所有问题都报出来」）。
+    // 代价：语法错会让 AST 残缺，语义可能报出次生错误（例如漏一个分号，
+    // 后面的声明没建成节点，语义就把已声明的名字报成 undefined）。
+    // 因此进入语义前记下「之前已有错」，置位 g_bErrorsMayBeSecondary，
+    // 让这一段产生的诊断在打印时带上来源提示，和被真正写错的代码区分开。
+    const bool bHadEarlierErrors = !g_ErrorList.empty();
+    g_bErrorsMayBeSecondary = bHadEarlierErrors;
     {
         SemanticAnalyzer sema(symtab);
         sema.Analyze(root);
     }
+    g_bErrorsMayBeSecondary = false;
     if (dumpSymtab)
     {
         std::ostringstream oss;

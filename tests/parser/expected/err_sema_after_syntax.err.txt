@@ -1,0 +1,5 @@
+minic: error: 2:1: unexpected 'int' (INT); expected one of: ( [ ; , (in 声明后续)
+minic: error: 3:3: undefined identifier x (possibly caused by earlier lexical/syntax errors)
+minic: error: 4:3: undefined identifier y (possibly caused by earlier lexical/syntax errors)
+minic: error: 5:3: undefined identifier z (possibly caused by earlier lexical/syntax errors)
+minic: 4 error(s) found, compilation failed

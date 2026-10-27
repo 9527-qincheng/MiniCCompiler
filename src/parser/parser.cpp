@@ -391,6 +391,27 @@ void CParser::Synchronize()
         // NTERM：表项非空即可继续；否则若当前符号属于它，则认为该非终结符被跳过
         const int prod = g_PredictTable[X.m_iCode - NTERM_CODE_BASE][CurCode()];
         if (prod > 0) { return; }
+
+        // ---- 块的护栏（问题 2）----
+        // 复合语句(113) 保留在栈上，不按 FOLLOW 弹掉。
+        // 为什么必须特判：函数头出错时（例如 int f(int a int b) { ... } 少个逗号），
+        // 恢复会一路弹栈；弹到 复合语句 时，因为 int ∈ FOLLOW(复合语句)（后面的
+        // int main 就是），按常规规则会把它连同整个函数体一起丢掉，于是体内和
+        // 后面 main 里的错误一条也报不出来。
+        // 这里改为：丢弃输入直到块的起始符 '{'（∈ FIRST(复合语句)），把控制权交回
+        // 主循环，让块照常展开、内部语句继续被解析和检查。
+        // 只对 复合语句 特判、不对 声明部分/语句部分 特判：后者一特判，
+        // 「语句里出现 int」这种单点错误会恢复成两条（一条真错 + 一条派生错），
+        // 反而给诊断添噪音。
+        if (X.m_iCode == 113)
+        {
+            while (CurCode() != TERM_CODE_EOF && CurCode() != 23)
+            {
+                if (!NextToken()) { break; }
+            }
+            return;
+        }
+
         const std::set<int>& follow = g_FollowSet[X.m_iCode - NTERM_CODE_BASE];
         TruncateValues(X.m_iValueBase);
         m_SymbolStack.pop_back();
@@ -620,7 +641,10 @@ void CParser::ReduceProduction(int iProdNum, std::size_t iValueBase)
             auto addVar = [&](const std::string& szName, int iSize, ASTNodePtr dim,
                               const LineInfo& loc)
             {
-                if (iSize > 0)
+                // 判据用 dim 而非 iSize：普通 int a; 的 iSize 也是 0，只看数值会把
+                // int a[0]; 静默降级成普通变量声明，使 SemanticAnalyzer 的
+                // "array size must be a positive integer" 成为死代码。
+                if (iSize > 0 || dim != nullptr)
                 {
                     decls.push_back(std::make_unique<ArrayDeclNode>(
                         type, szName, iSize,

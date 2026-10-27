@@ -1,0 +1,12 @@
+Program  @1:1
+  ArrayDecl(INT a[0])  @1:1
+    Decl(INT a)  @1:1
+    Num(0)  @1:6
+  FuncDef(INT main)  @2:1
+    Block  @2:12
+      Decl(INT b)  @3:3
+      Assign  @4:3
+        Ident(b)  @4:3
+        Num(1)  @4:7
+      Return  @5:3
+        Ident(b)  @5:10

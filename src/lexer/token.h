@@ -120,4 +120,11 @@ struct CompileError
 extern std::vector<CompileError> g_ErrorList;
 void EmitError(const std::string& msg, const LineInfo& loc);
 
+// 语义阶段的诊断是不是在「语法已经出错」之后才产生的。
+// 语法错会让 AST 残缺（例如漏一个分号，后面的声明整段没建成节点），此时硬跑
+// 语义会额外报出 "undefined identifier" 之类的次生错误。main 在调用
+// SemanticAnalyzer::Analyze 前置位、结束后复位；EmitError 在该标志为真时给
+// 消息追加一句来源提示，让这类次生错误与被真正写错的代码区分开。
+extern bool g_bErrorsMayBeSecondary;
+
 #endif // MINIC_LEXER_TOKEN_H

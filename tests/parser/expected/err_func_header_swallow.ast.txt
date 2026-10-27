@@ -1,0 +1,9 @@
+Program  @1:1
+  FuncDef(INT f)  @1:1
+  FuncDef(INT main)  @7:1
+    Block  @7:12
+      Assign  @8:3
+        Ident(z)  @8:3
+        Num(1)  @8:7
+      Return  @9:3
+        Num(0)  @9:10

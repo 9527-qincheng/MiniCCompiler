@@ -94,6 +94,22 @@ $cases = @(
     # 设计文档 §15.2：文法允许块内函数定义，但语义阶段必须拦截
     # （嵌套函数会与外层同名函数生成重复汇编标号，且会破坏外层局部变量的栈帧布局）
     @{ name = "err_nested_func";      exit = 1 },
+    # 报错三修（2026-10-27）：这四个用例锁定「一次只报一类问题」的三处根因，
+    # 任何一条回退都会在这里变红。源码保持极简，不写注释块，避免行号漂移。
+    #   问题1 语义阶段曾被语法门禁整体挡住 → 现在照跑，次生错误带来源提示
+    #         err_sema_after_syntax.mc：`int a` 缺分号 + x/y/z 三处未定义
+    #         旧：1 条；新：4 条（3 条带 "possibly caused by earlier ..." 后缀）
+    @{ name = "err_sema_after_syntax";   exit = 1 },
+    #   问题2 函数头出错曾吞掉整个函数体 → 现在复合语句受保护，体内错误照报
+    #         err_func_header_swallow.mc：`int f(int a int b)` 缺逗号
+    #         （err_ 前缀是历史命名，本用例同时含语法错与语义错）
+    #         旧：2 条；新：4 条（体内 2 处 + main 里 1 处不再丢失）
+    @{ name = "err_func_header_swallow"; exit = 1 },
+    #   问题3 零长数组曾静默降级成普通变量 → 现在交给语义报错（全局/局部两条路径）
+    #         err_zero_array.mc：`int a[0];` 全局；旧：编译成功 exit=0
+    #         err_zero_array_local.mc：函数体内 `int c[0];`；旧：同样静默通过
+    @{ name = "err_zero_array";          exit = 1 },
+    @{ name = "err_zero_array_local";    exit = 1 },
     # §4.11 验收：输入即文档 82 步 golden trace 的示例；
     # parse = $true 表示另外逐字比对 expected\ll1_411.parse.txt（该 golden 直接取自文档 §4.11 表格）
     @{ name = "ll1_411";              exit = 0; parse = $true }

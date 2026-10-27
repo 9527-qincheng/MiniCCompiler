@@ -1,0 +1,2 @@
+minic: error: 2:3: array size must be a positive integer
+minic: 1 error(s) found, compilation failed

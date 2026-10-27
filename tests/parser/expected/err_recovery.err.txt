@@ -1,2 +1,3 @@
 minic: error: 2:5: unexpected ';' (SEMI); expected one of: true false ( - ! 标识符 整型常量 实型常量 字符常量 (in 表达式)
-minic: 1 error(s) found, compilation failed
+minic: error: 3:1: undefined identifier b (possibly caused by earlier lexical/syntax errors)
+minic: 2 error(s) found, compilation failed

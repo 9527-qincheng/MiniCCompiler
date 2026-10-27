@@ -8,6 +8,9 @@
 
 std::vector<CompileError> g_ErrorList;
 
+// 见 token.h 的说明：语义阶段在语法已出错之后产生的诊断，打印时加来源提示。
+bool g_bErrorsMayBeSecondary = false;
+
 const char* TokenTypeToString(TokenType t)
 {
     switch (t)
@@ -182,5 +185,10 @@ void EmitError(const std::string& msg, const LineInfo& loc)
     err.m_loc = loc;
     g_ErrorList.push_back(err);
     std::cerr << "minic: error: " << loc.m_iRow << ":" << loc.m_iCol
-              << ": " << msg << std::endl;
+              << ": " << msg;
+    if (g_bErrorsMayBeSecondary)
+    {
+        std::cerr << " (possibly caused by earlier lexical/syntax errors)";
+    }
+    std::cerr << std::endl;
 }

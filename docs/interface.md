@@ -255,6 +255,28 @@
      - **变异测试**：把 `FoldBinary(op, lo, ro, loc)` 改成恒返回空 `Operand`，
        `arith_int` 与 `const_fold` 两个用例立刻 FAIL——证明基线确实锁住了折叠行为。
 
+ 22. **`char` 参与算术与关系运算（C 的整型提升，2026-10-27，鲍方乐）**：`char` 自 v4.0 起就是一
+     等数据类型（§8.1 类型表、词法 004），但语义侧的 `IsNumeric` 只认 `TOKEN_INT` / `TOKEN_FLOAT`，
+     导致 `c + 1` 报 `arithmetic operands must be numeric`、`c == 'x'` 报
+     `relational operands must be numeric`。而 IR 侧的 `IsIntType`（`src/sema/ir.cpp`）**早就**把
+     `TOKEN_CHAR` 算作整数，注释写明「char 在算术中按整数处理（C 语义）」——两层口径分裂，
+     实际表现是 char 只能 `print`。本次放宽，**不新增接口、不改动任何已冻结签名**。
+     - **改动的唯一一处**：`src/sema/semantic.cpp` 的
+       `bool SemanticAnalyzer::IsNumeric(TokenType t) const`，返回值加上 `t == TokenType::TOKEN_CHAR`。
+       `bool` 仍然被排除——布尔不参与算术是 §8.1 类型表定下的规则。
+     - **语义**：`char` 参与算术时按 `int` 参与（C 的整型提升），`Promote(CHAR, INT)` 返回 `INT`；
+       与 `float` 混算提升为 `float`。设计文档 §8.1 的类型表已补 `T_CHAR` 两行（算术 → `T_INT`、
+       关系 → `T_BOOL`，转换列写「整型提升」）。
+     - **目标代码零改动**：`char` 数组元素占 1 字节（写 `movb`、读 `movsbl` 符号扩展），
+       `char` 变量占 4 字节（`movl`），两者在四元式层都是整数操作数。
+     - **回归**：新增 `tests/quad/char_arith.mc`（18 行四元式基线，覆盖 `c + 1`、`c < 'a'`、
+       `c == 65`、`arr[0] + 1`、`c++`）、`tests/codegen/char_arith.mc`（期望 `66/1/1/y/B`）、
+       `tests/sema/ok_char_arith.mc`（空诊断）与 `tests/sema/err_bool_arith.mc`
+       （两行 `arithmetic/relational operands must be numeric`，锁住 bool 仍被拒）。
+       quad 16 → **17 例**、codegen 27 → **28 例**、sema 12 → **14 例**，全绿。
+     - **变异测试**：把 `IsNumeric` 里的 `t == TokenType::TOKEN_CHAR` 改成 `false`，
+       `char_arith` 的 quad 与 codegen 两个用例立刻 FAIL——证明基线锁住了这条放宽。
+
 > 说明：本节第 8–10 条为 2026-10-13 阶段⑤ 收尾时同步；**下面的"四、词法识别集合"仍是 v3.1 骨架版内容**，
 > 词法 v4.0 的现状（17 个挑战版终结符等）见 `README.md` 的模块状态表与
 > [词法模块待改进清单.md](词法模块待改进清单.md)，

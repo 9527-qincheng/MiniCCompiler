@@ -1617,10 +1617,20 @@ minic <源文件> [--dump-tokens] [--dump-ast] [--dump-symtab] [--dump-quads] [-
 | = (赋值) | T_FLOAT | T_INT | T_FLOAT | None | IntToFloat | MOV |
 | 关系运算 | T_INT | T_INT | T_BOOL | None | None | CMP |
 | 关系运算 | T_FLOAT | T_FLOAT | T_BOOL | None | None | CMP |
+| + - * / | T_CHAR | T_INT | T_INT | 整型提升 | None | ADD/SUB/MUL/DIV_4 |
+| 关系运算 | T_CHAR | T_INT | T_BOOL | 整型提升 | None | CMP |
 | && \|\| | T_BOOL | T_BOOL | T_BOOL | None | None | AND/OR（短路） |
 | ! | T_BOOL | - | T_BOOL | None | None | NOT |
 | - (取负) | T_INT | - | T_INT | None | None | NEG_4 |
 | - (取负) | T_FLOAT | - | T_FLOAT | None | None | NEG_8 |
+
+**char 的整型提升（C4 落地，见 `src/sema/semantic.cpp` 的 `IsNumeric`）**：
+`char` 参与算术与关系运算时按 `int` 处理（C 语义的整型提升），结果类型分别为 `T_INT` / `T_BOOL`，
+与 `int` 混算时按上表 `T_INT` 一行套用，与 `float` 混算时先提升到 `float`。
+`bool` **不参与**算术与关系运算（上表 `&&`/`||`/`!` 之外无 `T_BOOL` 操作数行），
+对 `bool` 做算术报 `arithmetic operands must be numeric`，做关系报 `relational operands must be numeric`。
+实现上 `char` 数组元素占 1 字节（`movb` 写 / `movsbl` 符号扩展读），`char` 变量占 4 字节（`movl`），
+两侧都当整数用，因此目标代码层对 char 运算无需任何特殊处理。
 
 **常量折叠（C4 落地，见 `src/sema/ir.cpp` 的 `IRGenerator::FoldBinary`）**：
 `+ - * /` 与六个关系运算符在**两侧都是编译期常量**时直接求值，不生成四元式，

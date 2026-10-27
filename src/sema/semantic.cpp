@@ -384,7 +384,13 @@ void SemanticAnalyzer::VisitNum(NumNode* num)
 
 bool SemanticAnalyzer::IsNumeric(TokenType t) const
 {
-    return t == TokenType::TOKEN_INT || t == TokenType::TOKEN_FLOAT;
+    // char 在算术与关系运算里按整数处理（C 语义的整型提升）。
+    // 这一条必须和 IR 侧的 IsIntType(src/sema/ir.cpp) 保持一致：那边早就把
+    // TOKEN_CHAR 算作整数，若这里只认 int/float，char 会出现「IR 能算、语义
+    // 先报错」的两层口径分裂，实际表现就是 char 只能 print、不能参与运算。
+    // bool 仍然排除：布尔不参与算术是 §8.1 类型表定下的规则。
+    return t == TokenType::TOKEN_INT || t == TokenType::TOKEN_FLOAT ||
+           t == TokenType::TOKEN_CHAR;
 }
 
 TokenType SemanticAnalyzer::Promote(TokenType a, TokenType b) const

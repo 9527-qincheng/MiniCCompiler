@@ -253,8 +253,8 @@ void say() {
 | 场景 | 结果 |
 |---|---|
 | `int` 与 `float` 混算，结果赋给 `int` | **告警**：`implicit conversion from float to int (truncated, Q9)`，退出码仍为 0 |
-| `char` 参与算术 `'a' + 1` | **报错**：`arithmetic operands must be numeric` |
-| `char` 参与关系 `c == 'x'` | **报错**：`relational operands must be numeric` |
+| `char` 参与算术 `c + 1` | **合法**：按整型提升（C 语义），结果类型 `int` |
+| `char` 参与关系 `c == 'x'` | **合法**：按整型比较，结果类型 `int` |
 | `bool` 参与算术 `b + 1` | **报错**：`arithmetic operands must be numeric` |
 | `bool` 做逻辑运算 `a && true`（`a` 是 int） | **报错**：`logical operators require bool operands` |
 | `bool = int` | **告警**：`suspicious assignment between BOOL and INT` |
@@ -304,7 +304,7 @@ void say() {
 | 9 | 数组作形参 | 有 | 语法可写、语义报 `'a' is not an array` |
 | 10 | 函数原型 | 有 | 无，声明必须带函数体 |
 | 11 | 字符串 | 有 | 仅词法识别，语法不接受 |
-| 12 | `char` 运算 | 按整数参与 | 算术/关系**禁止** |
+| 12 | `char` 运算 | 按整数参与 | **按整数参与**（同 C） |
 | 13 | 声明 / 语句顺序 | 任意 | 顶层**声明必须先于语句**（函数体内不限） |
 | 14 | 入口检查 | 需 `main` | 不检查 |
 | 15 | 下标越界 | 未定义行为 | 不检查，不报错 |
@@ -317,7 +317,7 @@ void say() {
 | 报错原文（节选） | 你的写法 | 正确改法 |
 |---|---|---|
 | `'++' requires a modifiable lvalue` | `++5`、`++f(1)` | 自增自减只能作用于变量或数组元素 |
-| `'++' requires a numeric operand` | `++flag`（bool 变量）、`c++`（char 变量） | `++`/`--` 只接受 int / float；char 请先转 int |
+| `'++' requires a numeric operand` | `++flag`（bool 变量） | `++`/`--` 只接受 int / float / char；bool 不行 |
 | `unexpected '+' (PLUS); expected one of: ( [ = ++ -- (in 标识符后续)` | `a += 1;` | `a = a + 1;` |
 | `unexpected character '%'` | `a % 2` | 用循环或 `a - (a / 2) * 2` 自己算 |
 | `unexpected character '?'` / `':'` | `c ? x : y` | 改写 `if / else` |
@@ -326,7 +326,7 @@ void say() {
 | `unexpected '[' (LBRACKET); expected one of: ,` | `int m[2][3];` | 改一维，或自己用 `下标 = i*列数 + j` 换算 |
 | `unexpected '[' (LBRACKET); expected one of: =` | `b[i][j] = 1;` | 一次只写一个下标 |
 | `arithmetic operands must be numeric` | `b + 1`（b 是 bool） | 用 int 变量代替 bool 参与算术 |
-| `relational operands must be numeric` | `c == 'x'`（c 是 char） | 用 `int` 变量存字符再比较 |
+| `relational operands must be numeric` | `b < a`（b 是 bool） | 数值类型才可比较；char 已按整型参与 |
 | `logical operators require bool operands` | `a && true`（a 是 int） | 改成 `a != 0 && true` |
 | `undefined identifier z` | 未声明就用 | 先声明 `int z;` |
 | `duplicate variable 'a'` | 同作用域重名 | 改名或放进 `{ }` 内层 |
@@ -432,7 +432,7 @@ build\minic.exe tests\test.mc --dump-tokens --dump-parse --dump-ast --dump-symta
 | 二维数组 | `int b[2][3];` | 1 | 不支持 |
 | 逗号表达式 | `x = 1, y = 2;` | 1 | 不支持 |
 | `do-while` | `do { } while(a<3);` | 1 | 不支持 |
-| `char` 算术 | `'a' + 1` | 1 | 语义拒绝 |
+| `char` 算术 | `c + 1`（c 是 char） | 0 | 支持（按整型提升） |
 | 实数 | `float x; x = 1.5;` | 0 | 支持 |
 | 字符串 | `print("hi")` | 1 | 语法拒绝 |
 | `void` 函数 | `void f(){ } f();` | 0 | 支持 |

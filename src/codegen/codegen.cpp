@@ -32,6 +32,14 @@ bool IsCharType(TokenType t)
     return t == TokenType::TOKEN_CHAR;
 }
 
+// 单个数组元素占几个字节 —— 与 ElemWidth 的地址缩放因子必须口径一致。
+// char 元素 1 字节（访问用 movb / movsbl），int / float 元素 4 字节（movl / movss）。
+// 【2026-10-27 修复】此前分配一律按 4 字节算，char carr[4] 会多占 12 字节。
+int ElemBytesOfType(TokenType t)
+{
+    return IsCharType(t) ? 1 : 4;
+}
+
 std::string IntToStr(long long v)
 {
     return std::to_string(v);
@@ -206,7 +214,11 @@ void AsmEmitter::EmitGlobals()
         {
             continue;
         }
-        const int bytes = v.m_bIsArray ? 4 * (v.m_iArraySize > 0 ? v.m_iArraySize : 1) : 8;
+        // 数组按「元素宽度 × 元素个数」分配；标量沿用 8 字节槽（movl/movss 都放得下）。
+        // char carr[4] 现在只占 4 字节，不再是 16 字节。
+        const int bytes = v.m_bIsArray
+                              ? ElemBytesOfType(v.m_type) * (v.m_iArraySize > 0 ? v.m_iArraySize : 1)
+                              : 8;
         m_bss.push_back("    .align 8");
         m_bss.push_back(v.m_szName + ":");
         m_bss.push_back("    .zero " + std::to_string(bytes));
@@ -268,7 +280,10 @@ void AsmEmitter::AssignOffsets()
     for (int idx : vars)
     {
         const VarEntry& v = m_sym->m_VarInfoTbl[static_cast<std::size_t>(idx)];
-        int bytes = v.m_bIsArray ? 4 * (v.m_iArraySize > 0 ? v.m_iArraySize : 1) : 8;
+        // 与 EmitGlobals 同口径：数组按元素宽度算，char 元素 1 字节
+        int bytes = v.m_bIsArray
+                        ? ElemBytesOfType(v.m_type) * (v.m_iArraySize > 0 ? v.m_iArraySize : 1)
+                        : 8;
         bytes = AlignUp(bytes, 8);
         off += bytes;
         m_varOff[idx] = -off;

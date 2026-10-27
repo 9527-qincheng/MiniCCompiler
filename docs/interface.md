@@ -9,7 +9,7 @@
 |---|---|---|
 | CLex | `bool OpenSource(const string&)` / `bool Run()` / `const TokenList& GetTokenList() const` | TokenList → CParser |
 | CParser | `CParser(const TokenList&)` / `ASTNodePtr Parse()` / `bool HasError() const` / `const vector<CompileError>& GetErrors() const` / `const vector<ParseStep>& GetTrace() const`（阶段④ 新增，供 `--dump-parse`） | ASTNodePtr → 语义/IR |
-| SymbolTable | `EnterScope(ScopeType)` / `ExitScope()` / `RecVar(name,type,line,col)→VarEntry*` / `RecArray(name,type,size,line,col)→VarEntry*`（阶段⑥ 新增） / `RecConst(name,type,value,line,col)→ConstEntry*` / `SearchVar/SearchConst` / `BackfillConst(iConstIdx,name,type)` / `CheckAssign(lhs,rhs,line,col)` / `DumpSymTab(os)` | 符号信息 → IRGenerator |
+| SymbolTable | `EnterScope(ScopeType)` / `ExitScope()` / `RecVar(name,type,line,col)→VarEntry*` / `RecArray(name,type,size,line,col)→VarEntry*`（阶段⑥ 新增） / `RecConst(name,type,value,line,col)→ConstEntry*` / `SearchVar/SearchConst` / `BackfillConst(iConstIdx,name,type)` / `CheckAssign(lhs,rhs,line,col)` / `DumpSymTab(os)` / `RecBuiltinTypes()`（2026-10-27 新增，登记 int/float/bool/char/void 五行） | 符号信息 → IRGenerator |
 | SemanticAnalyzer | `explicit SemanticAnalyzer(SymbolTable&)` / `void Analyze(const ASTNodePtr&)`（阶段⑥ 新增，遍历 AST 填充符号表；不新增独立产物） | ASTNodePtr → 符号表 |
 | IRGenerator | `explicit IRGenerator(SymbolTable&)` / `Generate(const ASTNodePtr&)` / `GetTmpVar(TokenType)` / `GetTmpLabel()` / `EmitIR(op,op1,op2,rslt)` / `GetCodes() const` / `OperandToString(op)` | CodeList → CCodeGen / --dump-quads |
 | CCodeGen | `explicit CCodeGen(const CodeList&)` / `void BindSymTab(const SymbolTable&)` / `bool Generate(AsmOutput&)` | 汇编输出（挑战版） |
@@ -386,6 +386,52 @@
      - **回归**：quad 18 个基线**全部重刷**（操作码文本从 `(=, +, -` 变成
        `(ASSIGN_4, ADD_4, SUB_4`），`codegen` 30 例**零改动**（它比对的是运行输出不是四元式）、
        parser 50 / sema 19 不受影响。`build.bat test` 11 套全绿。
+
+ 26. **类型表启用：`TypeEntry` 加字节宽度 + `RecBuiltinTypes()`（2026-10-27，鲍方乐）**：
+     `--dump-symtab` 的 `-- Types --` 节此前恒为空 —— `SymbolTable::RecType` 与
+     `SearchTypeInfoTbl` 是**零调用的死接口**，`semantic001`（「登记基本类型到类型表」）
+     从未实现，类型只内嵌在 `VarEntry::m_type` 里。这次把表真正用起来。
+
+     - **`TypeEntry` 扩一个字段**（`src/symbol/symbol.h`）：
+       ```cpp
+       int m_iSize = 0;   // 该类型在内存里占几个字节
+       ```
+       口径与 codegen 的访问指令一致：`char = 1`（数组元素用 `movb` / `movsbl`）、
+       `int / float / bool = 4`（`movl` / `movss`）、`void = 0`（无对象）。
+       类型链字段（`m_iLink` / `m_iTypePos` / `m_iTypeFlag`）**仍然停用** ——
+       MiniC 无结构体/指针/用户自定义类型，链式类型表无从发挥。
+     - **新增两个接口**（`src/symbol/symbol.h`，均为新增，不改动已冻结的 10 项签名）：
+       ```cpp
+       void RecBuiltinTypes();                        // 登记 int/float/bool/char/void 五行（幂等）
+       static int SizeOfType(TokenType baseType);     // 1 / 4 / 0 的字节宽度口径
+       ```
+     - **调用点唯一**：`SemanticAnalyzer::Analyze()` 入口，在 `CollectSignatures()` 与
+       `Visit()` 之前调一次 `m_symtab.RecBuiltinTypes();`。幂等（先用
+       `SearchTypeInfoTbl` 查重），所以语法出错后二次进入也不会重复登记。
+     - **`DumpSymTab` 输出变化**：Types 节从空变为
+       ```
+       -- Types --
+         int : INT  size 4
+         float : FLOAT  size 4
+         bool : BOOL  size 4
+         char : CHAR  size 1
+         void : VOID  size 0
+       ```
+       `.sym.txt` 从 208 B 变 318 B。
+     - **顺带修掉 `char` 数组多分配**：`src/codegen/codegen.cpp` 的全局 `EmitGlobals` 与
+       局部 `AssignOffsets` 原来一律按 `4 * 元素个数` 分配，`char carr[4]` 白占 12 字节。
+       现在按 `ElemBytesOfType(v.m_type) * 元素个数` 分配（char=1，其余=4），
+       与访问侧的 `ElemWidth()` 口径对齐。实测 `char s[4]` 的 `.zero` 从 16 变 4，
+       `float farr[3]` 仍是 12，`int carr[4]` 仍是 16；标量仍走 8 字节槽不变。
+     - **验证**：`tests/test.sym.txt` 基线刷新（9 行 → 14 行）；
+       char 数组端到端用例（全局 `char g[9]`、局部 `char a[9]` / `char b[5]` 与 `int c`
+       混排）运行输出 `AZpq|777|aaaaaaaaa|777` 与预期一致，未出现元素互相踩踏；
+       `build.bat test` 11 套全绿（parser 50 / sema 19 / quad 18 / codegen 30 /
+       symtab / book-smoke / sample-smoke）。
+     - **文档同步**：`docs/验收报告.md` 的 `.sym.txt` 样例与产物尺寸（208 → 318 B、
+       94 → 106 B、71 行 66 步 → 73 行 68 步）、`docs/项目总结.md` 的产物表、
+       `README.md` 的 SymbolTable 模块状态行、`docs/MiniC编译器数据结构设计.md` 的
+       `TypeEntry` 与「三张表」两处说明。
 
 > 说明：本节第 8–10 条为 2026-10-13 阶段⑤ 收尾时同步；**下面的"四、词法识别集合"仍是 v3.1 骨架版内容**，
 > 词法 v4.0 的现状（17 个挑战版终结符等）见 `README.md` 的模块状态表与

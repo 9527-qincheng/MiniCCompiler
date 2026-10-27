@@ -23,7 +23,12 @@ void SemanticAnalyzer::Analyze(const ASTNodePtr& root)
     // 全局作用域已由 SymbolTable 构造函数建立，这里不能再 EnterScope，
     // 否则全局变量会被记成 scope 2，与表头显示的 scope 1 不符。
     //
-    // 先把全部函数签名扫一遍再遍历：MiniC 允许「函数体里调用后面才定义的函数」，
+    // 先把内建类型登记进类型表：TypeEntry 里存的是「这个类型占几个字节」，
+    // 与 codegen 的访问指令（char 用 movb、int/float/bool 用 movl/movss）对齐。
+    // 这件事原本挂在 semantic001 上，但语义动作统一由本类实现后一直没落地，
+    // 导致 RecType 成了零调用的死接口、--dump-symtab 的 Types 节恒为空。
+    m_symtab.RecBuiltinTypes();
+    // 再把全部函数签名扫一遍再遍历：MiniC 允许「函数体里调用后面才定义的函数」，
     // 若边遍历边登记签名，前面的调用就查不到形参个数，实参个数检查会漏。
     CollectSignatures(root);
     Visit(root);

@@ -193,7 +193,8 @@ void SymbolTable::DumpSymTab(std::ostream& os) const
     os << "-- Types --\n";
     for (const auto& t : m_TypeInfoTbl)
     {
-        os << "  " << t.m_szName << " : " << TokenTypeToString(t.m_baseType) << "\n";
+        os << "  " << t.m_szName << " : " << TokenTypeToString(t.m_baseType)
+           << "  size " << t.m_iSize << "\n";
     }
     os << "-- Procedures (challenge) --\n";
     for (const auto& p : m_ProcInfoTbl)
@@ -264,10 +265,46 @@ TypeEntry* SymbolTable::RecType(const std::string& name, TokenType baseType)
     TypeEntry te;
     te.m_szName = name;
     te.m_baseType = baseType;
+    te.m_iSize = SizeOfType(baseType);
     te.m_iProcIndex = m_curProcIndex;
     te.m_iScope = m_iScopeCounter;
     m_TypeInfoTbl.push_back(te);
     return &m_TypeInfoTbl.back();
+}
+
+int SymbolTable::SizeOfType(TokenType baseType)
+{
+    // 口径与 codegen 的访问指令一致（src/codegen/codegen.cpp）：
+    //   char  —— 数组元素用 movb、取值用 movsbl，1 字节
+    //   int / bool / float —— 一律 movl / movss，4 字节
+    //   void —— 无对象，0
+    switch (baseType)
+    {
+        case TokenType::TOKEN_CHAR: return 1;
+        case TokenType::TOKEN_INT:
+        case TokenType::TOKEN_BOOL:
+        case TokenType::TOKEN_FLOAT: return 4;
+        default: return 0;
+    }
+}
+
+void SymbolTable::RecBuiltinTypes()
+{
+    // 五个内建类型只登记一次。重复调用（例如同一编译单元里多次 Analyze）
+    // 不会产生重复行。
+    static const char* const kNames[] = { "int", "float", "bool", "char", "void" };
+    static const TokenType kTypes[] = {
+        TokenType::TOKEN_INT, TokenType::TOKEN_FLOAT, TokenType::TOKEN_BOOL,
+        TokenType::TOKEN_CHAR, TokenType::TOKEN_VOID
+    };
+    for (std::size_t i = 0; i < sizeof(kTypes) / sizeof(kTypes[0]); ++i)
+    {
+        if (SearchTypeInfoTbl(kNames[i]) != nullptr)
+        {
+            continue;
+        }
+        RecType(kNames[i], kTypes[i]);
+    }
 }
 
 TypeEntry* SymbolTable::SearchTypeInfoTbl(const std::string& name)

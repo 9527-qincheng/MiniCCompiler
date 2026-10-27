@@ -64,6 +64,13 @@ public:
     TokenType m_baseType = TokenType::TOKEN_NONE;  // 基础类型（int/float）
     bool      m_bIsArray = false;                  // 是否为数组（挑战版）
     int       m_iArraySize = 0;                    // 数组大小（挑战版）
+    // 该类型在内存里占几个字节。原先类型表恒为空（RecType 零调用），
+    // 三种类型的宽度只散落在 codegen 的访问代码里；现在把它显式登记进表，
+    // --dump-symtab 的 Types 节才有内容，也方便交叉核对：
+    //   char = 1（数组元素用 movb，见 ElemWidth）
+    //   int / float / bool = 4（codegen 一律用 movl / movss 访问）
+    //   void = 0（无对象）
+    int       m_iSize = 0;
 };
 
 // 过程表项 ProcEntry（参考书 ProcInfo，挑战版）
@@ -132,6 +139,13 @@ public:
     ConstEntry* SearchConstInfoTbl(const std::string& name);                        // 查常量表
     TypeEntry*  RecType(const std::string& name, TokenType baseType);               // 登记类型
     TypeEntry*  SearchTypeInfoTbl(const std::string& name);                         // 查类型表
+    // 【2026-10-27 启用】把 5 个内建类型 int/float/bool/char/void 登记进类型表。
+    // 在此之前 RecType 是零调用的死接口，--dump-symtab 的 Types 节恒为空
+    // （类型只内嵌在 VarEntry::m_type 里）。现在由 SemanticAnalyzer::Analyze
+    // 入口调用一次，重复调用不会重复登记。
+    void        RecBuiltinTypes();
+    // 某个基础类型在内存里占几个字节（1/4/0），RecBuiltinTypes 与 codegen 共用此口径
+    static int  SizeOfType(TokenType baseType);
     LabelEntry* RecLabel(const std::string& name, int labelIdx, int line, int col); // 登记标号（挑战版）
     LabelEntry* SearchLabelInfoTbl(const std::string& name);                        // 查标号表
     int         GetSerialId() const { return m_iSerialId; }                         // 对象序号

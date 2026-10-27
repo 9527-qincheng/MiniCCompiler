@@ -5,5 +5,10 @@
 -- Constants --
   1 : INT = 1  @line 3
 -- Types --
+  int : INT  size 4
+  float : FLOAT  size 4
+  bool : BOOL  size 4
+  char : CHAR  size 1
+  void : VOID  size 0
 -- Procedures (challenge) --
 -- Labels (challenge) --

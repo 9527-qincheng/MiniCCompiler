@@ -512,6 +512,29 @@ public:
     vector<ArrayInfo> m_ArrayInfo; // 数组维度信息列表（挑战版；ArrayInfo{m_iStart,m_iEnd}）
 };
 
+> **⚠ 2026-10-27 实现变更（以 `src/symbol/symbol.h` 为准）**
+>
+> 上表的 `TypeEntry` 是 v3.1 骨架稿的参考书形态（7 个字段 + 类型链）。实际落地时随
+> 接口冻结一起简化成了 **4 个字段**：
+>
+> ```cpp
+> class TypeEntry : public SymbolEntry
+> {
+> public:
+>     TokenType m_baseType;      // 基础类型（int/float/bool/char/void）
+>     bool      m_bIsArray;      // 是否为数组
+>     int       m_iArraySize;    // 数组大小
+>     int       m_iSize;         // 该类型在内存里占几个字节（char=1，int/float/bool=4，void=0）
+> };
+> ```
+>
+> 类型链字段（`m_iLink` / `m_iTypePos` / `m_iTypeFlag`）全部停用：MiniC 只有 5 个内建
+> 类型，没有结构体、指针、用户自定义类型，链式类型表无从发挥。
+>
+> **类型表现在是活的**：`SymbolTable::RecBuiltinTypes()` 在 `SemanticAnalyzer::Analyze()`
+> 入口登记 5 个内建类型，`--dump-symtab` 的 `-- Types --` 节输出
+> `int : INT  size 4` 等 5 行。在此之前 `RecType` 是零调用的死接口，该节恒为空。
+
 // 过程/函数表项：参考书 ProcInfo（挑战版）
 class ProcEntry : public SymbolEntry
 {
@@ -551,6 +574,8 @@ public:
 // 符号表：参考书 CSymbolTbl 多表组织
 // 【v3.0 决议】对外接口以第 6 章契约（EnterScope/ExitScope/RecVar/RecConst/SearchVar/SearchConst/BackfillConst/CheckAssign/DumpSymTab）为准；
 // 本段（SearchVarInfoTbl/RecVar/RecConstTbl/RecType/Print 等）为参考书风格扩展接口，保留作兼容层，不参与接口冻结。
+// 【2026-10-27 补充】RecType 已不再是死接口：Analyze() 入口调 RecBuiltinTypes() 登记 5 个内建类型后
+// 它才真正被调用，DumpSymTab 的 Types 节随之有内容。
 class SymbolTable
 {
 public:
@@ -578,6 +603,8 @@ public:
     int RecVar(const string& szName, TokenType baseType, int line);       // 登记变量
     int RecConstTbl(const string& szVal, TokenType constType);            // 登记常量（词法/语义共用）
     int RecType(const string& szName);                                    // 登记类型表项（匿名类型传入 "_noname"+序号）
+    void RecBuiltinTypes();          // 【2026-10-27 新增】登记 int/float/bool/char/void 五行，幂等
+    static int SizeOfType(TokenType baseType);  // 【2026-10-27 新增】char=1 / int,float,bool=4 / void=0
 
     /* ---- 类型链/引用检查 ---- */
     bool PtrCheck(int& iPos);        // 指针类型 miLink 回填（参考书程序 4-28，挑战版）
@@ -597,10 +624,22 @@ extern SymbolTable g_SymbolTbl;   // 全局符号表单例（参考书全局 Sym
 | 声明 | 遇 `DeclNode`：`SearchVarInfoTbl` 查重 → `RecVar` 登记 → 回填 `m_iSymIdx` | semantic 处理变量定义部分 |
 | 常量 | 词法识别常量即 `RecConstTbl` 登记，语义阶段按名回填 `m_szName/m_iProcIndex` | semantic004（常量定义→标识符=常量） |
 | 类型 | 基础版类型为内建 int/float（TypeEntry 预置 T_INTEGER/T_REAL）；挑战版类型声明用 `m_iTypePos` 栈 + `m_iTypeFlag` 栈构造类型链 | semantic006/015/010 |
+
+> **⚠ 2026-10-27 实现变更**：挑战版**没有**做类型链（不设 `m_iTypePos`/`m_iTypeFlag` 栈）。
+> 实际做法是 `SemanticAnalyzer::Analyze()` 开头调 `SymbolTable::RecBuiltinTypes()`，
+> 把 `int/float/bool/char/void` 五个内建类型各登记一行（含 `m_iSize` 字节宽度），
+> 变量/数组/形参的类型仍直接内嵌在 `VarEntry::m_type`。类型链、`PtrCheck()`、
+> `GetSerialId()` 均未实现——MiniC 无结构体/指针/用户自定义类型，链式类型表无从发挥。
 | 语句 | 遇 `IdentNode`：查变量表，未声明报错；标记 `m_bUsed = true` | 变量引用的语义检查 |
 | 类型检查 | 赋值/表达式类型相容：int↔float 按 C 语义转换；挑战版引入类型系统表（见 4.5.4） | 参考书第 6 章 |
 
 **MiniC 简化说明**：参考书为 Pascal 完整类型系统设置六张表 + 复杂辅助栈；MiniC 基础版仅全局 int/float 变量，**仅启用 `m_VarInfoTbl / m_ConstInfoTbl / m_TypeInfoTbl` 三张表**，辅助栈可不实例化；挑战版按需启用其余表与栈（避免过度设计，见第 6 节决策说明）。
+
+> **⚠ 2026-10-27 实现现状**：实际启用的是 **7 张表全部启用**
+> （`m_VarInfoTbl` / `m_ConstInfoTbl` / `m_TypeInfoTbl` / `m_ProcInfoTbl` /
+> `m_ParamInfoTbl` / `m_LabelInfoTbl` / `m_EnumInfoTbl`），其中前 6 张有内容，
+> `m_EnumInfoTbl` 因 MiniC 无枚举而恒空。辅助栈只保留了作用域链
+> `m_varScopeStack` 与 `m_scopeTypeStack`。
 
 ### 4.5 中间代码生成（参考书第 5 章 NPIR）
 
@@ -905,7 +944,7 @@ struct AsmOutput
 |---|---|
 | 词法 → 语法 | `TokenList` 一次性生成后整体传递（参考书独立一遍模型）；`m_iListPos` 游标消费；`m_iConstIdx` 沟通常量表 |
 | 语法 → 语义 | 语义子程序在推导过程中同步执行（参考书语法制导翻译）；AST 由 `CParser` 显式构建（PPT 交付物） |
-| 语义 → 符号表 | 语义子程序登记 `g_SymbolTbl` 各表（`RecVar/RecConstTbl/RecType`），查重与类型链构造均走 `SearchXxxTbl` 系列 |
+| 语义 → 符号表 | 语义子程序登记 `g_SymbolTbl` 各表（`RecVar/RecConstTbl/RecType`），查重与类型链构造均走 `SearchXxxTbl` 系列。**实现现状（2026-10-27）**：`RecVar`/`RecArray`/`RecConst`/`BackfillConst` 在遍历 AST 时调用，`RecType` 只在 `Analyze()` 入口被 `RecBuiltinTypes()` 调 5 次；类型链与 `PtrCheck()` 未实现（MiniC 无结构体/指针） |
 | 语义 → 中间代码 | 遍历 AST 时查符号表确定操作数类型；临时变量 `GetTmpVar`；类型转换查 `g_TypeSysTable` |
 | 中间代码 → 目标代码 | `Quad[]` 逐条匹配 `InstPattern`；`Operand.m_type` 决定寄存器字节宽度与数据段声明 |
 

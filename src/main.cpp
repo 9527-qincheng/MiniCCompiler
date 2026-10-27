@@ -53,26 +53,16 @@ std::string BaseName(const std::string& path)
     return (sep == std::string::npos) ? path : path.substr(sep + 1);
 }
 
-// 四元式操作码文本名（--dump-quads；与 Quad::Print 的 opName 表保持一致）
-const char* QuadOpName(QuadOp op)
-{
-    static const char* opName[] = {
-        "NONE", "=", "+", "-", "*", "/",
-        "JMP", "JZ", "JNZ", "LABEL", "RETURN", "CALL", "PRINT",
-        "PARA", "INDEX", "ITOF", "FTOI",
-        "==", "!=", "<", "<=", ">", ">="
-    };
-    const int i = static_cast<int>(op);
-    return (i >= 0 && i < 23) ? opName[i] : "??";
-}
-
 // 四元式序列文本（Q6：操作数按索引转原文，供 --dump-quads 落盘）
+// 操作码文本统一由 ir.h 的 QuadOpName 提供：返回表 5-2 的助记符
+// （大类名 + 宽度后缀，如 "ADD_4" / "ASSIGN_4F" / "LS_4F"），此处不再另设一份表，
+// 避免与 Quad::Print 各写一份导致不一致。
 std::string DumpQuadsText(const IRGenerator& ir, const CodeList& codes)
 {
     std::string out;
     for (const auto& q : codes)
     {
-        out += "(" + std::string(QuadOpName(q.m_eOp)) + ", " +
+        out += "(" + ::QuadOpName(q.m_eOp) + ", " +
                ir.OperandToString(q.m_Op1) + ", " +
                ir.OperandToString(q.m_Op2) + ", " +
                ir.OperandToString(q.m_Rslt) + ")  @" +

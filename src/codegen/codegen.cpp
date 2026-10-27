@@ -131,6 +131,8 @@ private:
     void GenQuad(const Quad& q);
     void GenBinary(const Quad& q, const char* iOp, const char* fOp);
     void GenCompare(const Quad& q, const char* iCc, const char* fCc);
+    void GenNeg(const Quad& q);
+    void GenNot(const Quad& q);
     void GenBranch(const Quad& q, bool bJumpIfZero);
     void GenPrint(const Quad& q);
     void GenCall(const Quad& q);
@@ -530,6 +532,41 @@ void AsmEmitter::GenCompare(const Quad& q, const char* iCc, const char* fCc)
     StoreInt("%eax", q.m_Rslt);
 }
 
+// ----------------------------------------------------------------------------
+// 取负 NEG（表 5-2 第 18 类）：结果 = 0 - 操作数
+//   NEG_4  整型/字符：xorl %eax,%eax; subl 操作数
+//   NEG_4F 单精度：xorps %xmm1,%xmm1; subss 操作数
+// 注意：与「二元减法」的指令方向相反 —— subss 是 xmm1 - xmm0，所以必须先清零到 xmm1。
+// ----------------------------------------------------------------------------
+void AsmEmitter::GenNeg(const Quad& q)
+{
+    if (IsFloatType(q.m_Op1.m_type) || IsFloatType(q.m_Rslt.m_type))
+    {
+        LoadAsFloat(q.m_Op1, "%xmm0");
+        Emit("xorps %xmm1, %xmm1");
+        Emit("subss %xmm0, %xmm1");
+        StoreFloat("%xmm1", q.m_Rslt);
+        return;
+    }
+    LoadInt(q.m_Op1, "%eax");
+    Emit("negl %eax");                 // 对 32 位整型 negl 即可，字符按整型提升后同此
+    StoreInt("%eax", q.m_Rslt);
+}
+
+// ----------------------------------------------------------------------------
+// 取非 NOT（表 5-2 第 19 类）：结果 = (操作数 == 0) ? 1 : 0
+//   NOT_4 整型/字符：cmpl $0,%eax; sete %al; movzbl %al,%eax
+// 说明：MiniC 的 `!` 只作用于 bool，bool 在栈上是 4 字节整型，所以走 NOT_4。
+// ----------------------------------------------------------------------------
+void AsmEmitter::GenNot(const Quad& q)
+{
+    LoadInt(q.m_Op1, "%eax");
+    Emit("cmpl $0, %eax");
+    Emit("sete %al");
+    Emit("movzbl %al, %eax");
+    StoreInt("%eax", q.m_Rslt);
+}
+
 void AsmEmitter::GenBranch(const Quad& q, bool bJumpIfZero)
 {
     if (IsFloatType(q.m_Op1.m_type))
@@ -716,7 +753,7 @@ void AsmEmitter::GenReturn(const Quad& q)
     }
     else
     {
-        // 【2026-10-24 修复】裸 `return;`（Q_RETURN 的操作数为 OP_NONE）原实现
+        // 【2026-10-24 修复】裸 `return;`（Q_RETV 的操作数为 OP_NONE）原实现
         // 什么都不发，于是把 %eax/%xmm0 里的残值当返回值带出去。
         // 顶层语句与 void 函数里的裸 return 很常见（既有用例 arg_conv / ret_conv /
         // short_circuit 的顶层结尾都是 `return;`），必须显式清零：
@@ -735,10 +772,14 @@ void AsmEmitter::GenQuad(const Quad& q)
     case QuadOp::Q_NONE:
         return;
 
-    case QuadOp::Q_ASSIGN:
+    // 2026-10-27：按表 5-2 的「大类」分派，宽度后缀由 GenXXX 从操作数类型取
+    // （操作码自带宽度，这里仍按操作数类型选指令，两者一致；见 docs/interface.md 第 25 条）
+    case QuadOp::Q_ASSIGN_1:
+    case QuadOp::Q_ASSIGN_4:
+    case QuadOp::Q_ASSIGN_4F:
     {
-        // 目标/源类型可能不一致：中间代码在 int→float 处未插 Q_ITOF（IR 已知缺陷），
-        // 此处按两端类型就地补转换，避免把整数的位模式直接当浮点数存。
+        // 目标/源类型可能不一致：IR 在 int→float 处已插 ITOF，但保险起见仍就地补转换，
+        // 避免把整数的位模式直接当浮点数存。
         const bool bFloatDst = IsFloatType(q.m_Rslt.m_type);
         const bool bFloatSrc = IsFloatType(q.m_Op1.m_type);
         if (bFloatDst && bFloatSrc)
@@ -766,25 +807,30 @@ void AsmEmitter::GenQuad(const Quad& q)
         return;
     }
 
-    case QuadOp::Q_ADD: GenBinary(q, "addl", "addss"); return;
-    case QuadOp::Q_SUB: GenBinary(q, "subl", "subss"); return;
-    case QuadOp::Q_MUL: GenBinary(q, "imull", "mulss"); return;
-    case QuadOp::Q_DIV: GenBinary(q, "idiv", "divss"); return;
+    // ---- 8~13 类：算术（每个大类都有整型/单精度两个成员，宽度决定选哪条指令）----
+    case QuadOp::Q_ADD_4:  case QuadOp::Q_ADD_4F:  GenBinary(q, "addl", "addss");   return;
+    case QuadOp::Q_SUB_4:  case QuadOp::Q_SUB_4F:  GenBinary(q, "subl", "subss");   return;
+    case QuadOp::Q_MUL_4:  case QuadOp::Q_MUL_4F:  GenBinary(q, "imull", "mulss");  return;
+    case QuadOp::Q_DIV_4:  case QuadOp::Q_DIV_4F:  GenBinary(q, "idiv", "divss");   return;
+
+    // ---- 18/19 类：取负 NEG、取非 NOT ----
+    case QuadOp::Q_NEG_4:  case QuadOp::Q_NEG_4F:  GenNeg(q);    return;
+    case QuadOp::Q_NOT_4:                          GenNot(q);    return;
 
     case QuadOp::Q_JMP:
         Emit("jmp " + Lbl(q.m_Rslt.m_iLink));
         return;
-    case QuadOp::Q_JZ:
+    case QuadOp::Q_JNT:                      // 条件假跳转（原 Q_JZ）
         GenBranch(q, true);
         return;
-    case QuadOp::Q_JNZ:
+    case QuadOp::Q_JT:                       // 条件真跳转（原 Q_JNZ）
         GenBranch(q, false);
         return;
     case QuadOp::Q_LABEL:
         EmitRaw(Lbl(q.m_Op1.m_iLink) + ":");
         return;
 
-    case QuadOp::Q_RETURN:
+    case QuadOp::Q_RETV:                     // 传递返回值（原 Q_RETURN）
         GenReturn(q);
         return;
     case QuadOp::Q_CALL:
@@ -793,10 +839,14 @@ void AsmEmitter::GenQuad(const Quad& q)
     case QuadOp::Q_PARA:
         m_pendingArgs.push_back(q.m_Op1);
         return;
-    case QuadOp::Q_PRINT:
+    case QuadOp::Q_PRINT_1:
+    case QuadOp::Q_PRINT_4:
+    case QuadOp::Q_PRINT_4F:
         GenPrint(q);
         return;
-    case QuadOp::Q_INDEX:
+    case QuadOp::Q_INDEX_1:
+    case QuadOp::Q_INDEX_4:
+    case QuadOp::Q_INDEX_4F:
         GenIndex(q);
         return;
 
@@ -811,12 +861,22 @@ void AsmEmitter::GenQuad(const Quad& q)
         StoreInt("%eax", q.m_Rslt);
         return;
 
-    case QuadOp::Q_EQ: GenCompare(q, "e", "e");   return;
-    case QuadOp::Q_NE: GenCompare(q, "ne", "ne"); return;
-    case QuadOp::Q_LT: GenCompare(q, "l", "b");   return;
-    case QuadOp::Q_LE: GenCompare(q, "le", "be"); return;
-    case QuadOp::Q_GT: GenCompare(q, "g", "a");   return;
-    case QuadOp::Q_GE: GenCompare(q, "ge", "ae"); return;
+    // ---- 1~6 类：相等/不等/小于/大于/小于等于/大于等于 ----
+    case QuadOp::Q_EQU_1:  case QuadOp::Q_EQU_4:  case QuadOp::Q_EQU_4F:
+        GenCompare(q, "e", "e");   return;
+    case QuadOp::Q_NEQU_1: case QuadOp::Q_NEQU_4: case QuadOp::Q_NEQU_4F:
+        GenCompare(q, "ne", "ne"); return;
+    case QuadOp::Q_LS_1:   case QuadOp::Q_LS_4:   case QuadOp::Q_LS_4F:
+        GenCompare(q, "l", "b");   return;
+    case QuadOp::Q_LE_1:   case QuadOp::Q_LE_4:   case QuadOp::Q_LE_4F:
+        GenCompare(q, "le", "be"); return;
+    case QuadOp::Q_MR_1:   case QuadOp::Q_MR_4:   case QuadOp::Q_MR_4F:
+        GenCompare(q, "g", "a");   return;
+    case QuadOp::Q_ME_1:   case QuadOp::Q_ME_4:   case QuadOp::Q_ME_4F:
+        GenCompare(q, "ge", "ae"); return;
+
+    default:
+        return;   // MiniC 不产生的成员（位运算/位移/集合/字符串等）
     }
 }
 
@@ -873,12 +933,12 @@ void AsmEmitter::EmitFunction(const std::string& name, const CodeList& codes, bo
     // 现改为：只有控制流能「落到」出口时才补默认返回值，且必须在标号之前补，
     // 否则显式 return 的 jmp 又会被清零。
     //
-    // 判据只看最后一条四元式是不是 Q_RETURN：Q_RETURN 自带返回值并跳转，
+    // 判据只看最后一条四元式是不是 Q_RETV：Q_RETV 自带返回值并跳转，
     // 其后没有落空路径；而 Q_JMP **不能**当作不可达判据 —— 循环体末尾回跳到
     // 循环头的 Q_JMP 之后，循环的出口标号仍然会落到函数末尾
     // （实测按 Q_JMP 判定会让 arg_conv / ret_conv / short_circuit 三个用例
     //  main 的返回码变成残值，全部报 run exit≠0）。
-    const bool bFallThrough = codes.empty() || codes.back().m_eOp != QuadOp::Q_RETURN;
+    const bool bFallThrough = codes.empty() || codes.back().m_eOp != QuadOp::Q_RETV;
     if (bFallThrough)
     {
         // 落空出口时的默认值：main 返回 0；非 main 取过程表里的返回类型，

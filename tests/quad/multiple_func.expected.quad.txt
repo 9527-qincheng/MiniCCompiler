@@ -1,16 +1,16 @@
 
 // --- proc: add ---
-(+, x, y, _T1)  @3:14
-(RETURN, _T1, -, -)  @3:5
+(ADD_4, x, y, _T1)  @3:14
+(RETV, _T1, -, -)  @3:5
 
 // --- proc: twice ---
 (PARA, x, -, -)  @6:15
 (PARA, x, -, -)  @6:15
 (CALL, add, -, _T2)  @6:15
-(RETURN, _T2, -, -)  @6:5
+(RETV, _T2, -, -)  @6:5
 
 // --- proc: main ---
 (PARA, 5, -, -)  @9:16
 (CALL, twice, -, _T3)  @9:16
-(PRINT, _T3, -, -)  @9:5
-(RETURN, 0, -, -)  @10:5
+(PRINT_4, _T3, -, -)  @9:5
+(RETV, 0, -, -)  @10:5

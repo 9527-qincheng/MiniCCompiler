@@ -1,7 +1,7 @@
 
 # MiniC 编译器（挑战版，C++17）—— 项目说明
 
-**当前进度**：六个阶段全部打通，**编译器已可端到端运行**。词法模块已按 v4.0 挑战版完成（17 个新终结符、编码映射、双字符运算符、字符常量）；语法模块已按 v4.0 挑战版落地为 **LL(1) 预测分析表驱动**（102 条产生式，非递归分析栈 + `src/parser/grammar.cpp` 预测表，`--dump-parse` 输出分析过程）；符号表模块已实现多表登记、作用域链查找与数组登记；语义分析模块已实现并接入主流程（`src/sema/semantic.cpp`，遍历 AST 登记变量/数组/函数/常量并做类型检查）；**中间代码模块已实现**（`src/sema/ir.cpp`，四元式含 ITOF/FTOI 类型转换、`&&`/`||` 真短路、数组读写、函数调用与递归，`--dump-quads` 输出）；**目标代码模块已实现**（`src/codegen/codegen.cpp`，x86-64 / GNU as 汇编，产物可直接用 gcc 汇编链接成 exe 运行）。
+**当前进度**：六个阶段全部打通，**编译器已可端到端运行**。词法模块已按 v4.0 挑战版完成（17 个新终结符、编码映射、双字符运算符、字符常量）；语法模块已按 v4.0 挑战版落地为 **LL(1) 预测分析表驱动**（105 条产生式，非递归分析栈 + `src/parser/grammar.cpp` 预测表，`--dump-parse` 输出分析过程）；符号表模块已实现多表登记、作用域链查找与数组登记；语义分析模块已实现并接入主流程（`src/sema/semantic.cpp`，遍历 AST 登记变量/数组/函数/常量并做类型检查）；**中间代码模块已实现**（`src/sema/ir.cpp`，四元式含 ITOF/FTOI 类型转换、`&&`/`||` 真短路、数组读写、函数调用与递归，`--dump-quads` 输出）；**目标代码模块已实现**（`src/codegen/codegen.cpp`，x86-64 / GNU as 汇编，产物可直接用 gcc 汇编链接成 exe 运行）。
 
 依据：[docs/MiniC编译器数据结构设计.md](docs/MiniC编译器数据结构设计.md) 第 4 章（数据结构）与第 6 章（接口契约，Q1~Q12 定稿）；挑战版文法见 [docs/MiniC编译器设计文档_v4.0_挑战版LL1.md](docs/MiniC编译器设计文档_v4.0_挑战版LL1.md)。
 
@@ -44,7 +44,7 @@ MiniCCompiler/
 │   │   └── symbol.h/cpp    # SymbolTable 多表（Var/Const/Type/Proc/Param/Label）+ 语义接口
 │   ├── sema/
 │   │   ├── semantic.h/cpp  # SemanticAnalyzer（遍历 AST 填充符号表 + 类型检查）
-│   │   └── ir.h/cpp        # Quad/Operand/QuadOp + IRGenerator（四元式生成）
+│   │   └── ir.h/cpp        # Quad/Operand/QuadOp（表 5-2 的 21 大类 + 宽度后缀）+ IRGenerator
 │   └── codegen/
 │       └── codegen.h/cpp   # AsmOutput + CCodeGen（x86-64 / GNU as 汇编生成）
 ├── tests/
@@ -410,10 +410,12 @@ pwsh -File tests/run_quad_tests.ps1 -Update
 - 用例输入：`tests/quad/*.mc` 共 18 条；期望序列：`tests/quad/<case>.expected.quad.txt`
 - 校验收敛到 `.quad.txt` 的**结构**：表达式求值顺序、临时变量编号（`_T1`/`_T2`…）、
   标号编号（`L1`/`L2`…）、短路展开形态、`ITOF`/`FTOI` 插入位置、`PARA`/`CALL` 的相对次序。
+  **操作码用参考书表 5-2 的助记符**（`ADD_4` / `ASSIGN_4F` / `LS_1` / `INDEX_4` / `PRINT_4` / `RETV` / `JNT`），
+  宽度后缀直接体现在基线里：`ASSIGN_1` 是 char、`ASSIGN_4` 是 int、`ASSIGN_4F` 是 float。
   这些在端到端测试里完全测不出来（只比 stdout，结构变了照样输出对）
 - 覆盖：整型与实型四则及优先级、混合类型转换、一元取负与逻辑非、if-else 双标号、
   while 四段式、六种关系运算、`&&`/`||` 真短路展开、多实参求值次序、嵌套调用
-  （内层实参不得与外层 `PARA` 交错）、数组 `INDEX` 取址、`PRINT`/`RETURN` 发射形态、多函数分段
+  （内层实参不得与外层 `PARA` 交错）、数组 `INDEX_*` 取址、`PRINT_*`/`RETV` 发射形态、多函数分段
 - golden 命名为 `*.expected.quad.txt` 而非 `*.quad.txt`：minic 会把产物写在源文件同目录，
   若基线叫 `<用例>.quad.txt`，任何人直接对 `tests/quad/*.mc` 编译一次就会覆盖基线。
   `.gitignore` 的 `*.quad.txt` 因此加了 `!tests/quad/*.expected.quad.txt` 例外
@@ -426,7 +428,7 @@ pwsh -File tests/run_quad_tests.ps1 -Update
 | 模块 | 接口 | 状态 |
 |---|---|---|
 | CLex（词法） | OpenSource / Run / GetTokenList | **已实现（v4.0 挑战版）**：关键字(int/float/bool/char/void/if/else/while/print/return/true/false)、标识符、整型/实型/字符常量、运算符(+ - * / = == != < <= > >= && \|\| !)、界符((){}[];,)；注释与字符串；常量登记 m_ConstTexts；错误含行列号。**已补 TokenTypeToCode / CodeToTokenType 编码映射** |
-| CParser（语法） | CParser(TokenList&) / Parse / HasError / GetErrors / GetTrace | **已实现（v4.0 挑战版 LL(1) 预测分析表驱动）**：102 条产生式驱动的非递归分析栈（`StackItem{TERM/NTERM/ACTION}` + 内部规约标记），语义动作 semantic000–027 按设计文档 §8 位置调度（符号表/IR 类动作登记占位，待阶段⑥⑦）；支持声明（含 `int a, b;` 多声明符与一维数组）、赋值/下标赋值/调用语句、表达式优先级与结合性、一元 `- !`、比较与逻辑运算符、`bool`/`char`/`true`/`false`、`print`、`if/else`（就近配对）、`while`、`return`、复合语句、函数定义与调用；恐慌式错误恢复可连续报错不崩溃；`GetTrace()` 输出分析轨迹供 `--dump-parse` 使用。公开签名与 §7.2 一致，`GetTrace()` 为新增 |
+| CParser（语法） | CParser(TokenList&) / Parse / HasError / GetErrors / GetTrace | **已实现（v4.0 挑战版 LL(1) 预测分析表驱动）**：105 条产生式驱动的非递归分析栈（`StackItem{TERM/NTERM/ACTION}` + 内部规约标记），语义动作 semantic000–027 按设计文档 §8 位置调度（符号表/IR 类动作登记占位，待阶段⑥⑦）；支持声明（含 `int a, b;` 多声明符与一维数组）、赋值/下标赋值/调用语句、表达式优先级与结合性、一元 `- !`、比较与逻辑运算符、`bool`/`char`/`true`/`false`、`print`、`if/else`（就近配对）、`while`、`return`、复合语句、函数定义与调用；恐慌式错误恢复可连续报错不崩溃；`GetTrace()` 输出分析轨迹供 `--dump-parse` 使用。公开签名与 §7.2 一致，`GetTrace()` 为新增 |
 | SymbolTable（符号表） | EnterScope / ExitScope / RecVar / RecArray / RecConst / SearchVar / SearchConst / BackfillConst / CheckAssign / DumpSymTab | **已实现**：多表登记、作用域链自内向外查找（内层可遮蔽外层）、数组登记（m_bIsArray / m_iArraySize）、常量回填、float→int 告警（Q9） |
 | SemanticAnalyzer（语义分析） | SemanticAnalyzer(SymbolTable&) / Analyze(const ASTNodePtr&) | **已实现**：遍历 AST 登记变量/数组/函数/形参/常量，未声明与重复声明报错，按 §8.1 类型系统做运算与赋值检查 |
 | IRGenerator（中间代码） | IRGenerator(SymbolTable&) / Generate / GetTmpVar / GetTmpLabel / EmitIR / GetCodes / OperandToString | **已实现**：遍历 AST 生成四元式（23 种 `QuadOp`），含算术/关系/逻辑、`&&`/`||` 真短路（`Q_JZ`/`Q_JNZ`）、`ITOF`/`FTOI` 类型转换（赋值、实参、返回值三处均插）、一维数组读写（`Q_INDEX` 双向）、`if/else`、`while`、`print`、函数定义（四元式存入 `ProcEntry::m_Codes`）与调用（`Q_PARA` + `Q_CALL`）、递归、`++`/`--` 前后缀（`GenIncDec`）、**常量折叠**（`FoldBinary`/`ConstFloat`，两侧皆为编译期常量时直接求值，除零与整型溢出保守不折、`&&`/`||` 不折以保短路）；`--dump-quads` 输出顶层代码与各过程 |

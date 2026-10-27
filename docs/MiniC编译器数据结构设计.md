@@ -635,6 +635,25 @@ enum class QuadOp
 };
 ```
 
+> **⚠ 2026-10-27 变更（以代码为准）**：上面这段枚举是 v3.1 骨架版的设计稿。
+> 现行 `src/sema/ir.h` 已按参考书**表 5-2「NPIR 的操作符」**重建为 **21 大类 + 宽度后缀**，
+> 共 **151 个成员**，枚举值按「高 5 位大类、低 5 位类内成员」编码：
+>
+> ```cpp
+> namespace QuadCat { enum : int { CAT_EQU = 1, CAT_NEQU = 2, CAT_LS = 3, ..., CAT_ASSIGN = 20, CAT_OTHER = 21 }; }
+> enum class QuadOp : int
+> {
+>     Q_ADD_4  = (QuadCat::CAT_ADD  << 5) | 2,   // 4 字节整型加法
+>     Q_ADD_4F = (QuadCat::CAT_ADD  << 5) | 6,   // 4 字节单精度加法（MiniC 扩展）
+>     ...
+> };
+> ```
+>
+> 设计稿里的 `Q_JT` / `Q_JF` 按书改正为 `Q_JT` / `Q_JNT`；`Q_ASSIGN` / `Q_ADD` / `Q_PRINT` / `Q_INDEX`
+> 分别对应当前的 `Q_ASSIGN_*` / `Q_ADD_*` / `Q_PRINT_*` / `Q_INDEX_*`（按宽度选后缀）。
+> 完整枚举、MiniC 实际产生的 30 个成员、以及与表 5-2 的三处差异，
+> 见设计文档 §5.5 与 [interface.md](interface.md) 第 25 条。
+
 #### 4.5.2 操作数 Operand 类（参考书 OpInfo）
 
 参考书 `OpInfo` 含操作数类型（CONST/VAR/PTR/LABEL/NONE/PROC）、链接索引、引用标记、UD/DU 链等；MiniC 保留核心字段。
@@ -1115,7 +1134,7 @@ public:
 | `iTypePos / iTypeFlag / iIdListFlag` 辅助栈 | 声明 4-13 | 同名列 | 采用（挑战版为主） |
 | `IRCode { m_eOpType; m_Op1; m_Op2; m_Rslt }` | 第 5 章 | `Quad` 类 | 采用 |
 | `OpInfo { m_iType; m_iLink; m_bRef; m_iDetailType; UD/DU 链 }` | 第 5 章 | `Operand` 类 | 采用（UD/DU 暂不启用） |
-| NPIR 操作符 | 第 5 章 | `QuadOp` 枚举 | 采用（按 MiniC 收窄） |
+| NPIR 操作符 | 第 5 章表 5-2 | `QuadOp` 枚举 | **采用（21 大类 + 宽度后缀，151 个成员）**，见 §4.5.1 的变更说明 |
 | `EmitIR / GetTmpVar / GetTmpLabel` | 第 5 章 | `IRGenerator` | 采用 |
 | `TypeSysInfo + OpConstSemantic` | 第 6 章 | `g_TypeSysTable` + 常量折叠 | 采用（规则简化） |
 | `CurrentStatement + LabelIdx` | 第 7 章 | `m_StmtStack + LabelIdx` | 挑战版启用 |

@@ -57,15 +57,247 @@ Operand Operand::Label(int idx)
 // ----------------------------------------------------------------------------
 void Quad::Print(std::ostream& os) const
 {
-    static const char* opName[] = {
-        "NONE", "=", "+", "-", "*", "/",
-        "JMP", "JZ", "JNZ", "LABEL", "RETURN", "CALL", "PRINT",
-        "PARA", "INDEX", "ITOF", "FTOI",
-        "==", "!=", "<", "<=", ">", ">="
-    };
-    const char* name = (static_cast<int>(m_eOp) < 23) ? opName[static_cast<int>(m_eOp)] : "??";
-    os << "(" << name << ", " << m_Op1.m_iLink << ", " << m_Op2.m_iLink
+    os << "(" << QuadOpName(m_eOp) << ", " << m_Op1.m_iLink << ", " << m_Op2.m_iLink
        << ", " << m_Rslt.m_iLink << ")  @" << m_loc.m_iRow << ":" << m_loc.m_iCol << "\n";
+}
+
+// ----------------------------------------------------------------------------
+// 表 5-2 的名称映射：21 大类的栏目缩写 + 每个类内成员的完整助记符
+//   大类即书的 MIR 操作符，类内成员（带宽度后缀）即 LIR 操作符。
+//   表按「大类编号 → 成员序号（1 起）→ 名称」组织，与表 5-2 逐栏一一对应。
+// ----------------------------------------------------------------------------
+const char* QuadCatName(int cat)
+{
+    switch (cat)
+    {
+    case QuadCat::CAT_EQU:    return "EQU";
+    case QuadCat::CAT_NEQU:   return "NEQU";
+    case QuadCat::CAT_LS:     return "LS";
+    case QuadCat::CAT_MR:     return "MR";
+    case QuadCat::CAT_LE:     return "LE";
+    case QuadCat::CAT_ME:     return "ME";
+    case QuadCat::CAT_IN:     return "IN";
+    case QuadCat::CAT_SUB:    return "SUB";
+    case QuadCat::CAT_ADD:    return "ADD";
+    case QuadCat::CAT_OR:     return "OR";
+    case QuadCat::CAT_XOR:    return "XOR";
+    case QuadCat::CAT_MUL:    return "MUL";
+    case QuadCat::CAT_DIV:    return "DIV";
+    case QuadCat::CAT_MOD:    return "MOD";
+    case QuadCat::CAT_SHR:    return "SHR";
+    case QuadCat::CAT_SHL:    return "SHL";
+    case QuadCat::CAT_AND:    return "AND";
+    case QuadCat::CAT_NEG:    return "NEG";
+    case QuadCat::CAT_NOT:    return "NOT";
+    case QuadCat::CAT_ASSIGN: return "ASSIGN";
+    case QuadCat::CAT_OTHER:  return "OTHER";
+    default:                  return "?";
+    }
+}
+
+namespace
+{
+// 每类的成员名表（下标 = 成员序号 - 1），顺序与表 5-2 从左到右、从上到下一致
+const char* const kEquNames[]    = { "EQU_1", "EQU_2", "EQU_4", "EQU_8", "EQU_4F",
+                                     "EQU_8F", "EQU_S", "EQU_32", "EQU_A" };
+const char* const kNequNames[]   = { "NEQU_1", "NEQU_2", "NEQU_4", "NEQU_8", "NEQU_4F",
+                                     "NEQU_8F", "NEQU_S", "NEQU_32", "NEQU_A" };
+const char* const kLsNames[]     = { "LS_1", "LS_2", "LS_4", "LS_8", "LS_4F",
+                                     "LS_8F", "LS_S", "LS_1U", "LS_2U", "LS_4U" };
+const char* const kMrNames[]     = { "MR_1", "MR_2", "MR_4", "MR_8", "MR_4F",
+                                     "MR_8F", "MR_S", "MR_1U", "MR_2U", "MR_4U" };
+const char* const kLeNames[]     = { "LE_1", "LE_2", "LE_4", "LE_8", "LE_4F",
+                                     "LE_8F", "LE_S", "LE_1U", "LE_2U", "LE_4U" };
+const char* const kMeNames[]     = { "ME_1", "ME_2", "ME_4", "ME_8", "ME_4F",
+                                     "ME_8F", "ME_S", "ME_1U", "ME_2U", "ME_4U" };
+const char* const kInNames[]     = { "IN_C", "IN_B", "IN_SH", "IN_1",
+                                     "IN_SM", "IN_W", "IN_LW", "IN_E" };
+const char* const kSubNames[]    = { "SUB_2", "SUB_4", "SUB_8", "SUB_8F",
+                                     "SUB_SET", "SUB_4F" };
+const char* const kAddNames[]    = { "ADD_S", "ADD_4", "ADD_8F", "ADD_SET",
+                                     "ADD_2", "ADD_4F" };
+const char* const kOrNames[]     = { "OR_0", "OR_1", "OR_2", "OR_4" };
+const char* const kXorNames[]    = { "XOR_0", "XOR_1", "XOR_2", "XOR_4" };
+const char* const kMulNames[]    = { "MUL_4", "MUL_8F", "MUL_SET", "MUL_4F" };
+const char* const kDivNames[]    = { "DIV_4", "DIV_8F", "DIV_4F" };
+const char* const kModNames[]    = { "MOD_4" };
+const char* const kShrNames[]    = { "SHR_1", "SHR_2", "SHR_4",
+                                     "SHR_1U", "SHR_2U", "SHR_4U" };
+const char* const kShlNames[]    = { "SHL_1", "SHL_2", "SHL_4",
+                                     "SHL_1U", "SHL_2U", "SHL_4U" };
+const char* const kAndNames[]    = { "AND_0", "AND_1", "AND_2", "AND_4" };
+const char* const kNegNames[]    = { "NEG_1", "NEG_2", "NEG_4", "NEG_4F", "NEG_8F" };
+const char* const kNotNames[]    = { "NOT_0", "NOT_1", "NOT_2", "NOT_4" };
+const char* const kAssignNames[] = { "ASSIGN_1", "ASSIGN_2", "ASSIGN_4", "ASSIGN_8",
+                                     "ASSIGN_32", "ASSIGN_N", "ASSIGN_S", "ASSIGN_4F" };
+const char* const kOtherNames[]  = { "JMP", "LABEL", "PARA", "RETV", "CALL",
+                                     "JT", "JNT", "JE_1", "JE_2", "JE_4",
+                                     "CALLPTR", "ASM", "GETADDR", "SET_ADDITEM",
+                                     "GETPROCADDR",
+                                     // 以下 8 个是 MiniC 扩展（表 5-2 之外）
+                                     "INDEX_1", "INDEX_4", "INDEX_4F",
+                                     "PRINT_1", "PRINT_4", "PRINT_4F",
+                                     "ITOF", "FTOI" };
+} // namespace
+
+const char* QuadMemberName(int cat, int member)
+{
+    auto pick = [member](const char* const* tbl, int n) -> const char*
+    {
+        return (member >= 1 && member <= n) ? tbl[member - 1] : "?";
+    };
+    switch (cat)
+    {
+    case QuadCat::CAT_EQU:    return pick(kEquNames,    9);
+    case QuadCat::CAT_NEQU:   return pick(kNequNames,   9);
+    case QuadCat::CAT_LS:     return pick(kLsNames,    10);
+    case QuadCat::CAT_MR:     return pick(kMrNames,    10);
+    case QuadCat::CAT_LE:     return pick(kLeNames,    10);
+    case QuadCat::CAT_ME:     return pick(kMeNames,    10);
+    case QuadCat::CAT_IN:     return pick(kInNames,     8);
+    case QuadCat::CAT_SUB:    return pick(kSubNames,    6);
+    case QuadCat::CAT_ADD:    return pick(kAddNames,    6);
+    case QuadCat::CAT_OR:     return pick(kOrNames,     4);
+    case QuadCat::CAT_XOR:    return pick(kXorNames,    4);
+    case QuadCat::CAT_MUL:    return pick(kMulNames,    4);
+    case QuadCat::CAT_DIV:    return pick(kDivNames,    3);
+    case QuadCat::CAT_MOD:    return pick(kModNames,    1);
+    case QuadCat::CAT_SHR:    return pick(kShrNames,    6);
+    case QuadCat::CAT_SHL:    return pick(kShlNames,    6);
+    case QuadCat::CAT_AND:    return pick(kAndNames,    4);
+    case QuadCat::CAT_NEG:    return pick(kNegNames,    5);
+    case QuadCat::CAT_NOT:    return pick(kNotNames,    4);
+    case QuadCat::CAT_ASSIGN: return pick(kAssignNames, 8);
+    case QuadCat::CAT_OTHER:  return pick(kOtherNames, 23);
+    default:                  return "?";
+    }
+}
+
+std::string QuadOpName(QuadOp op)
+{
+    if (op == QuadOp::Q_NONE)
+    {
+        return "NONE";
+    }
+    return std::string(QuadMemberName(QuadCatOf(op), QuadMemberOf(op)));
+}
+
+bool QuadOpIsFloat(QuadOp op)
+{
+    // 所有带 F 后缀的成员（书里是 _4F / _8F）都按浮点处理
+    switch (op)
+    {
+    case QuadOp::Q_EQU_4F:  case QuadOp::Q_EQU_8F:
+    case QuadOp::Q_NEQU_4F: case QuadOp::Q_NEQU_8F:
+    case QuadOp::Q_LS_4F:   case QuadOp::Q_LS_8F:
+    case QuadOp::Q_MR_4F:   case QuadOp::Q_MR_8F:
+    case QuadOp::Q_LE_4F:   case QuadOp::Q_LE_8F:
+    case QuadOp::Q_ME_4F:   case QuadOp::Q_ME_8F:
+    case QuadOp::Q_SUB_8F:  case QuadOp::Q_SUB_4F:
+    case QuadOp::Q_ADD_8F:  case QuadOp::Q_ADD_4F:
+    case QuadOp::Q_MUL_8F:  case QuadOp::Q_MUL_4F:
+    case QuadOp::Q_DIV_8F:  case QuadOp::Q_DIV_4F:
+    case QuadOp::Q_NEG_4F:  case QuadOp::Q_NEG_8F:
+    case QuadOp::Q_ASSIGN_4F:
+    case QuadOp::Q_INDEX_4F: case QuadOp::Q_PRINT_4F:
+        return true;
+    default:
+        return false;
+    }
+}
+
+int QuadOpByteWidth(QuadOp op)
+{
+    switch (op)
+    {
+    case QuadOp::Q_EQU_1:  case QuadOp::Q_NEQU_1:  case QuadOp::Q_LS_1:
+    case QuadOp::Q_MR_1:   case QuadOp::Q_LE_1:    case QuadOp::Q_ME_1:
+    case QuadOp::Q_OR_1:   case QuadOp::Q_XOR_1:   case QuadOp::Q_SHR_1:
+    case QuadOp::Q_SHL_1:  case QuadOp::Q_AND_1:   case QuadOp::Q_NEG_1:
+    case QuadOp::Q_NOT_1:  case QuadOp::Q_ASSIGN_1:
+    case QuadOp::Q_INDEX_1: case QuadOp::Q_PRINT_1: case QuadOp::Q_JE_1:
+        return 1;
+    case QuadOp::Q_EQU_2:  case QuadOp::Q_NEQU_2:  case QuadOp::Q_LS_2:
+    case QuadOp::Q_MR_2:   case QuadOp::Q_LE_2:    case QuadOp::Q_ME_2:
+    case QuadOp::Q_SUB_2:  case QuadOp::Q_ADD_2:   case QuadOp::Q_OR_2:
+    case QuadOp::Q_XOR_2:  case QuadOp::Q_SHR_2:   case QuadOp::Q_SHL_2:
+    case QuadOp::Q_AND_2:  case QuadOp::Q_NEG_2:   case QuadOp::Q_NOT_2:
+    case QuadOp::Q_ASSIGN_2: case QuadOp::Q_JE_2:
+        return 2;
+    case QuadOp::Q_EQU_8:  case QuadOp::Q_NEQU_8:  case QuadOp::Q_LS_8:
+    case QuadOp::Q_MR_8:   case QuadOp::Q_LE_8:    case QuadOp::Q_ME_8:
+    case QuadOp::Q_SUB_8:  case QuadOp::Q_ASSIGN_8:
+        return 8;
+    default:
+        return 4;   // int / bool / float(4字节) / 以及书里未标宽度的成员
+    }
+}
+// ----------------------------------------------------------------------------
+// 宽度后缀选择：这类「大类 + 字节宽度」的组合就是表 5-2 说的 LIR 集
+//   int / bool 在 x86-64 上按 4 字节，char 按 1 字节，float 按单精度 4 字节（_4F）
+// ----------------------------------------------------------------------------
+QuadOp QuadOpForType(int cat, TokenType t)
+{
+    const bool bFloat = (t == TokenType::TOKEN_FLOAT || t == TokenType::TOKEN_NUM_FLOAT);
+    const bool bChar  = (t == TokenType::TOKEN_CHAR);
+    switch (cat)
+    {
+    case QuadCat::CAT_EQU:
+        return bFloat ? QuadOp::Q_EQU_4F : (bChar ? QuadOp::Q_EQU_1 : QuadOp::Q_EQU_4);
+    case QuadCat::CAT_NEQU:
+        return bFloat ? QuadOp::Q_NEQU_4F : (bChar ? QuadOp::Q_NEQU_1 : QuadOp::Q_NEQU_4);
+    case QuadCat::CAT_LS:
+        return bFloat ? QuadOp::Q_LS_4F : (bChar ? QuadOp::Q_LS_1 : QuadOp::Q_LS_4);
+    case QuadCat::CAT_MR:
+        return bFloat ? QuadOp::Q_MR_4F : (bChar ? QuadOp::Q_MR_1 : QuadOp::Q_MR_4);
+    case QuadCat::CAT_LE:
+        return bFloat ? QuadOp::Q_LE_4F : (bChar ? QuadOp::Q_LE_1 : QuadOp::Q_LE_4);
+    case QuadCat::CAT_ME:
+        return bFloat ? QuadOp::Q_ME_4F : (bChar ? QuadOp::Q_ME_1 : QuadOp::Q_ME_4);
+    case QuadCat::CAT_SUB:
+        return bFloat ? QuadOp::Q_SUB_4F : QuadOp::Q_SUB_4;
+    case QuadCat::CAT_ADD:
+        return bFloat ? QuadOp::Q_ADD_4F : QuadOp::Q_ADD_4;
+    case QuadCat::CAT_MUL:
+        return bFloat ? QuadOp::Q_MUL_4F : QuadOp::Q_MUL_4;
+    case QuadCat::CAT_DIV:
+        return bFloat ? QuadOp::Q_DIV_4F : QuadOp::Q_DIV_4;
+    case QuadCat::CAT_NEG:
+        return bFloat ? QuadOp::Q_NEG_4F : QuadOp::Q_NEG_4;
+    case QuadCat::CAT_NOT:
+        return QuadOp::Q_NOT_4;
+    case QuadCat::CAT_ASSIGN:
+        return bFloat ? QuadOp::Q_ASSIGN_4F : (bChar ? QuadOp::Q_ASSIGN_1 : QuadOp::Q_ASSIGN_4);
+    default:
+        return QuadOp::Q_NONE;
+    }
+}
+
+QuadOp QuadIndexOp(TokenType t)
+{
+    // 数组元素宽度：char 元素占 1 字节，float 占 4 字节单精度，int/bool 占 4 字节
+    if (t == TokenType::TOKEN_CHAR)
+    {
+        return QuadOp::Q_INDEX_1;
+    }
+    if (t == TokenType::TOKEN_FLOAT || t == TokenType::TOKEN_NUM_FLOAT)
+    {
+        return QuadOp::Q_INDEX_4F;
+    }
+    return QuadOp::Q_INDEX_4;
+}
+
+QuadOp QuadPrintOp(TokenType t)
+{
+    if (t == TokenType::TOKEN_CHAR)
+    {
+        return QuadOp::Q_PRINT_1;
+    }
+    if (t == TokenType::TOKEN_FLOAT || t == TokenType::TOKEN_NUM_FLOAT)
+    {
+        return QuadOp::Q_PRINT_4F;
+    }
+    return QuadOp::Q_PRINT_4;
 }
 
 // ----------------------------------------------------------------------------
@@ -166,6 +398,11 @@ bool IsIntType(TokenType t)
     // char 在算术中按整数处理（C 语义）；bool 不参与算术
     return t == TokenType::TOKEN_INT || t == TokenType::TOKEN_NUM_INT ||
            t == TokenType::TOKEN_CHAR;
+}
+
+bool IsCharType(TokenType t)
+{
+    return t == TokenType::TOKEN_CHAR;
 }
 } // namespace
 
@@ -404,7 +641,6 @@ Operand IRGenerator::GenIncDec(const UnOpNode* u, bool bReturnOld)
     ASTNode* target = u->m_children[0].get();
     const LineInfo& loc = u->m_loc;
     const bool bInc = (u->m_op == TokenType::TOKEN_INC);
-    const QuadOp arith = bInc ? QuadOp::Q_ADD : QuadOp::Q_SUB;
 
     if (target && target->m_kind == ASTNodeKind::AST_NODE_IDENT)
     {
@@ -416,13 +652,15 @@ Operand IRGenerator::GenIncDec(const UnOpNode* u, bool bReturnOld)
         }
         const TokenType t = m_symtab.m_VarInfoTbl[id->m_iSymIdx].m_type;
         const Operand cur = Operand::Var(id->m_iSymIdx, t);
+        // 按操作数类型选带宽度后缀的加减（表 5-2 的 LIR 层）
+        const QuadOp arith = QuadOpForType(bInc ? QuadCat::CAT_ADD : QuadCat::CAT_SUB, t);
 
         // 旧值快照（后缀才需要）
         Operand snapshot;
         if (bReturnOld)
         {
             const int tOld = GetTmpVar(t);
-            EmitIR(QuadOp::Q_ASSIGN, cur, Operand(), Operand::Temp(tOld, t), loc);
+            EmitIR(QuadOpForType(QuadCat::CAT_ASSIGN, t), cur, Operand(), Operand::Temp(tOld, t), loc);
             snapshot = Operand::Temp(tOld, t);
         }
 
@@ -434,7 +672,7 @@ Operand IRGenerator::GenIncDec(const UnOpNode* u, bool bReturnOld)
         }
         const int tNew = GetTmpVar(t);
         EmitIR(arith, cur, one, Operand::Temp(tNew, t), loc);
-        EmitIR(QuadOp::Q_ASSIGN, Operand::Temp(tNew, t), Operand(), cur, loc);
+        EmitIR(QuadOpForType(QuadCat::CAT_ASSIGN, t), Operand::Temp(tNew, t), Operand(), cur, loc);
 
         return bReturnOld ? snapshot : cur;
     }
@@ -459,6 +697,8 @@ Operand IRGenerator::GenIncDec(const UnOpNode* u, bool bReturnOld)
             return Operand();
         }
         const TokenType elemT = m_symtab.m_VarInfoTbl[id->m_iSymIdx].m_type;
+        // 按元素类型选带宽度后缀的加减（表 5-2 的 LIR 层）
+        const QuadOp arith = QuadOpForType(bInc ? QuadCat::CAT_ADD : QuadCat::CAT_SUB, elemT);
         Operand idxOp = EvalExpr(ix->m_children[1]);
         if (idxOp.m_kind == OperandKind::OP_NONE)
         {
@@ -467,7 +707,7 @@ Operand IRGenerator::GenIncDec(const UnOpNode* u, bool bReturnOld)
 
         // 旧值：(_T_old = 数组[下标])
         const int tOld = GetTmpVar(elemT);
-        EmitIR(QuadOp::Q_INDEX, Operand::Var(id->m_iSymIdx, elemT), idxOp,
+        EmitIR(QuadIndexOp(elemT), Operand::Var(id->m_iSymIdx, elemT), idxOp,
                Operand::Temp(tOld, elemT), loc);
         const Operand oldVal = Operand::Temp(tOld, elemT);
 
@@ -478,7 +718,7 @@ Operand IRGenerator::GenIncDec(const UnOpNode* u, bool bReturnOld)
         }
         const int tNew = GetTmpVar(elemT);
         EmitIR(arith, oldVal, one, Operand::Temp(tNew, elemT), loc);
-        EmitIR(QuadOp::Q_INDEX, Operand::Temp(tNew, elemT), idxOp,
+        EmitIR(QuadIndexOp(elemT), Operand::Temp(tNew, elemT), idxOp,
                Operand::Var(id->m_iSymIdx, elemT), loc);
 
         return bReturnOld ? oldVal : Operand::Temp(tNew, elemT);
@@ -593,21 +833,21 @@ Operand IRGenerator::EvalExpr(const ASTNodePtr& node)
             if (op == TokenType::TOKEN_AND)
             {
                 // t = a && b :  a 假 → 置 0 结束；a 真 → t = b
-                EmitIR(QuadOp::Q_JZ, lo, Operand(), Operand::Label(lMid), loc);
+                EmitIR(QuadOp::Q_JNT, lo, Operand(), Operand::Label(lMid), loc);
             }
             else
             {
                 // t = a || b :  a 真 → 置 1 结束；a 假 → t = b
-                EmitIR(QuadOp::Q_JNZ, lo, Operand(), Operand::Label(lMid), loc);
+                EmitIR(QuadOp::Q_JT, lo, Operand(), Operand::Label(lMid), loc);
             }
             Operand ro = EvalExpr(bin->m_children[1]);
             if (ro.m_kind != OperandKind::OP_NONE)
             {
-                EmitIR(QuadOp::Q_ASSIGN, ro, Operand(), Operand::Temp(tIdx, TokenType::TOKEN_BOOL), loc);
+                EmitIR(QuadOp::Q_ASSIGN_4, ro, Operand(), Operand::Temp(tIdx, TokenType::TOKEN_BOOL), loc);
             }
             EmitIR(QuadOp::Q_JMP, Operand(), Operand(), Operand::Label(lEnd), loc);
             EmitIR(QuadOp::Q_LABEL, Operand::Label(lMid), Operand(), Operand(), loc);
-            EmitIR(QuadOp::Q_ASSIGN, ConstInt(op == TokenType::TOKEN_AND ? 0 : 1, loc), Operand(),
+            EmitIR(QuadOp::Q_ASSIGN_4, ConstInt(op == TokenType::TOKEN_AND ? 0 : 1, loc), Operand(),
                    Operand::Temp(tIdx, TokenType::TOKEN_BOOL), loc);
             EmitIR(QuadOp::Q_LABEL, Operand::Label(lEnd), Operand(), Operand(), loc);
             return Operand::Temp(tIdx, TokenType::TOKEN_BOOL);
@@ -638,17 +878,24 @@ Operand IRGenerator::EvalExpr(const ASTNodePtr& node)
             op == TokenType::TOKEN_LT || op == TokenType::TOKEN_LE ||
             op == TokenType::TOKEN_GT || op == TokenType::TOKEN_GE)
         {
-            QuadOp qop = QuadOp::Q_NONE;
+            // 选大类：== != < <= > >= → EQU / NEQU / LS / LE / MR / ME
+            int cat = QuadCat::CAT_EQU;
             switch (op)
             {
-            case TokenType::TOKEN_EQ: qop = QuadOp::Q_EQ; break;
-            case TokenType::TOKEN_NE: qop = QuadOp::Q_NE; break;
-            case TokenType::TOKEN_LT: qop = QuadOp::Q_LT; break;
-            case TokenType::TOKEN_LE: qop = QuadOp::Q_LE; break;
-            case TokenType::TOKEN_GT: qop = QuadOp::Q_GT; break;
-            case TokenType::TOKEN_GE: qop = QuadOp::Q_GE; break;
+            case TokenType::TOKEN_EQ: cat = QuadCat::CAT_EQU;  break;
+            case TokenType::TOKEN_NE: cat = QuadCat::CAT_NEQU; break;
+            case TokenType::TOKEN_LT: cat = QuadCat::CAT_LS;   break;
+            case TokenType::TOKEN_LE: cat = QuadCat::CAT_LE;   break;
+            case TokenType::TOKEN_GT: cat = QuadCat::CAT_MR;   break;
+            case TokenType::TOKEN_GE: cat = QuadCat::CAT_ME;   break;
             default: break;
             }
+            // 且按比较的操作数类型选宽度后缀（char→_1、int/bool→_4、float→_4F）
+            const QuadOp qop = QuadOpForType(cat, IsFloatType(lt) || IsFloatType(rt)
+                                                      ? TokenType::TOKEN_FLOAT
+                                                      : (IsCharType(lt) && IsCharType(rt)
+                                                             ? TokenType::TOKEN_CHAR
+                                                             : TokenType::TOKEN_INT));
             const int t = GetTmpVar(TokenType::TOKEN_BOOL);
             EmitIR(qop, lo, ro, Operand::Temp(t, TokenType::TOKEN_BOOL), loc);
             return Operand::Temp(t, TokenType::TOKEN_BOOL);
@@ -669,15 +916,17 @@ Operand IRGenerator::EvalExpr(const ASTNodePtr& node)
             {
                 ro = IntToFloatConv(ro, loc);
             }
-            QuadOp qop = QuadOp::Q_NONE;
+            // 选大类：+ - * / → ADD / SUB / MUL / DIV，再按结果类型补宽度后缀
+            int cat = QuadCat::CAT_ADD;
             switch (op)
             {
-            case TokenType::TOKEN_PLUS:  qop = QuadOp::Q_ADD; break;
-            case TokenType::TOKEN_MINUS: qop = QuadOp::Q_SUB; break;
-            case TokenType::TOKEN_MUL:   qop = QuadOp::Q_MUL; break;
-            case TokenType::TOKEN_DIV:   qop = QuadOp::Q_DIV; break;
+            case TokenType::TOKEN_PLUS:  cat = QuadCat::CAT_ADD; break;
+            case TokenType::TOKEN_MINUS: cat = QuadCat::CAT_SUB; break;
+            case TokenType::TOKEN_MUL:   cat = QuadCat::CAT_MUL; break;
+            case TokenType::TOKEN_DIV:   cat = QuadCat::CAT_DIV; break;
             default: break;
             }
+            const QuadOp qop = QuadOpForType(cat, resType);
             const int t = GetTmpVar(resType);
             EmitIR(qop, lo, ro, Operand::Temp(t, resType), loc);
             return Operand::Temp(t, resType);
@@ -710,14 +959,16 @@ Operand IRGenerator::EvalExpr(const ASTNodePtr& node)
             const TokenType resType = IsFloatType(t) ? TokenType::TOKEN_FLOAT
                                                      : TokenType::TOKEN_INT;
             const int tmp = GetTmpVar(resType);
-            EmitIR(QuadOp::Q_SUB, ConstInt(0, loc), op, Operand::Temp(tmp, resType), loc);
+            EmitIR(QuadOpForType(QuadCat::CAT_NEG, resType), op, Operand(),
+                   Operand::Temp(tmp, resType), loc);
             return Operand::Temp(tmp, resType);
         }
         if (u->m_op == TokenType::TOKEN_NOT)
         {
             // 逻辑非：t = (x == 0)（bool 域）
             const int tmp = GetTmpVar(TokenType::TOKEN_BOOL);
-            EmitIR(QuadOp::Q_EQ, op, ConstInt(0, loc), Operand::Temp(tmp, TokenType::TOKEN_BOOL), loc);
+            const QuadOp qnot = QuadOpForType(QuadCat::CAT_NOT, OperandType(op));
+            EmitIR(qnot, op, Operand(), Operand::Temp(tmp, TokenType::TOKEN_BOOL), loc);
             return Operand::Temp(tmp, TokenType::TOKEN_BOOL);
         }
         return op;
@@ -748,7 +999,7 @@ Operand IRGenerator::EvalExpr(const ASTNodePtr& node)
             return Operand();
         }
         const int t = GetTmpVar(elemT);
-        EmitIR(QuadOp::Q_INDEX, Operand::Var(id->m_iSymIdx, elemT), idxOp,
+        EmitIR(QuadIndexOp(elemT), Operand::Var(id->m_iSymIdx, elemT), idxOp,
                Operand::Temp(t, elemT), ix->m_loc);
         return Operand::Temp(t, elemT);
     }
@@ -899,7 +1150,8 @@ void IRGenerator::GenStmt(const ASTNodePtr& node)
             {
                 val = IntToFloatConv(val, a->m_loc);
             }
-            EmitIR(QuadOp::Q_ASSIGN, val, Operand(), Operand::Var(id->m_iSymIdx, lhsT), a->m_loc);
+            EmitIR(QuadOpForType(QuadCat::CAT_ASSIGN, lhsT), val, Operand(),
+           Operand::Var(id->m_iSymIdx, lhsT), a->m_loc);
         }
         else if (target->m_kind == ASTNodeKind::AST_NODE_INDEX)
         {
@@ -934,7 +1186,7 @@ void IRGenerator::GenStmt(const ASTNodePtr& node)
             {
                 val = IntToFloatConv(val, a->m_loc);
             }
-            EmitIR(QuadOp::Q_INDEX, val, idxOp, Operand::Var(id->m_iSymIdx, elemT), a->m_loc);
+            EmitIR(QuadIndexOp(elemT), val, idxOp, Operand::Var(id->m_iSymIdx, elemT), a->m_loc);
         }
         return;
     }
@@ -956,7 +1208,7 @@ void IRGenerator::GenStmt(const ASTNodePtr& node)
             // if (e) S1 else S2
             const int lElse = GetTmpLabel();
             const int lEnd = GetTmpLabel();
-            EmitIR(QuadOp::Q_JZ, cond, Operand(), Operand::Label(lElse), loc);
+            EmitIR(QuadOp::Q_JNT, cond, Operand(), Operand::Label(lElse), loc);
             GenStmt(in->m_children[1]);
             EmitIR(QuadOp::Q_JMP, Operand(), Operand(), Operand::Label(lEnd), loc);
             EmitIR(QuadOp::Q_LABEL, Operand::Label(lElse), Operand(), Operand(), loc);
@@ -967,7 +1219,7 @@ void IRGenerator::GenStmt(const ASTNodePtr& node)
         {
             // if (e) S
             const int lEnd = GetTmpLabel();
-            EmitIR(QuadOp::Q_JZ, cond, Operand(), Operand::Label(lEnd), loc);
+            EmitIR(QuadOp::Q_JNT, cond, Operand(), Operand::Label(lEnd), loc);
             GenStmt(in->m_children[1]);
             EmitIR(QuadOp::Q_LABEL, Operand::Label(lEnd), Operand(), Operand(), loc);
         }
@@ -989,7 +1241,7 @@ void IRGenerator::GenStmt(const ASTNodePtr& node)
         {
             return;
         }
-        EmitIR(QuadOp::Q_JZ, cond, Operand(), Operand::Label(lEnd), loc);
+        EmitIR(QuadOp::Q_JNT, cond, Operand(), Operand::Label(lEnd), loc);
         GenStmt(wn->m_children[1]);
         EmitIR(QuadOp::Q_JMP, Operand(), Operand(), Operand::Label(lBegin), loc);
         EmitIR(QuadOp::Q_LABEL, Operand::Label(lEnd), Operand(), Operand(), loc);
@@ -1007,7 +1259,7 @@ void IRGenerator::GenStmt(const ASTNodePtr& node)
         {
             return;
         }
-        EmitIR(QuadOp::Q_PRINT, e, Operand(), Operand(), pn->m_loc);
+        EmitIR(QuadPrintOp(OperandType(e)), e, Operand(), Operand(), pn->m_loc);
         return;
     }
     case ASTNodeKind::AST_NODE_RETURN:
@@ -1015,7 +1267,7 @@ void IRGenerator::GenStmt(const ASTNodePtr& node)
         auto* rn = static_cast<ReturnNode*>(node.get());
         if (rn->m_children.empty())
         {
-            EmitIR(QuadOp::Q_RETURN, Operand(), Operand(), Operand(), rn->m_loc);
+            EmitIR(QuadOp::Q_RETV, Operand(), Operand(), Operand(), rn->m_loc);
             return;
         }
         Operand e = EvalExpr(rn->m_children[0]);
@@ -1034,7 +1286,7 @@ void IRGenerator::GenStmt(const ASTNodePtr& node)
         {
             e = FloatToIntConv(e, rn->m_loc);
         }
-        EmitIR(QuadOp::Q_RETURN, e, Operand(), Operand(), rn->m_loc);
+        EmitIR(QuadOp::Q_RETV, e, Operand(), Operand(), rn->m_loc);
         return;
     }
     case ASTNodeKind::AST_NODE_EMPTY:

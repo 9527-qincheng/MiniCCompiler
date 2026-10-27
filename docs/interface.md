@@ -342,6 +342,50 @@
        codegen 29 → **30 例**、sema 18 → **19 例**（`err_bool_arith.mc` 的 `if (a == b)` 现在合法，
        换成 `b = a && 1;`；新增 `ok_bool_relational.mc` 锁住「bool 可比较、只告警不报错」）。
        `build.bat test` 11 套全绿。
+ 25. **四元式操作码按参考书表 5-2 重建（2026-10-27，鲍方乐）**：`QuadOp` 由 35 个扁平操作码
+     改为表 5-2「NPIR 的操作符」的 **21 大类 + 宽度后缀**组织，共 **151 个成员**，
+     枚举值按**高 5 位大类、低 5 位类内成员**编码（`(CAT << 5) | 成员号`）。
+     **不改动任何冻结的函数签名**，但**是 `QuadOp` 枚举的破坏性替换**，所有引用旧操作码的
+     代码与 `.quad.txt` 基线全要跟着改。
+     - **为什么要做**：参考书第 5 章表 5-2 是课程指定参考书的核心设计，原实现只有 35 个
+       扁平操作码（`Q_ADD`/`Q_ASSIGN`/`Q_PRINT`），与书里「宽度是操作符的一部分」的思想脱节 ——
+       书里 `ADD_4` 与 `ADD_8F` 是两个不同操作符，所以 IR 不靠类型表查宽度；
+       MiniC 原来把宽度留给目标代码现查 `Operand.m_type`，与书的设计对不上。
+     - **MiniC 实际产生 30 个成员**（其余 121 个是表 5-2 有、MiniC 语言里不存在的，
+       如位运算 `OR_0`/`AND_0`、位移 `SHR_*`/`SHL_*`、集合差 `SUB_SET`、
+       字符串连接 `ADD_S`、`CALLPTR`/`ASM`/`GETADDR` 等；`codegen` 的 `default:` 分支兜住它们）：
+       - 关系 1~6 类：`EQU_1/_4/_4F`、`NEQU_1/_4/_4F`、`LS_1/_4/_4F`、`LE_1/_4/_4F`、
+         `MR_1/_4/_4F`、`ME_1/_4/_4F`（char 用 `_1`，含 float 用 `_4F`，否则 `_4`）
+       - 算术 8~13 类：`ADD_4/_4F`、`SUB_4/_4F`、`MUL_4/_4F`、`DIV_4/_4F`
+       - 18~19 类：`NEG_4/_4F`、`NOT_4`
+       - 20 类：`ASSIGN_1/_4/_4F`
+       - 21 类：`JMP` `LABEL` `PARA` `RETV` `CALL` `JT` `JNT` `INDEX_1/_4/_4F`
+         `PRINT_1/_4/_4F` `ITOF` `FTOI`
+     - **与表 5-2 的三点差异**（`src/sema/ir.h` 注释里逐条写明）：
+       ①补 5 个 `_4F` 扩展成员（`SUB_4F`/`ADD_4F`/`MUL_4F`/`DIV_4F`/`ASSIGN_4F`）——
+       书里浮点后缀只有 `_8F`（64 位 double），MiniC 的 `float` 是 32 位单精度，
+       目标代码用 `addss`/`movss`，对不上 `_8F`；硬塞会造成「名字说 8 字节、实际 4 字节」的错觉。
+       ②`JT`/`JNT` 按书改正（旧文档里误写成 `Q_JT`/`Q_JF`）。
+       ③`ITOF`/`FTOI` 是 MiniC 扩展 —— 表 5-2 没有「类型转换」大类，参考书靠
+       `TypeSysInfo` 的 `m_bConvert1/m_bConvert2` 在 `Emit` 时隐式插入；MiniC 显式列出来，
+       便于在 `.quad.txt` 里看见转换发生在哪一步。
+     - **辅助接口（新增，均为自由函数，不改冻结签名）**：`QuadCatOf` / `QuadMemberOf` /
+       `MakeQuadOp` / `SameQuadCat` / `QuadCatName` / `QuadMemberName` / `QuadOpName` /
+       `QuadOpIsFloat` / `QuadOpByteWidth` / `QuadOpForType` / `QuadIndexOp` / `QuadPrintOp`。
+       `QuadOpName` 由 `ir.h` 统一提供（返回 `"ADD_4"` / `"ASSIGN_4F"` 这类助记符），
+       `Quad::Print` 与 `main.cpp` 的 `--dump-quads` 都改调它，不再各写一份表。
+     - **`AsmEmitter` 同步**：`GenQuad` 的 switch 从「35 个扁平 case」改为「按大类分组的
+       case 组」（`Q_ADD_4`/`Q_ADD_4F` 共用 `GenBinary(q,"addl","addss")` 等），
+       新增 `GenNeg`（`negl` / `xorps+subss`）与 `GenNot`（`cmpl $0; sete`）两个方法 ——
+       原来取负走 `0 - x` 的二元减法、取非走 `x == 0` 的关系运算，现在对应表 5-2 的
+       第 18/19 类各自有专门操作码，翻译也独立成函数。
+     - **实测与改造前逐条等价**：同一份综合用例（含 int/float/char/数组/函数调用/取负/取非/
+       六种比较/短路/自增自减）改造前后汇编运行输出**完全一致**；
+       `a=2,b=3,c=5` 时 `a == b < c` / `a < b == c` / `a < b < c` 仍输出 `0 / 0 / 1`，
+       与 `g++` 相同。
+     - **回归**：quad 18 个基线**全部重刷**（操作码文本从 `(=, +, -` 变成
+       `(ASSIGN_4, ADD_4, SUB_4`），`codegen` 30 例**零改动**（它比对的是运行输出不是四元式）、
+       parser 50 / sema 19 不受影响。`build.bat test` 11 套全绿。
 
 > 说明：本节第 8–10 条为 2026-10-13 阶段⑤ 收尾时同步；**下面的"四、词法识别集合"仍是 v3.1 骨架版内容**，
 > 词法 v4.0 的现状（17 个挑战版终结符等）见 `README.md` 的模块状态表与

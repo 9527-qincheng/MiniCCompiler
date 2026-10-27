@@ -1428,30 +1428,88 @@ public:
 
 ### 5.5 中间代码模块（`src/sema/ir.h`）【变更】
 
-**操作码扩展**：
+**操作码：按参考书表 5-2「NPIR 的操作符」重建（2026-10-27 变更）**
+
+原设计是 35 个扁平操作码（`Q_ADD` / `Q_ASSIGN` / `Q_PRINT` …）。现改为**照参考书表 5-2 的
+21 大类 + 宽度后缀**组织，枚举值按 **高 5 位大类、低 5 位类内成员**编码：
 
 ```cpp
-enum class QuadOp
+namespace QuadCat       // 大类，占枚举值的高 5 位
 {
-    Q_NONE,
-    /* 数据传送与运算 */
-    Q_ASSIGN,                          // res = arg1
-    Q_ADD, Q_SUB, Q_MUL, Q_DIV,        // res = arg1 op arg2
-    Q_NEG,                             // 【新增】res = -arg1
-    /* 类型转换 */
-    Q_ITOF, Q_FTOI,                    // 【新增】Q_FTOI
-    /* 关系运算（结果 bool）【新增】 */
-    Q_EQ, Q_NE, Q_LT, Q_LE, Q_GT, Q_GE,
-    /* 逻辑运算【新增】 */
-    Q_AND, Q_OR, Q_NOT,
-    /* 数组【新增】 */
-    Q_INDEX,                           // res = arg1[arg2] 地址偏移
-    /* 控制流 */
-    Q_LABEL, Q_JMP, Q_JT, Q_JF,
-    /* 函数 */
-    Q_PARA, Q_CALL, Q_RET,
-    Q_PRINT                            // print 输出
+enum : int
+{
+    CAT_NONE = 0,   CAT_EQU = 1,    CAT_NEQU = 2,   CAT_LS = 3,     CAT_MR = 4,
+    CAT_LE = 5,     CAT_ME = 6,     CAT_IN = 7,     CAT_SUB = 8,    CAT_ADD = 9,
+    CAT_OR = 10,    CAT_XOR = 11,   CAT_MUL = 12,   CAT_DIV = 13,   CAT_MOD = 14,
+    CAT_SHR = 15,   CAT_SHL = 16,   CAT_AND = 17,   CAT_NEG = 18,   CAT_NOT = 19,
+    CAT_ASSIGN = 20, CAT_OTHER = 21
 };
+}
+
+enum class QuadOp : int
+{
+    Q_NONE = 0,
+    /* 1 相等 EQU（9 个）*/        Q_EQU_1, Q_EQU_2, Q_EQU_4, Q_EQU_8, Q_EQU_4F,
+                                   Q_EQU_8F, Q_EQU_S, Q_EQU_32, Q_EQU_A,
+    /* 2 不等 NEQU（9 个）*/       Q_NEQU_1, ... Q_NEQU_A,
+    /* 3~6 LS / MR / LE / ME（各 10 个）*/ Q_LS_1 ... Q_LS_4U, ...
+    /* 7 集合包含 IN（8 个，MiniC 不产生）*/ Q_IN_C ... Q_IN_E,
+    /* 8~11 SUB / ADD / OR / XOR */ Q_SUB_2, Q_SUB_4, Q_SUB_8, Q_SUB_8F, Q_SUB_SET, Q_SUB_4F,
+                                   Q_ADD_S, Q_ADD_4, Q_ADD_8F, Q_ADD_SET, Q_ADD_2, Q_ADD_4F, ...
+    /* 12~17 MUL / DIV / MOD / SHR / SHL / AND */ ...
+    /* 18~19 NEG / NOT */          Q_NEG_1, Q_NEG_2, Q_NEG_4, Q_NEG_4F, Q_NEG_8F,
+                                   Q_NOT_0, Q_NOT_1, Q_NOT_2, Q_NOT_4,
+    /* 20 赋值 ASSIGN（8 个）*/     Q_ASSIGN_1, Q_ASSIGN_2, Q_ASSIGN_4, Q_ASSIGN_8,
+                                   Q_ASSIGN_32, Q_ASSIGN_N, Q_ASSIGN_S, Q_ASSIGN_4F,
+    /* 21 其他（书内 15 个 + MiniC 扩展 8 个）*/
+                                   Q_JMP, Q_LABEL, Q_PARA, Q_RETV, Q_CALL, Q_JT, Q_JNT,
+                                   Q_JE_1, Q_JE_2, Q_JE_4, Q_CALLPTR, Q_ASM, Q_GETADDR,
+                                   Q_SET_ADDITEM, Q_GETPROCADDR,
+                                   Q_INDEX_1, Q_INDEX_4, Q_INDEX_4F,   // MiniC 扩展：数组读写
+                                   Q_PRINT_1, Q_PRINT_4, Q_PRINT_4F,   // MiniC 扩展：print
+                                   Q_ITOF, Q_FTOI                      // MiniC 扩展：类型转换
+};
+```
+
+共 **151 个成员**（表 5-2 的 130 余个 + MiniC 扩展），其中 MiniC 实际产生的是 **30 个**：
+
+| 大类 | MiniC 产生的成员 | 何时用 |
+|---|---|---|
+| 1~6 相等/不等/小于/大于/小于等于/大于等于 | `_1` `_4` `_4F` | 两侧都是 char 用 `_1`，含 float 用 `_4F`，否则 `_4` |
+| 8~13 加/减/乘/除 | `_4` `_4F` | 按结果类型选 |
+| 18 取负 NEG | `_4` `_4F` | 按操作数类型选 |
+| 19 取非 NOT | `_4` | bool 在栈上是 4 字节 |
+| 20 赋值 ASSIGN | `_1` `_4` `_4F` | 按左值类型选（char 用 `_1`） |
+| 21 其他 | `Q_JMP` `Q_LABEL` `Q_PARA` `Q_RETV` `Q_CALL` `Q_JT` `Q_JNT` `Q_INDEX_1/_4/_4F` `Q_PRINT_1/_4/_4F` `Q_ITOF` `Q_FTOI` | — |
+
+**与表 5-2 的三点差异**（都在 `src/sema/ir.h` 的注释里写明）：
+
+1. **补了 5 个 `_4F` 扩展成员**：`SUB_4F` / `ADD_4F` / `MUL_4F` / `DIV_4F` / `ASSIGN_4F`。
+   表 5-2 的浮点后缀只有 `_8F`（64 位 double），而 MiniC 的 `float` 是 32 位单精度，
+   目标代码用 `addss`/`movss`，对不上 `_8F`；与其把 32 位浮点硬塞进 `_8F` 造成「名字说 8 字节、
+   实际 4 字节」的错觉，不如显式补一个 `_4F`。
+2. **`Q_JT` / `Q_JNT` 语义与表 5-2 相同**：表 5-2 写 `JT / JNT`（jump if true / if not true），
+   本书旧版此处误写成 `Q_JT / Q_JF`（把「假」写成 JF），现按书改正为 `Q_JNT`。
+3. **`ITOF` / `FTOI` 是 MiniC 扩展**：表 5-2 的 21 大类里没有「类型转换」这一类，
+   参考书的类型转换靠 `TypeSysInfo` 的 `m_bConvert1/m_bConvert2` 在 `Emit` 时隐式插入，
+   不单列操作码。MiniC 显式列出来，便于在 `.quad.txt` 里看见转换发生在哪一步
+   （答辩时靠这两条证明「中间代码层确实插了双向转换」）。
+
+**辅助接口**（`src/sema/ir.h`，均为自由函数，不改冻结接口）：
+
+```cpp
+int  QuadCatOf(QuadOp op);            // op >> 5
+int  QuadMemberOf(QuadOp op);         // op & 0x1F
+QuadOp MakeQuadOp(int cat, int member);
+bool SameQuadCat(QuadOp a, QuadOp b);
+const char* QuadCatName(int cat);                  // "EQU" / "ADD" / ...
+const char* QuadMemberName(int cat, int member);   // "1" / "4" / "4F" / ...
+std::string QuadOpName(QuadOp op);                 // "ADD_4" / "ASSIGN_4F" / ...
+bool QuadOpIsFloat(QuadOp op);
+int  QuadOpByteWidth(QuadOp op);                   // 1 / 2 / 4 / 8
+QuadOp QuadOpForType(int cat, TokenType t);        // 按类型挑宽度后缀
+QuadOp QuadIndexOp(TokenType elemType);            // INDEX_1 / _4 / _4F
+QuadOp QuadPrintOp(TokenType valType);             // PRINT_1 / _4 / _4F
 ```
 
 `Operand` / `Quad` / `CodeList` 沿用 v3.1 定义（操作数引用式，Q6）。
@@ -1679,7 +1737,7 @@ minic <源文件> [--dump-tokens] [--dump-ast] [--dump-symtab] [--dump-quads] [-
 |---|---|
 | 除数为 0 | 编译期算出 `Inf` 会把「运行时除零」变成「静默的错结果」，改变程序可见行为 |
 | 整型结果越界（`> 2147483647` 或 `< -2147483648`） | 交给运行时按 x86 `addl` 自然回绕，与未折叠时逐位一致 |
-| `&&` / `\|\|` | 短路有副作用语义（右侧可能不执行），必须保留 `Q_JZ` / `Q_JNZ` 分支 |
+| `&&` / `\|\|` | 短路有副作用语义（右侧可能不执行），必须保留 `Q_JNT` / `Q_JT` 分支 |
 
 **`print` 的换行语义（2026-10-27 变更）**：`print` **不追加换行**，只输出值本身。
 `print(a); print(b);` 在同一行输出 `ab`；要换行必须显式写 `print('\n');`（词法的
@@ -1719,7 +1777,7 @@ minic <源文件> [--dump-tokens] [--dump-ast] [--dump-symtab] [--dump-quads] [-
 | 词法扫描 | 单字符运算符 | **双字符优先**（== != <= >= && \|\| ++ --） |
 | AST | 二叉树 + 7 类节点 | **多子节点 + 18 类节点**（含 `ARRAYDECL`；`++`/`--` 复用 `UnOp`，靠 `m_bPostfix` 区分前后缀） |
 | 作用域 | 全局 / 函数 | **+ 块作用域** |
-| 四元式操作码 | 12 个 | **35 个**（+关系/逻辑/数组/取负/转换；`++`/`--` 复用 ADD/SUB，不新增操作码） |
+| 四元式操作码 | 12 个 | **151 个**（照参考书表 5-2 的 21 大类 + 宽度后缀重建；MiniC 实际产生 30 个，见 §5.5） |
 | 交付物 | Token/AST/符号表/四元式 | **+ 文法表/编码表/First/Follow/Select/预测分析表/分析过程** |
 
 > **数量口径说明（消除歧义）**：
@@ -1844,7 +1902,7 @@ minic <源文件> [--dump-tokens] [--dump-ast] [--dump-symtab] [--dump-quads] [-
 | 6 | `src/parser/parser.cpp` | 递归下降 → **预测分析表驱动** + 错误恢复 | 破坏性 |
 | 7 | `src/parser/ast.h/.cpp` | 二叉树 → 多子节点；`ASTNodeKind` 扩至 19 项（18 类在用）；新增 8 类节点与 Print | 破坏性 |
 | 8 | `src/symbol/symbol.h/.cpp` | `ScopeType` 加 `SCOPE_BLOCK`；`VarEntry` 加数组字段；`RecArray`；查找改作用域链；`CheckAssign` 扩展 | 变更 |
-| 9 | `src/sema/ir.h/.cpp` | `QuadOp` 扩至 35 个；`Generate()` 按新 AST 实现；标号回填 | 变更 |
+| 9 | `src/sema/ir.h/.cpp` | `QuadOp` 按表 5-2 重建为 151 个（21 大类 + 宽度后缀）；`Generate()` 按新 AST 实现；标号回填 | 变更 |
 | 10 | `src/codegen/codegen.cpp` | `IRtoASM` 支持比较跳转/数组/函数 | 变更 |
 | 11 | `src/main.cpp` | 语义阶段接入（消除 TODO）；新增 `--dump-parse` | 变更 |
 | 12 | `tests/` | 新增挑战版用例；旧 `.ast.txt` 期望产物重新生成 | 变更 |

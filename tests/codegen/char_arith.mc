@@ -5,13 +5,13 @@ int n;
 int main() {
     c = 'A';
     n = c + 1;
-    print(n);
-    print(c < 'a');
-    print(c == 65);
+    print(n); print('\n');
+    print(c < 'a'); print('\n');
+    print(c == 65); print('\n');
     arr[0] = 'x';
     arr[0] = arr[0] + 1;
-    print(arr[0]);
+    print(arr[0]); print('\n');
     c++;
-    print(c);
+    print(c); print('\n');
     return 0;
 }

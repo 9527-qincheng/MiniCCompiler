@@ -3,7 +3,7 @@ int fi2() { return 3; }
 float ff;
 int ii;
 ff = fi();
-print(ff);
+print(ff); print('\n');
 ii = fi2();
-print(ii);
+print(ii); print('\n');
 return;

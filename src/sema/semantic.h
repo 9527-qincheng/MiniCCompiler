@@ -14,6 +14,10 @@
 #include "parser/ast.h"
 #include "symbol/symbol.h"
 
+#include <map>
+#include <string>
+#include <vector>
+
 class SemanticAnalyzer
 {
 public:
@@ -30,6 +34,12 @@ private:
     // 因此语义阶段必须拦截「函数定义只能出现在最外层」。
     int m_iFuncDepth = 0;
 
+    // 当前正在分析的函数的返回类型与名字，用于 return 语句的返回值检查。
+    // 顶层（函数体之外）的 return 不参与检查：MiniC 允许脚本式顶层语句，
+    // tests/parser/return_stmt.mc 与多个 codegen 用例都在顶层写了裸 return;
+    TokenType   m_curRetType = TokenType::TOKEN_NONE;
+    std::string m_szCurFunc;
+
     // 递归遍历单个节点；表达式节点返回推导类型，语句/声明节点返回 TOKEN_NONE
     TokenType Visit(const ASTNodePtr& node);
 
@@ -40,6 +50,7 @@ private:
 
     // —— 语句 ——
     void VisitAssign(AssignNode* assign);
+    TokenType VisitReturn(ReturnNode* ret);
 
     // —— 表达式 ——
     TokenType VisitIdent(IdentNode* ident);
@@ -55,4 +66,12 @@ private:
     TokenType NumType(const NumNode* n) const;
     TokenType DeduceBinOp(TokenType op, TokenType lt, TokenType rt,
                           const LineInfo& loc);
+
+    // —— 函数签名表（实参个数检查用）——
+    // 为什么不用 SymbolTable：ParamEntry 没有「所属过程」字段（symbol.cpp 顶部
+    // 已注明这个已知限制），m_ParamInfoTbl 是一张扁平表，无法按函数名筛形参。
+    // 这里在 Analyze 入口先扫一遍 AST 建签名，避免「函数体里调后面才定义的函数」
+    // 时签名还没登记的问题。
+    std::map<std::string, std::vector<TokenType>> m_FuncSigs;
+    void CollectSignatures(const ASTNodePtr& root);
 };

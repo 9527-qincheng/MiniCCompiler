@@ -26,11 +26,11 @@ int early(int n) {
 }
 
 int main() {
-    print(no_ret());
-    print(ret_val());
-    print(f_ret());
-    print(f_no_ret());
-    print(early(5));
-    print(early(-5));
+    print(no_ret()); print('\n');
+    print(ret_val()); print('\n');
+    print(f_ret()); print('\n');
+    print(f_no_ret()); print('\n');
+    print(early(5)); print('\n');
+    print(early(-5)); print('\n');
     return 0;
 }

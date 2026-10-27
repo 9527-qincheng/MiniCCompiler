@@ -955,23 +955,26 @@ void AsmEmitter::Run(AsmOutput& out)
     }
 
     // ---- 3. 收尾：补齐用到的格式串 ----
+    // 注意：格式串里**不带** '\n'。print 只输出值本身，连续两条 print 会接在
+    // 同一行上（print(a); print(b); → "ab"）。要换行就自己写 print('\n')。
+    // 这样 print 的语义与 C 的 printf 一致，而换行变成显式可控的行为。
     if (m_bUseIntFmt)
     {
         m_data.push_back("    .align 4");
         m_data.push_back(".LCfmt_i:");
-        m_data.push_back("    .string \"%d\\n\"");
+        m_data.push_back("    .string \"%d\"");
     }
     if (m_bUseFltFmt)
     {
         m_data.push_back("    .align 4");
         m_data.push_back(".LCfmt_f:");
-        m_data.push_back("    .string \"%g\\n\"");
+        m_data.push_back("    .string \"%g\"");
     }
     if (m_bUseChrFmt)
     {
         m_data.push_back("    .align 4");
         m_data.push_back(".LCfmt_c:");
-        m_data.push_back("    .string \"%c\\n\"");
+        m_data.push_back("    .string \"%c\"");
     }
 
     // ---- 4. 装配 AsmOutput 三段 ----

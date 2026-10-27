@@ -277,6 +277,41 @@
      - **变异测试**：把 `IsNumeric` 里的 `t == TokenType::TOKEN_CHAR` 改成 `false`，
        `char_arith` 的 quad 与 codegen 两个用例立刻 FAIL——证明基线锁住了这条放宽。
 
+ 23. **`print` 不自动换行 + 实参个数与 `return` 类型检查（2026-10-27，鲍方乐）**：三项语义/代码
+     生成层的口径调整，**不新增任何公开接口、不改动 `docs/interface.md` 第 6 章已冻结的签名**。
+     - **`print` 不再追加换行**：`src/codegen/codegen.cpp` 收尾处三张格式串由 `"%d\n"` / `"%g\n"`
+       / `"%c\n"` 改为 `"%d"` / `"%g"` / `"%c"`。理由：原来每个值独占一行，无法拼出
+       `1 2` 这种同行输出；现在 `print(a); print(b);` 输出 `ab`，要换行写 `print('\n')`
+       （词法的 `ScanCharConst` 已支持 `\n \t \r \0 \\ \' \"` 六个转义）。
+       **这是行为变更**：所有原本依赖「每条 print 自动换行」的用例都已显式补 `print('\n');`
+       —— `tests/codegen/` 下 29 个 `.mc` 共补 94 处，28 个既有 `.expected.txt` 一字未改仍全过；
+       新增 `tests/codegen/print_no_newline.mc` 锁住「不换行」本身（期望 `12` / `3` / `ab` 三行）。
+     - **`return` 类型检查**：`src/sema/semantic.h` 新增私有成员 `m_curRetType` / `m_szCurFunc`
+       与私有方法 `TokenType VisitReturn(ReturnNode* ret);`（**私有，不是对外接口**）；
+       `src/sema/semantic.cpp` 把 `AST_NODE_RETURN` 从原先与 `PRINT` 共用的分支里拆出，
+       `VisitFuncDef` 在进入函数作用域时保存当前返回类型、退出时恢复。规则：
+       `void` 函数带值 → `void function '<名>' cannot return a value`；
+       非 `void` 函数裸 `return;` → `non-void function '<名>' must return a value`；
+       带值时复用 `SymbolTable::CheckAssign`（`int ← float` 仍是 Q9 告警 + 截断，不阻断）。
+       **顶层（函数体外）的裸 `return;` 不检查** —— `tests/parser/return_stmt.mc`、
+       `tests/codegen/{arg_conv,ret_conv,short_circuit}.mc` 都在顶层写过裸 `return;`，
+       收紧会把既有合法用例打成非法。
+     - **实参个数检查**：`SemanticAnalyzer` 新增私有成员 `m_FuncSigs`
+       （`std::map<std::string, std::vector<TokenType>>`）与私有方法
+       `void CollectSignatures(const ASTNodePtr& root);`。`Analyze()` 的入口先
+       `CollectSignatures(root)` 再 `Visit(root)` —— 必须两遍，因为 MiniC 允许「函数体里调用
+       后面才定义的函数」，边 Visit 边登记会漏。`VisitCall` 末尾比对个数，不符报
+       `function '<名>' expects N argument(s), but M given`。
+     - **回归**：`tests/sema/` 新增 `err_arg_count.mc`、`err_ret_void.mc`、`err_ret_novalue.mc`、
+       `ok_param_ret.mc` 四例（首行 `/* expect: err */` 或 `/* expect: ok */`，
+       golden 在 `tests/sema/<名>.expected.diag.txt`，**不在 `expected/` 子目录**）。
+       sema 14 → **18 例**、codegen 28 → **29 例**，`build.bat test` 11 套全绿。
+     - **GUI 手册与示例库同步**：`gui/src/samples.js`（15 条示例，补 41 处 `print('\n')`、
+       8 处给无花括号控制体加 `{ }`，`output` 字段全部按实跑结果重算）与
+       `gui/src/syntax-book.js`（45 条 `example` 补 96 处换行，60 条 `output`/`err` 全部按
+       实测重写，`ret-mismatch` 由 `limit` 改 `no`、`stmt-if` 的 else 分支补花括号）。
+       `book-smoke` 60 条、`sample-smoke` 22 条断言全 PASS。
+
 > 说明：本节第 8–10 条为 2026-10-13 阶段⑤ 收尾时同步；**下面的"四、词法识别集合"仍是 v3.1 骨架版内容**，
 > 词法 v4.0 的现状（17 个挑战版终结符等）见 `README.md` 的模块状态表与
 > [词法模块待改进清单.md](词法模块待改进清单.md)，

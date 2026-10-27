@@ -56,21 +56,21 @@ int main() {
 
     // 局部 gx 遮蔽全局 gx
     gx = 100;
-    print(gx);
-    print(shadowParam(5));
-    print(garr[0]);
+    print(gx); print('\n');
+    print(shadowParam(5)); print('\n');
+    print(garr[0]); print('\n');
 
     // char 返回类型
     i = 0;
     while (i < 3) {
-        print(pick(i));
+        print(pick(i)); print('\n');
         i = i + 1;
     }
 
     // bool 返回类型
-    print(isPos(3));
-    print(isPos(-3));
-    print(isPos(0));
+    print(isPos(3)); print('\n');
+    print(isPos(-3)); print('\n');
+    print(isPos(0)); print('\n');
 
     // 全局 char 数组逐元素写读（元素宽度 1）
     gca[0] = 'x';
@@ -78,7 +78,7 @@ int main() {
     gca[2] = 'z';
     i = 0;
     while (i < 3) {
-        print(gca[i]);
+        print(gca[i]); print('\n');
         i = i + 1;
     }
 
@@ -92,14 +92,14 @@ int main() {
         fsum = fsum + gf[i];
         i = i + 1;
     }
-    print(fsum);
+    print(fsum); print('\n');
 
     // 大栈帧
-    print(bigFrame());
+    print(bigFrame()); print('\n');
 
     // char 变量与赋值
     c = 'Z';
-    print(c);
+    print(c); print('\n');
 
     return 0;
 }

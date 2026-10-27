@@ -1643,6 +1643,27 @@ minic <源文件> [--dump-tokens] [--dump-ast] [--dump-symtab] [--dump-quads] [-
 | 整型结果越界（`> 2147483647` 或 `< -2147483648`） | 交给运行时按 x86 `addl` 自然回绕，与未折叠时逐位一致 |
 | `&&` / `\|\|` | 短路有副作用语义（右侧可能不执行），必须保留 `Q_JZ` / `Q_JNZ` 分支 |
 
+**`print` 的换行语义（2026-10-27 变更）**：`print` **不追加换行**，只输出值本身。
+`print(a); print(b);` 在同一行输出 `ab`；要换行必须显式写 `print('\n');`（词法的
+`ScanCharConst` 支持 `\n \t \r \0 \\ \' \"` 六个转义）。三张格式串在
+`src/codegen/codegen.cpp` 收尾处，分别是 `.LCfmt_i: .string "%d"`、`.LCfmt_f: "%g"`、`.LCfmt_c: "%c"`。
+变更是为了让「一行输出多个值」成为可能——旧版格式串把 `\n` 焊死在转换符后面，
+无论怎么写都只能每个值独占一行。
+
+**语义阶段的静态检查范围（2026-10-27 补充）**：
+
+| 检查项 | 结论 | 报错原文 |
+|---|---|---|
+| 函数实参个数 | **检查** | `function '<名>' expects N argument(s), but M given` |
+| `void` 函数带值返回 | **检查** | `void function '<名>' cannot return a value` |
+| 非 `void` 函数裸 `return;` | **检查** | `non-void function '<名>' must return a value` |
+| `int` 函数返回 `float` | 只告警（Q9 截断） | `implicit conversion from float to int (truncated, Q9)` |
+| 顶层（函数体外）裸 `return;` | **不检查** | — |
+| 数组下标越界 | **不检查** | — |
+
+实参个数需要**两遍**：`SemanticAnalyzer::Analyze` 先调 `CollectSignatures(root)` 收集全部函数签名，
+再 `Visit(root)`。MiniC 允许「函数体里调用后面才定义的函数」，边遍历边登记会漏掉后向调用。
+
 ---
 
 ## 9. 设计决策说明

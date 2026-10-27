@@ -16,8 +16,8 @@ int main() {
         a[i] = i * i;
         i = i + 1;
     }
-    print(a[3]);
-    print(fact(5));
-    print(1 + 2 * 3);
+    print(a[3]); print('\n');
+    print(fact(5)); print('\n');
+    print(1 + 2 * 3); print('\n');
     return 0;
 }

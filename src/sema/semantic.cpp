@@ -22,7 +22,32 @@ void SemanticAnalyzer::Analyze(const ASTNodePtr& root)
     if (!root) return;
     // 全局作用域已由 SymbolTable 构造函数建立，这里不能再 EnterScope，
     // 否则全局变量会被记成 scope 2，与表头显示的 scope 1 不符。
+    //
+    // 先把全部函数签名扫一遍再遍历：MiniC 允许「函数体里调用后面才定义的函数」，
+    // 若边遍历边登记签名，前面的调用就查不到形参个数，实参个数检查会漏。
+    CollectSignatures(root);
     Visit(root);
+}
+
+void SemanticAnalyzer::CollectSignatures(const ASTNodePtr& root)
+{
+    m_FuncSigs.clear();
+    if (!root || root->m_kind != ASTNodeKind::AST_NODE_PROGRAM) return;
+
+    for (const auto& c : root->m_children)
+    {
+        if (!c || c->m_kind != ASTNodeKind::AST_NODE_FUNCDEF) continue;
+        auto* fn = static_cast<const FuncDefNode*>(c.get());
+
+        std::vector<TokenType> types;
+        for (const auto& p : fn->m_children)
+        {
+            if (p && p->m_kind == ASTNodeKind::AST_NODE_PARAM)
+                types.push_back(static_cast<const ParamNode*>(p.get())->m_type);
+        }
+        // 重名函数取第一次出现的签名（同名函数重复定义由 RecVar 报错，这里不重复报）
+        m_FuncSigs.emplace(fn->m_szName, std::move(types));
+    }
 }
 
 // ---------------------------------------------------------------- 分派
@@ -104,9 +129,11 @@ TokenType SemanticAnalyzer::Visit(const ASTNodePtr& node)
     }
 
     case ASTNodeKind::AST_NODE_PRINT:
-    case ASTNodeKind::AST_NODE_RETURN:
         for (const auto& c : node->m_children) Visit(c);
         return TokenType::TOKEN_NONE;
+
+    case ASTNodeKind::AST_NODE_RETURN:
+        return VisitReturn(static_cast<ReturnNode*>(node.get()));
 
     case ASTNodeKind::AST_NODE_EMPTY:
     case ASTNodeKind::AST_NODE_PARAM:   // 形参在 VisitFuncDef 里处理
@@ -175,6 +202,12 @@ void SemanticAnalyzer::VisitFuncDef(FuncDefNode* fn)
 
     m_symtab.EnterScope(ScopeType::SCOPE_FUNCTION);
 
+    // 记录当前函数的返回类型，供 return 语句检查（退出时恢复，支持将来的嵌套场景）
+    const TokenType savedRetType = m_curRetType;
+    const std::string savedFuncName = m_szCurFunc;
+    m_curRetType = fn->m_retType;
+    m_szCurFunc  = fn->m_szName;
+
     int pos = 1;
     for (const auto& c : fn->m_children)
     {
@@ -203,6 +236,8 @@ void SemanticAnalyzer::VisitFuncDef(FuncDefNode* fn)
     }
 
     m_symtab.ExitScope();
+    m_curRetType = savedRetType;
+    m_szCurFunc  = savedFuncName;
     --m_iFuncDepth;
 }
 
@@ -231,6 +266,46 @@ void SemanticAnalyzer::VisitAssign(AssignNode* assign)
 }
 
 // ---------------------------------------------------------------- 表达式
+
+TokenType SemanticAnalyzer::VisitReturn(ReturnNode* ret)
+{
+    // 表达式语义：先把返回表达式求值，再做返回类型兼容检查。
+    // 检查规则（挑战版第 ⑥ 项）：
+    //   · 非 void 函数必须带返回值：int f() { return; } → 报错
+    //   · void 函数不能带返回值：void f() { return 1; } → 报错
+    //   · 有返回值时按 §8.1 判可赋值性，复用 CheckAssign（含 Q9 的 float→int 告警）
+    // 顶层（函数外）的 return 不参与检查：MiniC 允许脚本式顶层语句，
+    // tests/parser/return_stmt.mc 与若干 codegen 用例都在顶层写了裸 return;
+    if (!ret) return TokenType::TOKEN_NONE;
+
+    const bool bHasValue = !ret->m_children.empty() && ret->m_children[0];
+    TokenType vt = TokenType::TOKEN_NONE;
+    if (bHasValue) vt = Visit(ret->m_children[0]);
+
+    if (m_iFuncDepth <= 0) return TokenType::TOKEN_NONE;   // 顶层 return，不检查
+
+    if (!bHasValue)
+    {
+        if (m_curRetType != TokenType::TOKEN_VOID && m_curRetType != TokenType::TOKEN_NONE)
+        {
+            EmitError("non-void function '" + m_szCurFunc +
+                      "' must return a value", ret->m_loc);
+        }
+        return TokenType::TOKEN_NONE;
+    }
+
+    if (m_curRetType == TokenType::TOKEN_VOID)
+    {
+        EmitError("void function '" + m_szCurFunc +
+                  "' cannot return a value", ret->m_loc);
+        return TokenType::TOKEN_NONE;
+    }
+
+    if (vt != TokenType::TOKEN_NONE)
+        m_symtab.CheckAssign(m_curRetType, vt, ret->m_loc.m_iRow, ret->m_loc.m_iCol);
+
+    return TokenType::TOKEN_NONE;
+}
 
 TokenType SemanticAnalyzer::VisitIdent(IdentNode* ident)
 {
@@ -343,6 +418,27 @@ TokenType SemanticAnalyzer::VisitCall(CallNode* call)
     // children[1..] = 实参，逐个求值（顺带检查未声明/类型）
     for (std::size_t i = 1; i < call->m_children.size(); ++i)
         Visit(call->m_children[i]);
+
+    // ---- 实参个数检查（挑战版第 ⑥ 项）----
+    // 只对被调者是「已声明的函数」生效：标识符可能解析到普通变量，
+    // 那种情况 VisitIdent 已经报 undefined identifier 或直接拿到变量类型，
+    // 拿不到签名就不做个数检查（宁可不报，也不报错人）。
+    if (call->m_children[0] && call->m_children[0]->m_kind == ASTNodeKind::AST_NODE_IDENT)
+    {
+        auto* id = static_cast<IdentNode*>(call->m_children[0].get());
+        const auto it = m_FuncSigs.find(id->m_szName);
+        if (it != m_FuncSigs.end())
+        {
+            const std::size_t iWant = it->second.size();
+            const std::size_t iGot  = call->m_children.size() - 1;
+            if (iWant != iGot)
+            {
+                EmitError("function '" + id->m_szName + "' expects " +
+                          std::to_string(iWant) + " argument(s), but " +
+                          std::to_string(iGot) + " given", call->m_loc);
+            }
+        }
+    }
 
     return ft;
 }

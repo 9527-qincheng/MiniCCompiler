@@ -1,0 +1,1 @@
+error: 7:12: function 'add' expects 2 argument(s), but 3 given

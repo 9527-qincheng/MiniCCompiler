@@ -82,7 +82,7 @@ MiniCCompiler/
 │   ├── interface.md                            # 接口备忘 + 冲突记录（模块接口定义）
 │   ├── MiniC编译器设计文档_v4.0_挑战版LL1.md     # 系统架构设计文档：文法/LL(1) 表/接口/语义动作
 │   ├── MiniC编译器数据结构设计.md               # 数据结构设计：多表符号表/四元式/AST/指令模板
-│   ├── MiniC语法支持清单.md                     # 语言规格：102 条产生式实测支持矩阵、与 C 的 16 条差异
+│   ├── MiniC语法支持清单.md                     # 语言规格：102 条产生式实测支持矩阵、与 C 的 19 条差异
 │   ├── 词法模块待改进清单.md                    # 词法模块实测复审记录（4 项问题的修复依据）
 │   ├── stage5_ast_review.md                     # 阶段⑤ AST 形状评审
 │   ├── 验收报告.md                              # 测试验收报告：交付物核对/五模块记录/11 套回归/偏差与遗留
@@ -407,7 +407,7 @@ pwsh -File tests/run_quad_tests.ps1 -Case arith_int
 pwsh -File tests/run_quad_tests.ps1 -Update
 ```
 
-- 用例输入：`tests/quad/*.mc` 共 16 条；期望序列：`tests/quad/<case>.expected.quad.txt`
+- 用例输入：`tests/quad/*.mc` 共 17 条；期望序列：`tests/quad/<case>.expected.quad.txt`
 - 校验收敛到 `.quad.txt` 的**结构**：表达式求值顺序、临时变量编号（`_T1`/`_T2`…）、
   标号编号（`L1`/`L2`…）、短路展开形态、`ITOF`/`FTOI` 插入位置、`PARA`/`CALL` 的相对次序。
   这些在端到端测试里完全测不出来（只比 stdout，结构变了照样输出对）
@@ -544,8 +544,9 @@ MiniC 是教学子集语言，下列写法**不在文法/语义支持范围内**
 - 数组长度只能是整型常量（`int b[3+5];` 报 `expected ']'`）。
 - 逻辑运算符 `&&` `||` 要求 `bool` 操作数（`int` 直接参与会报 `logical operators require bool operands`）。
 - `char` **可以**参与算术与关系运算（按整型提升，C 语义）：`c + 1` 得 `int`、`c == 'x'` 得 `bool`、`c++` 合法；`bool` 仍不参与算术（报 `arithmetic operands must be numeric`）。
-- 语义阶段**不检查**：数组下标越界、函数实参个数、`return` 类型匹配。
+- 语义阶段**检查**：函数实参个数、`return` 类型（void 带值、非 void 裸 return 都报错）；**不检查**：数组下标越界。
+- `print` **不自动换行**：连续两条 `print` 接在同一行，要换行写 `print('\n');`。
 - 浮点字面量：`1.` 合法、`.5` 不合法；不支持 `0x1F` 十六进制与 `1e5` 指数形式。
 
-完整语法支持清单（102 条产生式、类型规则、与 C 的 16 条差异、报错速查、实测记录）见
+完整语法支持清单（102 条产生式、类型规则、与 C 的 19 条差异、报错速查、实测记录）见
 [docs/MiniC语法支持清单.md](docs/MiniC语法支持清单.md)。

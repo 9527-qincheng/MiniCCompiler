@@ -5,10 +5,10 @@ int b;
 int main() {
     a = 5;
     b = a++;
-    print(b);
-    print(a);
+    print(b); print('\n');
+    print(a); print('\n');
     b = ++a;
-    print(b);
-    print(a);
+    print(b); print('\n');
+    print(a); print('\n');
     return 0;
 }

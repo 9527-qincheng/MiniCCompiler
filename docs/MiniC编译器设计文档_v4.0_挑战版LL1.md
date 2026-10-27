@@ -1297,7 +1297,8 @@ extern const int g_PredictTable[MAX_NT][MAX_TERM];
 
 1. 基类由**严格二叉树**（`m_left`/`m_right`）改为**任意子节点** `std::vector<ASTNodePtr> m_children`；
    （保留 `m_left`/`m_right` 作为便捷访问器会造成二义，故统一用 children；二元运算节点约定 `children[0]`/`children[1]`）
-2. `ASTNodeKind` 由 7 个扩展为 20 个；
+2. `ASTNodeKind` 由 7 个扩展为 **18 个**（下列枚举里除 `AST_NODE_NONE` 哨兵外共 17 项；
+   实现时另按 02 任务书 §5.2 增加 `AST_NODE_ARRAYDECL`，故 `src/parser/ast.h` 现为 **19 项枚举 / 18 类在用节点**）；
 3. 新增节点类型（见下）。
 
 ```cpp
@@ -1319,11 +1320,12 @@ enum class ASTNodeKind
     AST_NODE_EMPTY,        // 【新增】空语句 ;
     /* 表达式 */
     AST_NODE_BINOP,        // 二元运算（+ - * / && || 关系）
-    AST_NODE_UNOP,         // 【新增】一元运算（! 取负）
+    AST_NODE_UNOP,         // 【新增】一元运算（! 取负、++ -- 前后缀）
     AST_NODE_NUM,          // 数值常量（整型/实型/字符/布尔统一）
     AST_NODE_IDENT,        // 标识符引用
     AST_NODE_INDEX,        // 【新增】数组下标 arr[i]
-    AST_NODE_CALL         // 【新增】函数调用 f(args)
+    AST_NODE_CALL,        // 【新增】函数调用 f(args)
+    AST_NODE_ARRAYDECL     // 【新增】数组声明（02 任务书 §5.2 要求，上列之外的第 18 类）
 };
 
 class ASTNode
@@ -1635,7 +1637,7 @@ minic <源文件> [--dump-tokens] [--dump-ast] [--dump-symtab] [--dump-quads] [-
 | 语句 | 仅赋值 | **赋值/if-else/while/print/return/块/空** |
 | Token 类型 | 24 个（含 `TOKEN_NONE`） | **43 个**（含 `TOKEN_NONE` 与 `TOKEN_STRING`）；其中**文法终结符 41 个**（不含 `TOKEN_NONE`，含 `TOKEN_EOF`＝`#`） |
 | 词法扫描 | 单字符运算符 | **双字符优先**（== != <= >= && \|\| ++ --） |
-| AST | 二叉树 + 7 类节点 | **多子节点 + 19 类节点**（`++`/`--` 复用 `UnOp`，靠 `m_bPostfix` 区分前后缀） |
+| AST | 二叉树 + 7 类节点 | **多子节点 + 18 类节点**（含 `ARRAYDECL`；`++`/`--` 复用 `UnOp`，靠 `m_bPostfix` 区分前后缀） |
 | 作用域 | 全局 / 函数 | **+ 块作用域** |
 | 四元式操作码 | 12 个 | **35 个**（+关系/逻辑/数组/取负/转换；`++`/`--` 复用 ADD/SUB，不新增操作码） |
 | 交付物 | Token/AST/符号表/四元式 | **+ 文法表/编码表/First/Follow/Select/预测分析表/分析过程** |
@@ -1759,7 +1761,7 @@ minic <源文件> [--dump-tokens] [--dump-ast] [--dump-symtab] [--dump-quads] [-
 | 4 | `src/parser/grammar.h/.cpp` | **新增**：102 条产生式表、编码表、First/Follow/Select、预测分析表 | 新增 |
 | 5 | `src/parser/parser.h` | 增分析栈、trace、`GetTrace()`；公开签名不变 | 变更 |
 | 6 | `src/parser/parser.cpp` | 递归下降 → **预测分析表驱动** + 错误恢复 | 破坏性 |
-| 7 | `src/parser/ast.h/.cpp` | 二叉树 → 多子节点；`ASTNodeKind` 扩至 20 类；新增 8 类节点与 Print | 破坏性 |
+| 7 | `src/parser/ast.h/.cpp` | 二叉树 → 多子节点；`ASTNodeKind` 扩至 19 项（18 类在用）；新增 8 类节点与 Print | 破坏性 |
 | 8 | `src/symbol/symbol.h/.cpp` | `ScopeType` 加 `SCOPE_BLOCK`；`VarEntry` 加数组字段；`RecArray`；查找改作用域链；`CheckAssign` 扩展 | 变更 |
 | 9 | `src/sema/ir.h/.cpp` | `QuadOp` 扩至 35 个；`Generate()` 按新 AST 实现；标号回填 | 变更 |
 | 10 | `src/codegen/codegen.cpp` | `IRtoASM` 支持比较跳转/数组/函数 | 变更 |

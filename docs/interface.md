@@ -210,7 +210,8 @@
         - 后缀：`后缀表达式1 → ++ 后缀表达式1`（95）、`--`（96）——与 `[]` `()` 同层；
         - 语句：`标识符后续 → ++ ;`（97/98，`a++;`）、`语句 → ++ 一元表达式 ;`（99/100，`++a;`）、
           `赋值 → ++ ;`（101/102，`arr[i]++;`）。
-      - **AST**：**不新增节点类别**（仍 19 类），复用 `UnOpNode`；新增 `bool m_bPostfix` 区分前后缀，
+      - **AST**：**不新增节点类别**（仍 18 类，`ASTNodeKind` 枚举 19 项含 `AST_NODE_NONE` 哨兵），
+        复用 `UnOpNode`；新增 `bool m_bPostfix` 区分前后缀，
         构造函数签名扩为 `UnOpNode(TokenType op, ASTNodePtr operand, const LineInfo& loc, bool isPostfix = false)`
         （**带默认值，既有调用点无需改动**）。`FillOpenBase` 的下钻条件补上 `AST_NODE_UNOP`，
         否则 `arr[i]++` 的数组基址填不进去。

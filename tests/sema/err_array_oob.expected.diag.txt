@@ -1,0 +1,2 @@
+error: 7:6: array subscript 5 is out of bounds (array 'a' has 3 element(s))
+error: 8:10: array subscript -1 is negative (array 'a' has 3 element(s))

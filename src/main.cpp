@@ -12,6 +12,7 @@
 #include "sema/ir.h"
 #include "sema/semantic.h"
 #include "codegen/codegen.h"
+#include "sema/optimizer.h"
 
 #include <fstream>
 #include <iostream>
@@ -22,15 +23,26 @@
 namespace
 {
 
+// 版本信息：--version / -V 输出。语义版本号手工维护，与 docs/ 里的
+// 「挑战版 v4.0」对齐；BUILD 日期不写死，避免每次改代码都要动这里。
+const char* const kVersion = "MiniC Compiler 4.0 (challenge, x86-64)";
+
 void PrintUsage(std::ostream& os)
 {
-    os << "Usage: minic <source.mc> [--dump-tokens] [--dump-ast] [--dump-parse] "
-          "[--dump-symtab] [--dump-quads]\n";
+    os << "Usage: minic <source.mc> [options]\n";
+    os << "\nOptions:\n";
     os << "  --dump-tokens : write <src>.token.txt\n";
     os << "  --dump-ast    : write <src>.ast.txt\n";
     os << "  --dump-parse  : write <src>.parse.txt (LL(1) 预测分析过程, §4.11)\n";
     os << "  --dump-symtab : write <src>.sym.txt\n";
     os << "  --dump-quads  : write <src>.quad.txt\n";
+    os << "  -O, --optimize: run peephole optimization on the quads before\n";
+    os << "                  code generation (constant-branch folding, dead\n";
+    os << "                  code / temp / label elimination)\n";
+    os << "  -h, --help    : print this help and exit\n";
+    os << "  -V, --version : print version and exit\n";
+    os << "\nThe target .asm is always written when compilation succeeds.\n";
+    os << "Exit code: 0 on success, 1 on any diagnostic error.\n";
 }
 
 // 源文件去扩展名（如 tests/test.mc -> tests/test）
@@ -136,12 +148,29 @@ int main(int argc, char* argv[])
         return 1;
     }
 
+    // -h / --help / -V / --version 不需要源文件，单独先处理
+    for (int i = 1; i < argc; ++i)
+    {
+        const std::string arg = argv[i];
+        if (arg == "-h" || arg == "--help")
+        {
+            PrintUsage(std::cout);
+            return 0;
+        }
+        if (arg == "-V" || arg == "--version")
+        {
+            std::cout << kVersion << "\n";
+            return 0;
+        }
+    }
+
     const std::string srcFile = argv[1];
     bool dumpTokens = false;
     bool dumpAst = false;
     bool dumpParse = false;
     bool dumpSymtab = false;
     bool dumpQuads = false;
+    bool optimize = false;
 
     for (int i = 2; i < argc; ++i)
     {
@@ -151,6 +180,7 @@ int main(int argc, char* argv[])
         else if (arg == "--dump-parse")  { dumpParse = true; }
         else if (arg == "--dump-symtab") { dumpSymtab = true; }
         else if (arg == "--dump-quads")  { dumpQuads = true; }
+        else if (arg == "-O" || arg == "--optimize") { optimize = true; }
         else
         {
             std::cerr << "minic: error: unknown option '" << arg << "'\n";
@@ -177,6 +207,8 @@ int main(int argc, char* argv[])
 
     // ---------- 3. 语法分析：CParser.Parse（§4.10 LL(1) 预测分析表驱动） ----------
     CParser parser(lexer.GetTokenList());
+    // 轨迹记录是 O(步数 × 输入长度) 的开销，只有真的要写 .parse.txt 时才打开。
+    parser.SetTraceEnabled(dumpParse);
     ASTNodePtr root = parser.Parse();
 
     if (dumpParse)
@@ -209,16 +241,38 @@ int main(int argc, char* argv[])
         sema.Analyze(root);
     }
     g_bErrorsMayBeSecondary = false;
-    if (dumpSymtab)
-    {
-        std::ostringstream oss;
-        symtab.DumpSymTab(oss);
-        WriteTextFile(base + ".sym.txt", oss.str());
-    }
 
     // ---------- 5. 中间代码：IRGenerator.Generate（阶段 07 已实现） ----------
     IRGenerator ir(symtab);
     ir.Generate(root);
+
+    // ---------- 5.5 可选优化（-O / --optimize） ----------
+    // 默认关闭：不加 -O 时 .quad.txt / .asm / 运行 stdout 与优化前逐字一致，
+    // 全部既有基线不需要动。打开后只做「删掉不改变行为的东西」的窥孔优化：
+    // 常量条件跳转、不可达代码、空跳、死临时量、死标号。
+    minic_opt::OptStats optStats;
+    if (optimize && g_ErrorList.empty())
+    {
+        // 全局（顶层语句）序列与每个过程的序列分别优化。
+        // 注意是原地改 m_Codes：CCodeGen 构造时绑的就是这个成员的 const 引用，
+        // 若换成一个新 vector，代码生成会读到优化前的旧内容。
+        minic_opt::Optimize(ir.GetCodesMutable(), symtab, optStats);
+        for (auto& p : symtab.m_ProcInfoTbl)
+        {
+            if (p.m_Codes.empty())
+            {
+                continue;
+            }
+            minic_opt::Optimize(p.m_Codes, symtab, optStats);
+        }
+        std::cerr << "minic: -O removed " << optStats.Total()
+                  << " redundant quad(s) [branch " << optStats.iFoldedBranch
+                  << ", unreachable " << optStats.iUnreachable
+                  << ", jumps " << optStats.iRedundantJump
+                  << ", temps " << optStats.iDeadTemp
+                  << ", labels " << optStats.iDeadLabel << "]\n";
+    }
+
     if (dumpQuads)
     {
         std::ostringstream oss;
@@ -235,6 +289,15 @@ int main(int argc, char* argv[])
             oss << DumpQuadsText(ir, p.m_Codes);
         }
         WriteTextFile(base + ".quad.txt", oss.str());
+    }
+
+    // 符号表 dump 放在中间代码之后：标号表（-- Labels --）由 IR 阶段的
+    // LABEL 四元式登记，早于 IR 写出会永远是空节。其余各节在语义阶段就已定型。
+    if (dumpSymtab)
+    {
+        std::ostringstream oss;
+        symtab.DumpSymTab(oss);
+        WriteTextFile(base + ".sym.txt", oss.str());
     }
 
     // ---------- 6. 挑战版：CCodeGen.Generate 输出汇编文件 ----------
@@ -260,6 +323,13 @@ int main(int argc, char* argv[])
     // ---------- 7. 错误汇总：有错误按非零退出码结束 ----------
     if (!g_ErrorList.empty())
     {
+        if (g_iSuppressedErrors > 0)
+        {
+            std::cerr << "minic: ("
+                      << g_iSuppressedErrors
+                      << " more error(s) suppressed; limit is "
+                      << g_iMaxErrors << ")\n";
+        }
         std::cerr << "minic: " << g_ErrorList.size()
                   << " error(s) found, compilation failed\n";
         return 1;

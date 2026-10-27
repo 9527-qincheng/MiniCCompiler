@@ -122,6 +122,22 @@ struct CompileError
 extern std::vector<CompileError> g_ErrorList;
 void EmitError(const std::string& msg, const LineInfo& loc);
 
+// 错误条数上限。超过之后 EmitError 不再逐条打印，只在最后汇总时说明
+// 「已省略 N 条」。取 100 的理由：仓库里错误最多的基线也就 4 条，
+// 100 条足够把一份写得很烂的源文件的真问题都列出来；
+// 而它挡住的场景是「一个特性缺失导致整份文件每个语句都报一次」——
+// 例如写 for 循环的程序会连报几十条同源错误，刷屏之后反而看不见第一个。
+// 0 或负数表示不限制。
+extern int g_iMaxErrors;
+
+// 已达上限而被丢弃的错误条数（供 main 在汇总里补一句说明）
+extern int g_iSuppressedErrors;
+
+// 语义阶段的「非致命诊断」：只打到 stderr，不进 g_ErrorList，
+// 因此不影响退出码（退出码仍由 g_ErrorList 是否为空决定）。
+// 输出格式与 EmitError 对称，便于回归 runner 用同一条正则收集。
+void EmitWarning(const std::string& msg, const LineInfo& loc);
+
 // 语义阶段的诊断是不是在「语法已经出错」之后才产生的。
 // 语法错会让 AST 残缺（例如漏一个分号，后面的声明整段没建成节点），此时硬跑
 // 语义会额外报出 "undefined identifier" 之类的次生错误。main 在调用

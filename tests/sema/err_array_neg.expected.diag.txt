@@ -1,0 +1,1 @@
+error: 5:6: array subscript -1 is negative (array 'a' has 3 element(s))

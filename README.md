@@ -71,7 +71,7 @@ MiniCCompiler/
 │   ├── run_parser_unit.ps1        # Parser 单元测试
 │   ├── run_symbol_tests.ps1       # 符号表作用域链断言
 │   ├── run_symtab_tests.ps1       # 符号表 DumpSymTab 回归
-│   ├── run_sema_tests.ps1         # 语义诊断回归（19 例，含警告与多错并报）
+│   ├── run_sema_tests.ps1         # 语义诊断回归（27 例，含警告与多错并报）
 │   ├── run_quad_tests.ps1         # 四元式序列回归（18 例）
 │   ├── sema/                      # 语义用例 *.mc + *.expected.diag.txt
 │   ├── quad/                      # 四元式用例 *.mc + *.expected.quad.txt
@@ -129,7 +129,9 @@ build.bat
 > `run_sema_tests.ps1`、`run_quad_tests.ps1`、`run_codegen_tests.ps1`，再跑 GUI 的
 > `gui\test\book-smoke.js`（语法手册数据与渲染）与 `gui\test\sample-smoke.js`（示例库数据与
 > 可编译性），两者都是纯 Node、不需要 Electron 窗口；PATH 里没有 `node` 时整体跳过，
-> 适合提交前自检与 CI。
+> 适合提交前自检与 CI。仓库已配 `.github/workflows/ci.yml`：在 `windows-latest` 上装
+> MSYS2 的 MinGW-w64，跑同一套 `build.bat test`，另加六份产物节标题核对与
+> `-O` 语义一致性冒烟（优化前后 stdout 与退出码必须一致），失败时上传产物供排查。
 > 九个编译阶段各有自己的回归网：词法比 `.token.txt`、语法比 `.ast.txt`/错误消息、
 > 符号表比 `.sym.txt`、语义比 stderr 诊断（含行列号）、中间代码比 `.quad.txt`、
 > 目标代码是唯一走"汇编→链接→运行→比 stdout"的端到端。
@@ -215,11 +217,18 @@ build\minic.exe tests\test.mc --dump-tokens --dump-ast --dump-symtab --dump-quad
 | `--dump-parse` | `tests/test.parse.txt` | 已实现（分析栈/剩余输入/动作 逐步轨迹，对齐设计文档 §4.11） |
 | `--dump-symtab` | `tests/test.sym.txt` | 已实现（语义分析填充的多表符号表） |
 | `--dump-quads` | `tests/test.quad.txt` | 已实现（四元式，含顶层代码与各函数过程） |
+| `-O` / `--optimize` | （无独立产物） | 四元式窥孔优化：常量条件跳转折叠 / 删不可达 / 删空跳 / 死临时量与死标号；**默认关闭**，关时产物与未加此选项完全一致 |
+| `-h` / `--help` | stdout | 打印用法后退出码 0 |
+| `-V` / `--version` | stdout | 打印 `MiniC Compiler 4.0 (challenge, x86-64)` 后退出码 0 |
 
 - 默认同时生成 `<源文件名>.asm`（x86-64 / GNU as 汇编）。
 - 汇编产物可直接交给 gcc 汇编链接后运行：`Copy-Item tests\test.asm tests\test.s; gcc -x assembler -o tests\test.exe tests\test.s; .\tests\test.exe`
   （Windows 上 gcc 不认 `.asm` 后缀，须先改名为 `.s` 或用 `-x assembler` 显式指定语言）。
 - 出错时退出码为 1（错误含行列号，汇总于 `g_ErrorList`）；成功退出码 0。
+- 错误条数上限 100：超出的错误仍计入 `g_ErrorList`（退出码与 `N error(s) found` 计数不变），
+  只是不再逐条打到 stderr，汇总行前补 `minic: (N more error(s) suppressed; limit is 100)`。
+- 非致命诊断走 `minic: warning: 行:列: 消息`，**不进 `g_ErrorList`**，因此不改变退出码
+  （数组名不带下标、常量下标越界是**错误**；非 void 函数缺 `return`、无 `main` 且无顶层语句是**警告**）。
 
 ### Token 输出示例（tests/test.mc）
 
@@ -552,7 +561,11 @@ MiniC 是教学子集语言，下列写法**不在文法/语义支持范围内**
 - 逻辑运算符 `&&` `||` 要求 `bool` 操作数（`int` 直接参与会报 `logical operators require bool operands`）。
 - `char` **可以**参与算术与关系运算（按整型提升，C 语义）：`c + 1` 得 `int`、`c == 'x'` 得 `bool`、`c++` 合法；`bool` 参与**比较**也合法（`a == b`、`a < b == b < c` 都能写），但仍不参与算术（报 `arithmetic operands must be numeric`）。
 - 关系运算符**已按 C++ 分层**：`<` `<=` `>` `>=` 高于 `==` `!=`，所以 `a == b < c` 是 `a == (b < c)`、`a < b == c` 是 `(a < b) == c`；`<` 与 `<=` 之间仍同级左结合（`a < b <= c` = `(a < b) <= c`）。
-- 语义阶段**检查**：函数实参个数、`return` 类型（void 带值、非 void 裸 return 都报错）；**不检查**：数组下标越界。
+- 语义阶段**检查**：函数实参个数、`return` 类型（void 带值、非 void 裸 return 都报错）、
+  数组名不带下标使用、**常量**下标越界（`int a[3]; a[5]=1;` 报 `array subscript 5 is out of bounds`）、
+  非 void 函数缺 `return`（**警告**）、无 `main` 且无顶层语句（**警告**）。
+  **不检查**：变量下标越界（静态不可知）、实参类型不匹配（静默截断）、
+  `if`/`while` 条件为 float、不可达代码与未使用变量、整型溢出字面量。
 - `print` **不自动换行**：连续两条 `print` 接在同一行，要换行写 `print('\n');`。
 - 浮点字面量：`1.` 合法、`.5` 不合法；不支持 `0x1F` 十六进制与 `1e5` 指数形式。
 

@@ -8,18 +8,21 @@
 | 模块 | 对外接口 | 数据传递 |
 |---|---|---|
 | CLex | `bool OpenSource(const string&)` / `bool Run()` / `const TokenList& GetTokenList() const` | TokenList → CParser |
-| CParser | `CParser(const TokenList&)` / `ASTNodePtr Parse()` / `bool HasError() const` / `const vector<CompileError>& GetErrors() const` / `const vector<ParseStep>& GetTrace() const`（阶段④ 新增，供 `--dump-parse`） | ASTNodePtr → 语义/IR |
-| SymbolTable | `EnterScope(ScopeType)` / `ExitScope()` / `RecVar(name,type,line,col)→VarEntry*` / `RecArray(name,type,size,line,col)→VarEntry*`（阶段⑥ 新增） / `RecConst(name,type,value,line,col)→ConstEntry*` / `SearchVar/SearchConst` / `BackfillConst(iConstIdx,name,type)` / `CheckAssign(lhs,rhs,line,col)` / `DumpSymTab(os)` / `RecBuiltinTypes()`（2026-10-27 新增，登记 int/float/bool/char/void 五行） | 符号信息 → IRGenerator |
+| CParser | `CParser(const TokenList&)` / `ASTNodePtr Parse()` / `bool HasError() const` / `const vector<CompileError>& GetErrors() const` / `const vector<ParseStep>& GetTrace() const`（阶段④ 新增，供 `--dump-parse`） / `void SetTraceEnabled(bool)`（2026-10-27 新增，默认关；不开时 `RecordStep` 直接返回） | ASTNodePtr → 语义/IR |
+| SymbolTable | `EnterScope(ScopeType)` / `ExitScope()` / `RecVar(name,type,line,col)→VarEntry*` / `RecArray(name,type,size,line,col)→VarEntry*`（阶段⑥ 新增） / `RecConst(name,type,value,line,col)→ConstEntry*` / `SearchVar/SearchConst` / `BackfillConst(iConstIdx,name,type)` / `CheckAssign(lhs,rhs,line,col)` / `DumpSymTab(os)` / `RecBuiltinTypes()`（2026-10-27 新增，登记 int/float/bool/char/void 五行） / `RecArrayType(name,baseType,size)→TypeEntry*`（2026-10-27 新增，登记 `INT[5]` 这类数组类型行） | 符号信息 → IRGenerator |
 | SemanticAnalyzer | `explicit SemanticAnalyzer(SymbolTable&)` / `void Analyze(const ASTNodePtr&)`（阶段⑥ 新增，遍历 AST 填充符号表；不新增独立产物） | ASTNodePtr → 符号表 |
-| IRGenerator | `explicit IRGenerator(SymbolTable&)` / `Generate(const ASTNodePtr&)` / `GetTmpVar(TokenType)` / `GetTmpLabel()` / `EmitIR(op,op1,op2,rslt)` / `GetCodes() const` / `OperandToString(op)` | CodeList → CCodeGen / --dump-quads |
+| IRGenerator | `explicit IRGenerator(SymbolTable&)` / `Generate(const ASTNodePtr&)` / `GetTmpVar(TokenType)` / `GetTmpLabel()` / `EmitIR(op,op1,op2,rslt)` / `GetCodes() const` / `GetCodesMutable()`（2026-10-27 新增，供 `-O` 原地改写） / `OperandToString(op)` | CodeList → CCodeGen / --dump-quads |
 | CCodeGen | `explicit CCodeGen(const CodeList&)` / `void BindSymTab(const SymbolTable&)` / `bool Generate(AsmOutput&)` | 汇编输出（挑战版） |
+| minic_opt（新增） | `void Optimize(CodeList&, const SymbolTable&, OptStats&)`（2026-10-27 新增，仅 `-O` 时调用；四轮窥孔，原地改写 CodeList） | CodeList 原地改写 → CCodeGen |
 
 ## 二、main 约定（第 6.7 节）
 
-- 命令行：`minic <源文件> [--dump-tokens] [--dump-ast] [--dump-symtab] [--dump-quads] [--dump-parse]`
+- 命令行：`minic <源文件> [--dump-tokens] [--dump-ast] [--dump-symtab] [--dump-quads] [--dump-parse] [-O|--optimize] [-h|--help] [-V|--version]`（后三项 2026-10-27 新增）
 - 产物：`<源文件名>.token.txt / .ast.txt / .sym.txt / .quad.txt / .parse.txt`（与源文件同目录）+ `<源文件名>.asm`
 - 流水线：CLex.Run → CParser.Parse → SymbolTable 语义 → IRGenerator.Generate → CCodeGen.Generate
 - 错误：g_ErrorList（含行列号），非零退出码；成功退出码 0
+- 错误条数上限：`g_iMaxErrors`（默认 100），超出的仍进 `g_ErrorList`（退出码与计数不变）但不打 stderr，汇总行前补 `minic: (N more error(s) suppressed; limit is 100)`
+- 非致命诊断：`EmitWarning()`（2026-10-27 新增）只打 stderr、**不进 `g_ErrorList`**，因此不影响退出码；语义用例用 `/* expect: warn:N */` 断言它
 
 ## 三、冲突记录（未擅自变更接口，待确认）
 
@@ -385,7 +388,7 @@
        与 `g++` 相同。
      - **回归**：quad 18 个基线**全部重刷**（操作码文本从 `(=, +, -` 变成
        `(ASSIGN_4, ADD_4, SUB_4`），`codegen` 30 例**零改动**（它比对的是运行输出不是四元式）、
-       parser 50 / sema 19 不受影响。`build.bat test` 11 套全绿。
+       parser 50 / sema 27（当时是 19，后续 C 档新增 8 例）不受影响。`build.bat test` 11 套全绿。
 
  26. **类型表启用：`TypeEntry` 加字节宽度 + `RecBuiltinTypes()`（2026-10-27，鲍方乐）**：
      `--dump-symtab` 的 `-- Types --` 节此前恒为空 —— `SymbolTable::RecType` 与
@@ -426,12 +429,105 @@
      - **验证**：`tests/test.sym.txt` 基线刷新（9 行 → 14 行）；
        char 数组端到端用例（全局 `char g[9]`、局部 `char a[9]` / `char b[5]` 与 `int c`
        混排）运行输出 `AZpq|777|aaaaaaaaa|777` 与预期一致，未出现元素互相踩踏；
-       `build.bat test` 11 套全绿（parser 50 / sema 19 / quad 18 / codegen 30 /
+       `build.bat test` 11 套全绿（parser 50 / sema 27 / quad 18 / codegen 30 /
        symtab / book-smoke / sample-smoke）。
      - **文档同步**：`docs/验收报告.md` 的 `.sym.txt` 样例与产物尺寸（208 → 318 B、
        94 → 106 B、71 行 66 步 → 73 行 68 步）、`docs/项目总结.md` 的产物表、
        `README.md` 的 SymbolTable 模块状态行、`docs/MiniC编译器数据结构设计.md` 的
        `TypeEntry` 与「三张表」两处说明。
+
+ 27. **语法分析轨迹改为按需记录（2026-10-27，鲍方乐）——O(n²) 性能缺陷修复**：
+      `CParser::RecordStep` 原来无条件执行，每步都调 `StackText()`（遍历整个分析栈）
+      与 `InputText()`（遍历**剩余全部 Token**）拼字符串，而它有三个调用点、每 Token
+      至少触发 3 次 —— 整体是 O(n²) 的字符串构造。
+      - **新增** `void SetTraceEnabled(bool bOn)`（`src/parser/parser.h`），
+        私有字段 `bool m_bTraceEnabled`（构造默认 `false`）；`RecordStep` 首行
+        `if (!m_bTraceEnabled) { return; }`。
+      - **调用点**：`src/main.cpp` 在建完 `CParser` 后 `parser.SetTraceEnabled(dumpParse);`
+        —— 只有真要写 `.parse.txt` 才打开。`--dump-parse` 之外的路径全免费。
+      - **防死循环改造**：`Parse()` 原来用 `m_trace.size() > kMaxSteps` 兜底，
+        轨迹关掉后该判断永远为假，改用独立计数器 `std::size_t iSteps`（`kMaxSteps` 仍为 1000000）。
+      - **实测**：1000 个空函数的源文件 **68 150 ms → 189 ms**（约 360 倍，且恢复线性：
+        100/200/400/1000 个函数分别 125 / 46 / 72 / 189 ms）。
+      - **产物不变**：`tests/parser/expected/ll1_411.parse.txt` 逐字一致（8212 字符）。
+
+ 28. **静态检查补四项（2026-10-27，鲍方乐）—— 均为新增诊断，不改任何已有签名**：
+      - **数组作用域**：`VisitIdent` 里若 `VarEntry::m_bIsArray` 为真且不带下标使用，
+        报 `'a' is an array; a subscript is required to read an element`。
+        `VisitIndex` 相应改为「基址是 IDENT 时直接返回元素类型」，不再二次 `Visit` 基址
+        （否则会被上一条自己报错）。**改写前 `b = a;` 静默取首元素，属长期未发现的语义漏洞。**
+      - **常量下标越界**：新增 `void CheckConstIndex(const VarEntry&, const std::string&, const ASTNodePtr&, const LineInfo&)`
+        （`src/sema/semantic.h`）。仅当下标是整型字面量时检查，报
+        `array subscript 5 is out of bounds (array 'a' has 3 element(s))` 或
+        `array subscript -1 is negative (...)`。变量下标不做（静态不可知）。
+      - **非 void 函数缺 return**：新增 `static bool HasReturnStmt(const ASTNodePtr&)`
+        （递归进 block/if/while，**不进嵌套函数定义**）。`VisitFuncDef` 收尾处若不满足则
+        `EmitWarning("non-void function 'f' has no return statement; ...")`。
+        **刻意做成警告而非错误**：`tests/codegen/ret_semantics.mc` 有两个用例专门固定
+        「落空出口返回 0」的既有语义，做成错误会直接推翻它。
+      - **无入口提醒**：`CollectSignatures` 里若函数名是 `main` 就置 `m_bHasMain`；
+        `Analyze` 末尾若「没有 main + 有函数定义 + 无顶层语句 + 语法零错误」则
+        `EmitWarning("no 'main' function and no top-level statements; ...")`。
+        **三个前提缺一不可**：`codegen.cpp` 在未定义 main 时用顶层语句合成入口是既有合法设计，
+        且全仓 127 个用例里有 10 个没有 main，做成硬错误会全部崩掉；
+        语法已失败时也不追这条（否则空文件、错误文件都会被刷一条）。
+      - **配套**：`src/lexer/token.{h,cpp}` 新增 `void EmitWarning(const std::string&, const LineInfo&)`，
+        格式 `minic: warning: 行:列: 消息`，**不进 `g_ErrorList`**（退出码仍为 0）。
+      - **新增 6 个用例**（`tests/sema/`）：`err_array_oob` / `err_array_name`（err）、
+        `ok_no_return_warn` / `ok_no_main_warn`（`warn:1`）、`ok_return_nested` /
+        `ok_no_main_toplevel`（ok，验证不误报）。**旧 19 个语义基线一个字都没改**，
+        证明没有引入任何新诊断。
+
+ 29. **符号表三张死表接上（2026-10-27，鲍方乐）**：
+      - **类型表补数组形状**：`TypeEntry` 的 `m_bIsArray` / `m_iArraySize` 此前**全仓零写入**，
+        `int arr[5]` 在 Types 节只显示一行 `int : INT  size 4`。新增
+        `TypeEntry* RecArrayType(const std::string& name, TokenType baseType, int size)`，
+        `VisitArrayDecl` 里按 `"INT[5]"` 这类名字登记，`m_iSize = SizeOfType(baseType) * size`
+        （与 codegen 的 `ElemBytesOfType × m_iArraySize` 同口径）。`DumpSymTab` 输出
+        `INT[5] : INT  array 5  size 20`。
+      - **新增 `-- Params (challenge) --` 节**：`m_ParamInfoTbl` 一直存在但**从来没被 dump 过**
+        （7 张表只出 5 张）。`ParamEntry` 没有「所属过程」字段，故按「声明行 ≤ 形参行且最近的
+        ProcEntry」回连过程名，输出 `add.x : INT  #1  @line 6 scope 2`。
+      - **`RecLabel` 接入**：该接口此前全仓零调用，`-- Labels --` 恒空，但 `while`/`if` 明明
+        产生 LABEL 四元式。改在 `IRGenerator::EmitIR(...)` 的五参重载里登记 ——
+        **注意标号在 `Op1` 不是 `Rslt`**（`EmitIR(QuadOp::Q_LABEL, Operand::Label(lMid), ...)`），
+        第一版写成 `rslt` 导致 Labels 节仍空。同时 `src/main.cpp` 把 `DumpSymTab` 整段
+        **从语义阶段之后移到中间代码之后**，否则标号还没登记就 dump 了。
+      - `DumpSymTab` 的 Labels 节改为**按标号号升序**输出（`std::sort`），格式 `L1  @line 16`。
+      - **新增第 2 个 symtab 用例** `tests/symtab_full.mc`（23 行，覆盖全局/局部数组、函数、
+        形参、while + if/else 标号）与基线 `tests/symtab_full.sym.txt`（37 行）；
+        `tests/run_symtab_tests.ps1` 从单用例改为 `$cases = @("test", "symtab_full")` 循环。
+        `tests/test.sym.txt` 从 14 行 318 B → 16 行 343 B（多一个空 Params 节）。
+
+ 30. **命令行增强：`-h` / `-V` / 错误上限（2026-10-27，鲍方乐）**：
+      - `-h|--help` 打完整用法并 `return 0`；`-V|--version` 打
+        `MiniC Compiler 4.0 (challenge, x86-64)` 并 `return 0`。
+        **两者都必须在把 `argv[1]` 当源文件打开之前处理**，否则 `minic --help`
+        会去打开一个叫 `--help` 的文件。
+      - 错误条数上限 `g_iMaxErrors = 100`（`src/lexer/token.{h,cpp}`）；超出的错误
+        **仍然 push_back 进 `g_ErrorList`**（退出码与 `N error(s) found` 计数都依赖它），
+        只是不再打 stderr；汇总行前补
+        `minic: (100 more error(s) suppressed; limit is 100)`。
+        **取 100 的依据**：全仓基线里错误最多的 `.err.txt` 只有 4 条，100 足够覆盖真问题，
+        只挡「同一个语法错连报几十条」的刷屏。
+
+ 31. **四元式窥孔优化 `-O / --optimize`（2026-10-27，鲍方乐）**：
+      新增 `src/sema/optimizer.{h,cpp}`（`namespace minic_opt`），
+      `void Optimize(CodeList& codes, const SymbolTable& symtab, OptStats& st)` 四轮原地改写：
+      ①常量条件跳转折叠（条件查 `m_ConstInfoTbl` 拿真实值，为整型 0 时 `Q_JNT`→`Q_JMP`、
+      `Q_JT`→删）②删不可达（块结束符之后到下一个 `Q_LABEL` 之前整段删）
+      ③空跳（`JMP L` 紧跟 `LABEL L` 删 JMP）④死临时量与死标号（先扫全段收集活跃集再删，
+      **收集时须排除 `Q_LABEL` 自身的 Op1**，否则标号永远删不掉）。
+      `main.cpp` 只加 `-O` 时，对 `ir.GetCodesMutable()` 与 `symtab.m_ProcInfoTbl` 各
+      `p.m_Codes` 逐个调用，并向 stderr 打
+      `minic: -O removed N redundant quad(s) [branch .., unreachable .., jumps .., temps .., labels ..]`。
+      - **最重要的一条约束**：判「后续不可达」时**只有 `Q_JMP` 与 `Q_RETV` 算块结束**，
+        **`Q_JT` / `Q_JNT` 绝不能算**。`JNT cond -> L` 是「条件为假才跳」，为真时继续往下走，
+        紧随其后的正是 `if` 的真分支。第一版把条件跳转也当转移，结果 `-O` 把真分支当死代码删掉 ——
+        全用例 sweep 里 16 个用例输出变化（`if_else` 从 `1 4` 变 `2 4`，`recur` / `user_main`
+        直接栈溢出 `-1073741571`）。修正后 89 个可编译用例 `-O` 前后 stdout 与退出码
+        **零差异**，`build.bat test` 11 套全绿（默认路径不优化，产物逐字不变）。
+      - 默认不优化，`.asm` 与四元式产物在无 `-O` 时与改动前完全一致。
 
 > 说明：本节第 8–10 条为 2026-10-13 阶段⑤ 收尾时同步；**下面的"四、词法识别集合"仍是 v3.1 骨架版内容**，
 > 词法 v4.0 的现状（17 个挑战版终结符等）见 `README.md` 的模块状态表与

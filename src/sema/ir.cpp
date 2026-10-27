@@ -331,9 +331,28 @@ void IRGenerator::EmitIR(QuadOp op, const Operand& op1, const Operand& op2,
     Quad q(op, op1, op2, rslt);
     q.m_loc = loc;
     m_Codes.push_back(q);
+
+    // 【2026-10-27 补全】标号表此前是死表：RecLabel 全仓零调用，
+    // 于是 --dump-symtab 的 -- Labels -- 节恒为空，而四元式里明明有 LABEL/JMP。
+    // 在每个 LABEL 四元式（标号定义点）登记一次，名字用 Lxx，与汇编里的 .Lcxx 对应。
+    // 注意 LABEL 的标号放在 Op1（见 GenStmt），不在 Rslt。
+    // GetTmpLabel 只发号不登记，因为那里拿不到源码位置。
+    if (op == QuadOp::Q_LABEL && op1.m_kind == OperandKind::OP_LABEL && op1.m_iLink > 0)
+    {
+        const std::string szName = "L" + std::to_string(op1.m_iLink);
+        if (m_symtab.SearchLabelInfoTbl(szName) == nullptr)
+        {
+            m_symtab.RecLabel(szName, op1.m_iLink, loc.m_iRow, loc.m_iCol);
+        }
+    }
 }
 
 const CodeList& IRGenerator::GetCodes() const
+{
+    return m_Codes;
+}
+
+CodeList& IRGenerator::GetCodesMutable()
 {
     return m_Codes;
 }

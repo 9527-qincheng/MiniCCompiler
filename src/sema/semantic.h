@@ -67,6 +67,25 @@ private:
     TokenType DeduceBinOp(TokenType op, TokenType lt, TokenType rt,
                           const LineInfo& loc);
 
+    // —— 【新增】静态检查辅助 ——
+    // 函数体里是否存在 return 语句（递归进 block/if/while，不进嵌套函数定义）。
+    // 用于「非 void 函数一条 return 都没有」的检查：这种函数必然走落空出口，
+    // 返回值是寄存器残值，属于典型的隐蔽 bug（tests/codegen/ret_semantics.mc
+    // 当年就是为了固定这段语义才写的）。
+    static bool  HasReturnStmt(const ASTNodePtr& node);
+
+    // 下标越界检查：下标是整型常量时，与数组声明的元素个数比较。
+    // 只在两边都确定时才检查，下标是变量就放过（那是运行期的事）。
+    void CheckConstIndex(const VarEntry& ve, const std::string& szName,
+                         const ASTNodePtr& indexExpr, const LineInfo& loc);
+
+    // 把「常量下标表达式」折叠成一个整数。
+    // 为什么要折叠而不是直接看 NumNode：`a[-1]` 的 -1 在 AST 里是
+    // UnOpNode(TOKEN_MINUS, NumNode(1))，不是 NumNode —— 只判 NumNode 会漏掉
+    // 负下标这条最容易写错的路径（实测过：`a[-1] = 1;` 曾静默通过）。
+    // 只认「数字字面量」与「一元负号套数字字面量」两种形态，其余一律返回 false。
+    static bool FoldConstIndex(const ASTNodePtr& expr, long long& out);
+
     // —— 函数签名表（实参个数检查用）——
     // 为什么不用 SymbolTable：ParamEntry 没有「所属过程」字段（symbol.cpp 顶部
     // 已注明这个已知限制），m_ParamInfoTbl 是一张扁平表，无法按函数名筛形参。
@@ -74,4 +93,7 @@ private:
     // 时签名还没登记的问题。
     std::map<std::string, std::vector<TokenType>> m_FuncSigs;
     void CollectSignatures(const ASTNodePtr& root);
+
+    // 【新增】本轮遍历是否遇到过叫 main 的函数定义（入口缺失检查用）
+    bool m_bHasMain = false;
 };

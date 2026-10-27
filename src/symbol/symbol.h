@@ -144,6 +144,11 @@ public:
     // （类型只内嵌在 VarEntry::m_type 里）。现在由 SemanticAnalyzer::Analyze
     // 入口调用一次，重复调用不会重复登记。
     void        RecBuiltinTypes();
+    // 【2026-10-27 补全】登记一个数组类型（name 形如 "int[5]"）。
+    // 填上 TypeEntry 的 m_bIsArray / m_iArraySize —— 这两个字段此前全仓零写入，
+    // 类型表里看不出数组形状。m_iSize 是整体字节数（元素宽度 × 元素个数），
+    // 与 codegen 的分配口径一致。同名只登记一次，返回已存在项。
+    TypeEntry*  RecArrayType(const std::string& name, TokenType baseType, int size);
     // 某个基础类型在内存里占几个字节（1/4/0），RecBuiltinTypes 与 codegen 共用此口径
     static int  SizeOfType(TokenType baseType);
     LabelEntry* RecLabel(const std::string& name, int labelIdx, int line, int col); // 登记标号（挑战版）

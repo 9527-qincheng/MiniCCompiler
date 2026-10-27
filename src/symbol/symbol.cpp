@@ -16,6 +16,7 @@
 
 #include "sema/ir.h"   // 完整 Quad 定义（ProcEntry::m_Codes 析构需要）
 
+#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 
@@ -193,8 +194,17 @@ void SymbolTable::DumpSymTab(std::ostream& os) const
     os << "-- Types --\n";
     for (const auto& t : m_TypeInfoTbl)
     {
-        os << "  " << t.m_szName << " : " << TokenTypeToString(t.m_baseType)
-           << "  size " << t.m_iSize << "\n";
+        os << "  " << t.m_szName << " : " << TokenTypeToString(t.m_baseType);
+        if (t.m_bIsArray)
+        {
+            // 数组类型：显式标出元素个数与整体字节数，避免和标量类型混淆
+            os << "  array " << t.m_iArraySize << "  size " << t.m_iSize;
+        }
+        else
+        {
+            os << "  size " << t.m_iSize;
+        }
+        os << "\n";
     }
     os << "-- Procedures (challenge) --\n";
     for (const auto& p : m_ProcInfoTbl)
@@ -202,10 +212,50 @@ void SymbolTable::DumpSymTab(std::ostream& os) const
         os << "  " << p.m_szName << " : " << TokenTypeToString(p.m_retType)
            << "  @line " << p.m_iLine << "\n";
     }
-    os << "-- Labels (challenge) --\n";
-    for (const auto& l : m_LabelInfoTbl)
+    // 【2026-10-27 补全】形参表此前虽然一直在登记（semantic.cpp 的 VisitFuncDef），
+    // 但 DumpSymTab 从没把它打出来 —— 7 张分表只 dump 了 5 张。
+    // ParamEntry 没有「所属过程」字段，按声明行号回连过程表（形参行号 >= 函数行号，
+    // 且取「同名前缀最近的那个函数」），实在回连不上就只打位置。
+    os << "-- Params (challenge) --\n";
+    for (const auto& pa : m_ParamInfoTbl)
     {
-        os << "  " << l.m_szName << " -> L" << l.m_iLabelIdx << "\n";
+        std::string szOwner;
+        int iBestLine = -1;
+        for (const auto& p : m_ProcInfoTbl)
+        {
+            if (p.m_iLine <= pa.m_iLine && p.m_iLine > iBestLine)
+            {
+                iBestLine = p.m_iLine;
+                szOwner = p.m_szName;
+            }
+        }
+        os << "  ";
+        if (!szOwner.empty())
+        {
+            os << szOwner << ".";
+        }
+        os << pa.m_szName << " : " << TokenTypeToString(pa.m_type)
+           << "  #" << pa.m_iParamPos
+           << "  @line " << pa.m_iLine << " scope " << pa.m_iScope << "\n";
+    }
+    os << "-- Labels (challenge) --\n";
+    // 按标号编号升序输出：标号是在 IR 阶段遇到 LABEL 四元式时才登记的，
+    // 登记顺序取决于控制流展开顺序（while 的 Lend 可能早于 Lmid 出现），
+    // 直接按插入序打会看着乱。这里排一次序，输出按 L1、L2、L3… 递增。
+    {
+        std::vector<const LabelEntry*> ordered;
+        ordered.reserve(m_LabelInfoTbl.size());
+        for (const auto& l : m_LabelInfoTbl)
+        {
+            ordered.push_back(&l);
+        }
+        std::sort(ordered.begin(), ordered.end(),
+                  [](const LabelEntry* a, const LabelEntry* b)
+                  { return a->m_iLabelIdx < b->m_iLabelIdx; });
+        for (const LabelEntry* l : ordered)
+        {
+            os << "  " << l->m_szName << "  @line " << l->m_iLine << "\n";
+        }
     }
 }
 
@@ -268,6 +318,28 @@ TypeEntry* SymbolTable::RecType(const std::string& name, TokenType baseType)
     te.m_iSize = SizeOfType(baseType);
     te.m_iProcIndex = m_curProcIndex;
     te.m_iScope = m_iScopeCounter;
+    m_TypeInfoTbl.push_back(te);
+    return &m_TypeInfoTbl.back();
+}
+
+TypeEntry* SymbolTable::RecArrayType(const std::string& name, TokenType baseType, int size)
+{
+    // 与 RecVar/RecArray 一样的去重：同名类型只登记一次（数组类型名由
+    // 「基类型 + 元素个数」拼出来，同一形状在源码里出现多次也只占一行）
+    if (TypeEntry* exist = SearchTypeInfoTbl(name))
+    {
+        return exist;
+    }
+    TypeEntry te;
+    te.m_szName     = name;
+    te.m_baseType   = baseType;
+    te.m_bIsArray   = true;
+    te.m_iArraySize = size;
+    // 整体字节数 = 元素宽度 × 元素个数，与 codegen 的 EmitGlobals /
+    // AssignOffsets 分配口径完全一致（ElemBytesOfType × m_iArraySize）
+    te.m_iSize      = SizeOfType(baseType) * (size > 0 ? size : 1);
+    te.m_iProcIndex = m_curProcIndex;
+    te.m_iScope     = m_iScopeCounter;
     m_TypeInfoTbl.push_back(te);
     return &m_TypeInfoTbl.back();
 }

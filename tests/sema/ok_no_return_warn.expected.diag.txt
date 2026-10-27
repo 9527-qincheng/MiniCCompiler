@@ -1,0 +1,1 @@
+warning: 3:1: non-void function 'no_ret' has no return statement; the caller will receive an unspecified value

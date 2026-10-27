@@ -32,6 +32,45 @@ void SemanticAnalyzer::Analyze(const ASTNodePtr& root)
     // 若边遍历边登记签名，前面的调用就查不到形参个数，实参个数检查会漏。
     CollectSignatures(root);
     Visit(root);
+
+    // 【新增】既没有 main 函数、也没有任何顶层语句 → 生成的 main 是空函数，
+    // 编译链接一切正常，跑起来什么都不做。这类"沉默的空程序"几乎总是漏写了
+    // 入口，给一条警告而不是错误：
+    //   - 只有函数定义、没有 main 的写法是合法的（codegen 会用顶层语句合成
+    //     入口，tests/codegen 里 9 个用例就是这么写的），不能报错；
+    //   - 只有顶层语句、没有 main 也合法（同一个合成入口）。
+    // 只有"两者都没有"才值得提醒。
+    //
+    // 三个前提缺一不可：
+    //   [a] 前面各阶段一条错都没有 —— 语法错时 AST 本就残缺，"没有 main"
+    //       只是残缺的表象，再追一条警告纯属噪音（tests/parser 的
+    //       err_decl_no_name / err_func_bad_param 就是这么炸的）。
+    //   [b] 根节点至少有一个子节点 —— 空文件走不到语义阶段都该闭嘴
+    //       （tests/parser/empty.mc 期望 stderr 为空）。
+    //   [c] 排除纯注释/纯空白的文件：Parser 会产出 PROGRAM + 若干 EMPTY 的骨架，
+    //       那不是"漏写入口"，只是没什么可编译。
+    // 判据只看「有没有顶层语句」的字面形态，不做控制流分析。
+    if (!m_bHasMain && g_ErrorList.empty() && !root->m_children.empty())
+    {
+        bool bHasTopLevelStmt = false;
+        bool bHasFuncDef      = false;
+        for (const auto& c : root->m_children)
+        {
+            if (!c) continue;
+            if (c->m_kind == ASTNodeKind::AST_NODE_FUNCDEF) { bHasFuncDef = true; continue; }
+            if (c->m_kind == ASTNodeKind::AST_NODE_EMPTY)   continue;
+            bHasTopLevelStmt = true;
+            break;
+        }
+        // 只有「有函数但没有 main、且没有顶层语句」才提醒；
+        // 连函数都没有的空文件不提醒。
+        if (bHasFuncDef && !bHasTopLevelStmt)
+        {
+            EmitWarning("no 'main' function and no top-level statements; "
+                        "the generated entry point will do nothing",
+                        root->m_loc);
+        }
+    }
 }
 
 void SemanticAnalyzer::CollectSignatures(const ASTNodePtr& root)
@@ -51,6 +90,7 @@ void SemanticAnalyzer::CollectSignatures(const ASTNodePtr& root)
                 types.push_back(static_cast<const ParamNode*>(p.get())->m_type);
         }
         // 重名函数取第一次出现的签名（同名函数重复定义由 RecVar 报错，这里不重复报）
+        if (fn->m_szName == "main") m_bHasMain = true;
         m_FuncSigs.emplace(fn->m_szName, std::move(types));
     }
 }
@@ -172,6 +212,17 @@ void SemanticAnalyzer::VisitArrayDecl(ArrayDeclNode* ad)
                                      ad->m_loc.m_iRow, ad->m_loc.m_iCol);
     if (ve) ad->m_iSymIdx = static_cast<int>(ve - m_symtab.m_VarInfoTbl.data());
 
+    // 【2026-10-27 补全】数组类型也登记进类型表。
+    // 之前 TypeEntry::m_bIsArray / m_iArraySize 两个字段全仓零写入，
+    // `int arr[5]` 在 --dump-symtab 的 Types 节里只能看到一行 `int : INT  size 4`，
+    // 看不出它是个 20 字节的数组。现在按「基类型[元素个数]」拼出类型名登记，
+    // 同一形状只占一行（如 int[5]）。
+    {
+        const std::string szTypeName = std::string(TokenTypeToString(ad->m_type)) + "[" +
+                                       std::to_string(ad->m_iArraySize) + "]";
+        m_symtab.RecArrayType(szTypeName, ad->m_type, ad->m_iArraySize);
+    }
+
     for (const auto& c : ad->m_children)
         if (c && c->m_kind == ASTNodeKind::AST_NODE_NUM) Visit(c);
 }
@@ -234,10 +285,28 @@ void SemanticAnalyzer::VisitFuncDef(FuncDefNode* fn)
     }
 
     // 函数体的 Block 直接在本层展开，避免多套一层 SCOPE_BLOCK
+    const ASTNodePtr* pBody = nullptr;
     for (const auto& c : fn->m_children)
     {
         if (!c || c->m_kind != ASTNodeKind::AST_NODE_BLOCK) continue;
+        if (!pBody) pBody = &c;
         for (const auto& stmt : c->m_children) Visit(stmt);
+    }
+
+    // 【新增】非 void 函数一条 return 都没有 → 必然走落空出口。
+    // codegen 对落空出口已按返回类型补默认值（ret_semantics.mc 固定的语义），
+    // 但「忘了写 return」几乎总是笔误，这里给警告而不是错误：
+    // 判据只看「有没有 return」，不看「所有路径是否都 return」（后者需要
+    // 控制流分析，且会让 `if (n>0) return 1;` 这类常见写法被误报）。
+    if (m_curRetType != TokenType::TOKEN_VOID &&
+        m_curRetType != TokenType::TOKEN_NONE &&
+        m_iFuncDepth == 1 &&
+        pBody != nullptr &&
+        !HasReturnStmt(*pBody))
+    {
+        EmitWarning("non-void function '" + m_szCurFunc +
+                    "' has no return statement; the caller will receive an "
+                    "unspecified value", fn->m_loc);
     }
 
     m_symtab.ExitScope();
@@ -322,6 +391,19 @@ TokenType SemanticAnalyzer::VisitIdent(IdentNode* ident)
         return TokenType::TOKEN_NONE;
     }
     ident->m_iSymIdx = static_cast<int>(entry - m_symtab.m_VarInfoTbl.data());
+
+    // 【新增】数组名必须带下标才能取值。
+    // 修复前：`int a[3]; int b; b = a;` 会静默取 a[0] 的值（codegen 的
+    // LoadAddr 把数组名当地址常量，读出来的就是首元素），`print(a)` 同理。
+    // 这在 C 里是「数组退化为指针」，MiniC 没有指针，退化的唯一结果就是
+    // 一个不声不响的错值，所以这里直接报错。
+    if (entry->m_bIsArray)
+    {
+        EmitError("'" + ident->m_szName + "' is an array; a subscript is required "
+                  "to read an element", ident->m_loc);
+        return TokenType::TOKEN_NONE;
+    }
+
     return entry->m_type;
 }
 
@@ -330,6 +412,8 @@ TokenType SemanticAnalyzer::VisitIndex(IndexNode* ix)
     if (!ix || ix->m_children.size() < 2) return TokenType::TOKEN_NONE;
 
     ASTNode* base = ix->m_children[0].get();
+    TokenType elemType = TokenType::TOKEN_NONE;
+
     if (base && base->m_kind == ASTNodeKind::AST_NODE_IDENT)
     {
         auto* id = static_cast<IdentNode*>(base);
@@ -345,16 +429,76 @@ TokenType SemanticAnalyzer::VisitIndex(IndexNode* ix)
             return TokenType::TOKEN_NONE;
         }
         id->m_iSymIdx = static_cast<int>(ve - m_symtab.m_VarInfoTbl.data());
+        elemType = ve->m_type;
+
+        // 【新增】下标是整型常量时做编译期越界检查
+        CheckConstIndex(*ve, id->m_szName, ix->m_children[1], ix->m_loc);
     }
 
     TokenType it = Visit(ix->m_children[1]);
-    if (it != TokenType::TOKEN_NONE && it != TokenType::TOKEN_INT)
+    // char 下标按整型提升处理（`a['a']` 等于 `a[97]`，C 语义）：
+    // 只认 TOKEN_INT 会把合法的字符下标误判成「must be an integer」，
+    // 而且会和上面的越界检查叠成两条互相矛盾的诊断。
+    if (it != TokenType::TOKEN_NONE && it != TokenType::TOKEN_INT &&
+        it != TokenType::TOKEN_CHAR)
         EmitError("array subscript must be an integer", ix->m_children[1]->m_loc);
 
-    // 传 m_children[0]（unique_ptr）；传裸指针 base 会编译报
-    //   cannot convert 'ASTNode*' to 'const ASTNodePtr&'
+    // 基址是标识符时上面已解析完（且不能重复 Visit：
+    // VisitIdent 现在会对数组名直接报错，再走一遍就成了自己踩自己）。
+    if (base && base->m_kind == ASTNodeKind::AST_NODE_IDENT)
+        return elemType;
+
     (void)base;
     return Visit(ix->m_children[0]);
+}
+
+bool SemanticAnalyzer::FoldConstIndex(const ASTNodePtr& expr, long long& out)
+{
+    if (!expr) return false;
+
+    // 形态一：数字字面量（整型 / 字符常量都算；实型下标已在别处报「must be an integer」）
+    if (expr->m_kind == ASTNodeKind::AST_NODE_NUM)
+    {
+        const auto* num = static_cast<const NumNode*>(expr.get());
+        if (num->m_bIsFloat) return false;
+        out = static_cast<long long>(num->m_fValue);
+        return true;
+    }
+
+    // 形态二：一元负号套数字字面量（`a[-1]` 里的 -1 就是这个形态）
+    if (expr->m_kind == ASTNodeKind::AST_NODE_UNOP && expr->m_children.size() == 1)
+    {
+        const auto* un = static_cast<const UnOpNode*>(expr.get());
+        if (un->m_op == TokenType::TOKEN_MINUS && !un->m_bPostfix)
+        {
+            long long v = 0;
+            if (FoldConstIndex(un->m_children[0], v)) { out = -v; return true; }
+        }
+    }
+    return false;
+}
+
+void SemanticAnalyzer::CheckConstIndex(const VarEntry& ve, const std::string& szName,
+                                       const ASTNodePtr& indexExpr, const LineInfo& loc)
+{
+    // 实型下标由调用点先报「array subscript must be an integer」，这里不再重复
+    long long idx = 0;
+    if (!FoldConstIndex(indexExpr, idx)) return;
+    if (ve.m_iArraySize <= 0) return;
+
+    if (idx < 0)
+    {
+        EmitError("array subscript " + std::to_string(idx) +
+                  " is negative (array '" + szName + "' has " +
+                  std::to_string(ve.m_iArraySize) + " element(s))", loc);
+        return;
+    }
+    if (idx >= ve.m_iArraySize)
+    {
+        EmitError("array subscript " + std::to_string(idx) +
+                  " is out of bounds (array '" + szName + "' has " +
+                  std::to_string(ve.m_iArraySize) + " element(s))", loc);
+    }
 }
 
 TokenType SemanticAnalyzer::VisitBinOp(BinOpNode* op)
@@ -553,4 +697,18 @@ TokenType SemanticAnalyzer::DeduceBinOp(TokenType op, TokenType lt, TokenType rt
 
     EmitError("unsupported binary operator", loc);
     return TokenType::TOKEN_NONE;
+}
+
+bool SemanticAnalyzer::HasReturnStmt(const ASTNodePtr& node)
+{
+    if (!node) return false;
+    if (node->m_kind == ASTNodeKind::AST_NODE_RETURN) return true;
+    // 不进嵌套函数定义：MiniC 语法本来就不允许函数嵌套，
+    // 但这里显式挡住更稳妥（万一将来放开嵌套，也不会把内层的 return 算到外层头上）。
+    if (node->m_kind == ASTNodeKind::AST_NODE_FUNCDEF) return false;
+    for (const auto& c : node->m_children)
+    {
+        if (HasReturnStmt(c)) return true;
+    }
+    return false;
 }

@@ -11,4 +11,5 @@
   char : CHAR  size 1
   void : VOID  size 0
 -- Procedures (challenge) --
+-- Params (challenge) --
 -- Labels (challenge) --

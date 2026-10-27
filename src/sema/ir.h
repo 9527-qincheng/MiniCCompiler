@@ -425,6 +425,9 @@ public:
     void    EmitIR(QuadOp op, const Operand& op1, const Operand& op2, const Operand& rslt,
                    const LineInfo& loc);                // 阶段 07 新增重载：携带源码位置
     const CodeList& GetCodes() const;                    // 输出四元式序列
+    // 优化器专用：以可变引用取当前序列。必须是原地改同一个 vector ——
+    // CCodeGen 构造时绑的就是这个成员的 const 引用，换成新对象会让它读到旧内容。
+    CodeList&       GetCodesMutable();
     std::string OperandToString(const Operand& op) const; // Q6：操作数索引转原文
 
     // --- 第 4 章参考书成员/扩展 ---

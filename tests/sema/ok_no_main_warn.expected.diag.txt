@@ -1,0 +1,1 @@
+warning: 3:1: no 'main' function and no top-level statements; the generated entry point will do nothing

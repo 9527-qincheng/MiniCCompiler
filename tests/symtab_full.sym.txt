@@ -1,0 +1,44 @@
+=== Symbol Table (scope 1) ===
+-- Variables --
+  g1 : INT  @line 1 scope 1
+  ga : INT  @line 2 scope 1
+  gc : CHAR  @line 3 scope 1
+  gf2 : FLOAT  @line 4 scope 1
+  add : INT  @line 6 scope 1
+  x : INT  @line 6 scope 2
+  y : INT  @line 6 scope 2
+  main : INT  @line 11 scope 1
+  i : INT  @line 13 scope 2
+  la : INT  @line 14 scope 2
+-- Constants --
+  5 : INT = 5  @line 2
+  3 : INT = 3  @line 3
+  4 : INT = 4  @line 14
+  0 : INT = 0  @line 15
+  3 : INT = 3  @line 16
+  1 : INT = 1  @line 17
+  7 : INT = 7  @line 17
+  1 : INT = 1  @line 18
+  0 : INT = 0  @line 20
+  2 : INT = 2  @line 20
+  0 : INT = 0  @line 21
+-- Types --
+  int : INT  size 4
+  float : FLOAT  size 4
+  bool : BOOL  size 4
+  char : CHAR  size 1
+  void : VOID  size 0
+  INT[5] : INT  array 5  size 20
+  CHAR[3] : CHAR  array 3  size 3
+  INT[4] : INT  array 4  size 16
+-- Procedures (challenge) --
+  add : INT  @line 6
+  main : INT  @line 11
+-- Params (challenge) --
+  add.x : INT  #1  @line 6 scope 2
+  add.y : INT  #2  @line 6 scope 2
+-- Labels (challenge) --
+  L1  @line 16
+  L2  @line 16
+  L3  @line 17
+  L4  @line 17

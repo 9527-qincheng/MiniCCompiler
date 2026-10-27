@@ -226,11 +226,17 @@ void FillOpenBase(ASTNodePtr& root, ASTNodePtr base)
 CParser::CParser(const TokenList& tokens)
     : m_pTokenList(&tokens),
       m_iListPos(0),
+      m_bTraceEnabled(false),
       m_bAborted(false),
       m_ProgramLoc(1, 1),
       m_iLastErrorPos(static_cast<std::size_t>(-1)),
       m_iLastErrorDepth(static_cast<std::size_t>(-1))
 {
+}
+
+void CParser::SetTraceEnabled(bool bOn)
+{
+    m_bTraceEnabled = bOn;
 }
 
 bool CParser::HasError() const
@@ -297,6 +303,8 @@ void CParser::ReportError(const std::string& msg)
 
 void CParser::RecordStep(const std::string& action)
 {
+    if (!m_bTraceEnabled) { return; }
+
     ParseStep step;
     step.m_iStep    = static_cast<int>(m_trace.size()) + 1;
     step.m_szStack  = StackText();
@@ -1183,10 +1191,11 @@ ASTNodePtr CParser::Parse()
     m_SymbolStack.push_back(start);
 
     const std::size_t kMaxSteps = 1000000;   // 防御性上限（正常输入远小于此）
+    std::size_t iSteps = 0;                  // 独立步数计数（轨迹关闭时 m_trace 恒空）
 
     while (!m_SymbolStack.empty())
     {
-        if (m_trace.size() > kMaxSteps)
+        if (++iSteps > kMaxSteps)
         {
             ReportError("parser step limit exceeded (internal error)");
             break;

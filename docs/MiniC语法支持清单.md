@@ -109,7 +109,7 @@
 - 顶层语句是合法的：`int a; a = 1;`、`print(1);` 都能过。
 - 但**声明必须排在所有语句之前**：`int a; a = 1; int b;` 会在 `int b` 处报 `unexpected 'int' (INT); expected one of: if while print return { ; 标识符`。
 - 函数体内的 `{ }` 里没有这个限制，声明和语句**可以任意混排**。
-- **不检查入口函数**：没有 `main` 也能编译通过。
+- **不检查入口函数**：没有 `main` 也能编译通过（若有顶层语句会合成入口；若既无 `main` 也无顶层语句，语义阶段给一条**警告**，退出码仍为 0）。
 
 ### 3.2 声明
 
@@ -296,11 +296,19 @@ void say() {
 | 场景 | 结果 |
 |---|---|
 | 数组下标用实数 `b[1.5]` | **报错**：`array subscript must be an integer` |
-| 下标越界 `b[99]`（数组长 10） | **不检查**，静默通过 |
+| **常量**下标越界 `b[99]`（数组长 10） | **报错**：`array subscript 99 is out of bounds (array 'b' has 10 element(s))` |
+| 下标为负 `b[-1]` | **报错**：`array subscript -1 is negative (array 'b' has 10 element(s))` |
+| **变量**下标越界 `b[i]`（i 运行期超界） | **不检查**（静态不可知），运行读栈垃圾 |
+| 数组名不带下标使用 `b = 1;` / `print(b)` | **报错**：`'b' is an array; a subscript is required to read an element` |
 | 实参个数与形参不符 | **报错**：`function 'f' expects 2 argument(s), but 3 given` |
+| 实参**类型**不匹配（`int` 形参传 `float`） | **不检查**，静默截断 |
 | `void` 函数带值返回 | **报错**：`void function 'g' cannot return a value` |
 | 非 `void` 函数裸 `return;` | **报错**：`non-void function 'f' must return a value` |
+| 非 `void` 函数**完全没有** `return` | **告警**：`non-void function 'f' has no return statement; ...`，退出码仍为 0 |
 | `int` 函数返回 float | **告警**（Q9 截断），退出码仍为 0 |
+| 无 `main` 且无顶层语句 | **告警**：`no 'main' function and no top-level statements; ...` |
+| 无 `main` 但有顶层语句 | **不告警**（顶层语句会被合成为入口 `main`，既有合法设计） |
+| `if` / `while` 条件是 float 或 int | **不检查**（只有 `&&` `||` 强制要 `bool`） |
 | 顶层（函数体外）的裸 `return;` | **不检查** |
 
 ---
@@ -322,8 +330,8 @@ void say() {
 | 11 | 字符串 | 有 | 仅词法识别，语法不接受 |
 | 12 | `char` 运算 | 按整数参与 | **按整数参与**（同 C） |
 | 13 | 声明 / 语句顺序 | 任意 | 顶层**声明必须先于语句**（函数体内不限） |
-| 14 | 入口检查 | 需 `main` | 不检查 |
-| 15 | 下标越界 | 未定义行为 | 不检查，不报错 |
+| 14 | 入口检查 | 需 `main` | 不强制；无 `main` 且无顶层语句时**告警** |
+| 15 | 下标越界 | 未定义行为 | **常量**下标编译期报错；变量下标不检查（未定义行为） |
 | 16 | 常量折叠 | 编译器做 | **做**（两侧皆为常量时编译期求值；除零、整型溢出、`&&`/`\|\|` 不折，见 §4.1） |
 | 17 | `print` 换行 | `printf` 由格式串决定 | **不自动换行**，要换行写 `print('\n');` |
 | 18 | 实参个数检查 | 编译期报错 | **编译期报错**（同 C） |
@@ -472,9 +480,9 @@ build\minic.exe tests\test.mc --dump-tokens --dump-parse --dump-ast --dump-symta
 | 同层重名 | `int a; int a;` | 1 | 报错 |
 | 形参重名 | `f(int x, int x)` | 1 | 报错 |
 | 下标非整型 | `b[1.5] = 1;` | 1 | 报错 |
-| 下标越界 | `b[99] = 1;`（长 10） | 0 | 不检查 |
+| 常量下标越界 | `b[99] = 1;`（长 10） | 1 | **报错** `array subscript 99 is out of bounds` |
 | 实参个数不符 | `f()` 调 `int f(int x)` | 1 | 语义阶段报错 |
-| `return` 类型不符 | `int f(){ return; }` | 0 | 不检查 |
+| `return` 类型不符 | `int f(){ return; }` | 1 | **报错** `non-void function 'f' must return a value` |
 | 空文件 | `` | 0 | 通过 |
 | 十六进制 | `0x1F` | 1 | 不支持 |
 | 指数写法 | `1e5` | 1 | 不支持 |

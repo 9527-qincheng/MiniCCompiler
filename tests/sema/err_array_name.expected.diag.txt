@@ -1,0 +1,3 @@
+error: 7:9: 'a' is an array; a subscript is required to read an element
+error: 8:11: 'a' is an array; a subscript is required to read an element
+error: 9:9: 'a' is an array; a subscript is required to read an element

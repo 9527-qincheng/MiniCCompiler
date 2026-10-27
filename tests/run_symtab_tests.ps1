@@ -47,6 +47,16 @@ if (-not (Test-Path -LiteralPath $srcPath)) {
     exit 2
 }
 
+# ----------------------------------------------------------------------------
+# 用例清单
+#   1) test.mc        —— 最小用例，固定输出格式（五节标题都在，Types 5 行）
+#   2) symtab_full.mc —— 覆盖类型表数组行 / Params 节 / Labels 节
+#      （2026-10-27 补全的那三张「死表」就在这里被固定住：
+#        数组类型 `INT[5] : INT  array 5  size 20`、
+#        形参 `add.x : INT  #1  @line 5 scope 2`、标号 `L1  @line 14`）
+# ----------------------------------------------------------------------------
+$cases = @("test", "symtab_full")
+
 function Read-Text([string]$path) {
     if (-not (Test-Path -LiteralPath $path)) { return $null }
     # ReadAllText 会自动剥离 UTF-8 BOM，故基线带不带 BOM 都能正确比对
@@ -67,6 +77,15 @@ function Write-Golden([string]$path, [string]$text) {
 
 # 临时目录：建在仓库内（build\_symtab_scratch），避免受限环境下 %TEMP% 不可写
 # 导致"假失败"（症状：cannot write output file: ...sym.txt）。
+foreach ($caseName in $cases) {
+
+$srcPath = Join-Path $scriptDir ($caseName + ".mc")
+$golden  = Join-Path $scriptDir ($caseName + ".sym.txt")
+if (-not (Test-Path -LiteralPath $srcPath)) {
+    Write-Host "FAIL: missing input $srcPath" -ForegroundColor Red
+    exit 2
+}
+
 $scratch = Join-Path $repoRoot "build\_symtab_scratch"
 New-Item -ItemType Directory -Force -Path $scratch | Out-Null
 
@@ -102,7 +121,7 @@ if ($Update) {
     }
     Write-Golden $golden $got
     Write-Host ("Updated {0}.sym.txt golden. 请人工核对刷新后的符号表输出。" -f $caseName) -ForegroundColor Yellow
-    exit 0
+    continue
 }
 
 $exp  = Normalize (Read-Text $golden)
@@ -118,12 +137,11 @@ if ($exitCode -ne 0) {
 
 if ($problems.Count -eq 0) {
     Write-Host "PASS  symtab dump regression ($caseName)" -ForegroundColor Green
-    exit 0
 } else {
     Write-Host "FAIL  symtab dump regression ($caseName)" -ForegroundColor Red
     foreach ($p in $problems) { Write-Host ("      - " + $p) -ForegroundColor Red }
     if ($exp -ne $gotN) {
-        Write-Host "      --- expected test.sym.txt ---" -ForegroundColor DarkGray
+        Write-Host "      --- expected $caseName.sym.txt ---" -ForegroundColor DarkGray
         Write-Host $exp -ForegroundColor DarkGray
         Write-Host "      --- actual --dump-symtab ---" -ForegroundColor DarkGray
         Write-Host $gotN -ForegroundColor DarkGray
@@ -134,3 +152,7 @@ if ($problems.Count -eq 0) {
     }
     exit 1
 }
+
+} # end foreach case
+
+exit 0

@@ -11,6 +11,15 @@ std::vector<CompileError> g_ErrorList;
 // 见 token.h 的说明：语义阶段在语法已出错之后产生的诊断，打印时加来源提示。
 bool g_bErrorsMayBeSecondary = false;
 
+// 错误条数上限（0 = 不限制）。100 条远超仓库里所有基线的最大错误数（4 条），
+// 只用于拦住「同源错误刷屏」的场景。
+int g_iMaxErrors = 100;
+int g_iSuppressedErrors = 0;
+
+// EmitError 的累计调用次数（含被抑制的），与 g_ErrorList.size() 相同，
+// 单独留一份是为了在改上限时不依赖全局表是否被清空
+static int g_iTotalErrors = 0;
+
 const char* TokenTypeToString(TokenType t)
 {
     switch (t)
@@ -189,6 +198,17 @@ void EmitError(const std::string& msg, const LineInfo& loc)
     CompileError err;
     err.m_szMsg = msg;
     err.m_loc = loc;
+
+    // 超过上限后仍然记录（退出码与「有错」判断都依赖条数），
+    // 但不再逐条打到 stderr —— 避免一份源文件刷出几百行同源报错。
+    ++g_iTotalErrors;
+    if (g_iMaxErrors > 0 && g_iTotalErrors > g_iMaxErrors)
+    {
+        ++g_iSuppressedErrors;
+        g_ErrorList.push_back(err);
+        return;
+    }
+
     g_ErrorList.push_back(err);
     std::cerr << "minic: error: " << loc.m_iRow << ":" << loc.m_iCol
               << ": " << msg;
@@ -197,4 +217,13 @@ void EmitError(const std::string& msg, const LineInfo& loc)
         std::cerr << " (possibly caused by earlier lexical/syntax errors)";
     }
     std::cerr << std::endl;
+}
+
+void EmitWarning(const std::string& msg, const LineInfo& loc)
+{
+    // 只打到 stderr，不进 g_ErrorList —— 退出码只看 g_ErrorList，
+    // 所以警告不会把一次成功编译变成失败（run_sema_tests.ps1 的
+    // `warn:N` 用例正是靠这个前提要求 exit=0）。
+    std::cerr << "minic: warning: " << loc.m_iRow << ":" << loc.m_iCol
+              << ": " << msg << std::endl;
 }

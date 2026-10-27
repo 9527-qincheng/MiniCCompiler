@@ -69,6 +69,12 @@ public:
     // --- §7.2【新增】供 --dump-parse 输出预测分析过程（§4.11） ---
     const std::vector<ParseStep>& GetTrace() const;
 
+    // --- 【新增】轨迹开关（默认关闭）---
+    // 轨迹每一步都要把整个符号栈和剩余输入串渲染成字符串，
+    // 合计是 O(步数 × 输入长度) 的开销。默认关闭后，只有显式
+    // `--dump-parse` 的调用方才打开，常规编译不再付这笔钱。
+    void SetTraceEnabled(bool bOn);
+
 private:
     // ---------- 语义值（驱动器内部实现，不对外暴露） ----------
     struct DeclItem     // 声明符：变量名 + 数组长度（0 = 非数组）
@@ -118,6 +124,7 @@ private:
     std::size_t            m_iListPos;      // 输入指针 ip
     std::vector<CompileError> m_errors;     // 语法错误列表
     std::vector<ParseStep>    m_trace;      // 预测分析过程（§4.11）
+    bool                      m_bTraceEnabled;  // 轨迹记录开关（默认 false，见 SetTraceEnabled）
 
     // ---------- §7.2 私有方法 ----------
     void PushProduction(int iProdNum);      // 按产生式压栈（语义动作按位置入栈）

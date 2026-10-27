@@ -129,7 +129,7 @@ git log --oneline archive/feature-ir-zhangyv522 -1       # c151654 中间代码�
 |---|---|
 | ① 编译器源码 | ✅ 六段流水线全部打通，`build.bat` 零错误零警告 |
 | ② 技术文档（语言规格 / 架构设计 / 接口定义） | ✅ 三份均已在仓库内，README 悬空引用清零 |
-| ③ 测试用例集 | ✅ 9 套编译阶段回归全绿（lexer 6 / grammar 21 项 / parser 43 / parser_unit 17 / symbol 8 组 / symtab 1 / sema 12 / quad 14 / codegen 25）+ 2 套 GUI 冒烟，合计 11 套 |
+| ③ 测试用例集 | ✅ 9 套编译阶段回归全绿（lexer 6 / grammar 21 项 / parser 49 / parser_unit 17 / symbol 8 组 / symtab 1 / sema 12 / quad 15 / codegen 26）+ 2 套 GUI 冒烟，合计 11 套 |
 | ④ 验收报告 | ✅ [docs/验收报告.md](../验收报告.md)（交付物核对 / 五模块十字段记录 / 11 套回归 / 偏差与遗留） |
 | ⑤ 答辩材料 | ✅ PPT [MiniC编译器_答辩演示.pptx](../MiniC编译器_答辩演示.pptx)（17 页）+ 项目总结 [项目总结.md](../项目总结.md) |
 | 附录A 个人任务计划 12 份 | ✅ 本目录 |

@@ -58,21 +58,21 @@ MiniCCompiler/
 │   ├── bad_op.mc           # 运算符错误
 │   ├── parser_expr.mc      # 表达式优先级
 │   ├── bad_parser.mc       # 语法错误恢复
-│   ├── parser/             # Parser 回归用例（40 个 .mc）与期望结果
-│   │   ├── *.mc            #   合法 21 条 + 非法 19 条
+│   ├── parser/             # Parser 回归用例（48 个 .mc）与期望结果
+│   │   ├── *.mc            #   合法 24 条 + 非法 24 条
 │   │   └── expected/       #   *.ast.txt / *.err.txt / ll1_411.parse.txt
-│   ├── codegen/            # 目标代码端到端用例（25 个 .mc + 期望输出）
+│   ├── codegen/            # 目标代码端到端用例（26 个 .mc + 期望输出）
 │   ├── grammar_selfcheck.cpp      # 文法表自检（21 项断言）
 │   ├── parser_unit_test.cpp       # Parser 单元测试（AST 字段级）
 │   ├── symbol_test.cpp            # 符号表作用域链断言
 │   ├── run_lexer_tests.ps1        # 词法回归（6 例）
 │   ├── run_grammar_selfcheck.ps1  # 文法表自检
-│   ├── run_parser_tests.ps1       # 语法回归（47 例 AST / 错误基线）
+│   ├── run_parser_tests.ps1       # 语法回归（49 例 AST / 错误基线）
 │   ├── run_parser_unit.ps1        # Parser 单元测试
 │   ├── run_symbol_tests.ps1       # 符号表作用域链断言
 │   ├── run_symtab_tests.ps1       # 符号表 DumpSymTab 回归
 │   ├── run_sema_tests.ps1         # 语义诊断回归（12 例，含警告与多错并报）
-│   ├── run_quad_tests.ps1         # 四元式序列回归（14 例）
+│   ├── run_quad_tests.ps1         # 四元式序列回归（15 例）
 │   ├── sema/                      # 语义用例 *.mc + *.expected.diag.txt
 │   ├── quad/                      # 四元式用例 *.mc + *.expected.quad.txt
 │   └── run_codegen_tests.ps1      # 目标代码端到端（编译→gcc 链接→运行→比对输出）
@@ -327,7 +327,7 @@ pwsh -File tests/run_parser_tests.ps1 -Update
   该 golden 不随 `-Update` 刷新，需手工从文档重新提取
 - 额外固定校验：`tests/test.mc` 的 AST 必须与 `tests/test.ast.txt` 逐字一致
 - 需要已构建的 `build/minic.exe`（`cmake --build build`）
-- 当前用例数：40 条（含 21 条合法、19 条非法）+ 1 条既有黄金输出固定校验
+- 当前用例数：48 条（含 24 条合法、24 条非法）+ 1 条既有黄金输出固定校验
 
 新增挑战版语法用例（阶段④ 补充）：
 
@@ -503,9 +503,9 @@ pwsh -File tests/run_quad_tests.ps1 -Update
 - **挑战版（Q5 顺序）：控制流(if/while) → print → 数组 → 函数 → x86 汇编 —— 五步全部落地**
   - **语法侧已全部落地**：复合语句/if/while/return/一元运算、比较与逻辑运算符、
     `bool`/`char`/`true`/`false`、`print(表达式);`、一维数组声明与下标、函数定义/形参/调用
-  - **目标代码侧已全部落地**：`src/codegen/codegen.cpp`，`tests/run_codegen_tests.ps1` 25 例
+  - **目标代码侧已全部落地**：`src/codegen/codegen.cpp`，`tests/run_codegen_tests.ps1` 26 例
     （算术/比较/if-else/while/浮点/混合类型/逻辑/函数调用/递归/数组读写/字符/嵌套分支/短路/实参转换/返回值转换/
-    嵌套调用实参顺序/空函数/用户自定义 `main`/返回值语义/char 与 bool 返回/变量遮蔽/大栈帧）全部编译成汇编、经 gcc 链接、运行并比对输出，**25/25 通过**
+    嵌套调用实参顺序/空函数/用户自定义 `main`/返回值语义/char 与 bool 返回/变量遮蔽/大栈帧）全部编译成汇编、经 gcc 链接、运行并比对输出，**26/26 通过**
   - **差分测试验证**（2026-10-24，未入库，脚本在 `build/_s2/`）：除固定用例，另用「同一程序 MiniC 版 vs gcc 编译的等价 C 版」逐行比对 stdout，
     整数随机 240 例 + 浮点随机 240 例 **全部一致**，另覆盖 Ackermann(3,3)=61、深递归 20000 层、100 个函数、50 层括号嵌套、5000 元素局部数组（栈帧 20032 字节）。
     注意 C 参考版的浮点字面量必须加 `f` 后缀，否则 `3.1/12.8` 按 double 算成 `0.242188` 而 MiniC 按 float 算成 `0.242187` —— 属语义差异不是缺陷。

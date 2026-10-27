@@ -1,0 +1,4 @@
+minic: warning: 7:5: suspicious assignment between INT and BOOL
+minic: warning: 8:5: suspicious assignment between INT and BOOL
+minic: warning: 9:5: suspicious assignment between INT and BOOL
+minic: warning: 10:5: suspicious assignment between INT and BOOL

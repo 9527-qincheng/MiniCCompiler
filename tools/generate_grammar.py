@@ -8,7 +8,7 @@ emits the pure-data layer declared by src/parser/grammar.h:
     g_Grammar       100 productions (index = production number, 0 = sentinel)
     g_FirstSet      FIRST(A)  for the 45 nonterminals
     g_FollowSet     FOLLOW(A) for the 45 nonterminals
-    g_SelectSet     SELECT(p) for the 102 productions
+    g_SelectSet     SELECT(p) for the 105 productions
     g_PredictTable  M[nonterminal][terminal] -> production number (-1 = error)
 
 The workbook is the same artifact the design document (v4.0, sections 4.3-4.9)
@@ -36,10 +36,10 @@ except ImportError:  # pragma: no cover - environment dependent
 # --------------------------------------------------------------------------
 # Table shape, mirrored from src/parser/grammar.h
 # --------------------------------------------------------------------------
-MAX_NT = 45
+MAX_NT = 48
 MAX_TERM = 100
 NTERM_CODE_BASE = 100
-PROD_COUNT = 102
+PROD_COUNT = 105
 TERM_COUNT = 41
 PROD_TABLE_SIZE = PROD_COUNT + 1
 
@@ -267,7 +267,7 @@ def emit_grammar_cpp(productions, first, follow, pred):
     out.append("// Indexing (see the encoding tables in sections 4.1 / 4.2 of the doc):")
     out.append("//   terminal     001..054, 099  -> used directly as an index")
     out.append("//   nonterminal  100..144      -> index = code - NTERM_CODE_BASE (0..44)")
-    out.append("//   production   1..102        -> index = production number (0 = sentinel)")
+    out.append("//   production   1..105        -> index = production number (0 = sentinel)")
     out.append("//   epsilon      000           -> represented as an empty m_Rhs")
     out.append("// ============================================================================")
     out.append('#include "parser/grammar.h"')

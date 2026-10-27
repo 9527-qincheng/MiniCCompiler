@@ -239,7 +239,7 @@
      - **插入点**：`EvalExpr` 的 `AST_NODE_BINOP` 分支，在 `OperandType(lo)`/`OperandType(ro)`
        之后、关系与算术分支**之前**。必须在**类型转换之前**折叠——`FoldBinary` 内部已按 §8.1
        的 Promote 规则处理 int/float；若先插 `ITOF`/`FTOI` 再折叠，会白生成一条转换四元式。
-     - **覆盖范围**：`+ - * /` 与六个关系运算符；两侧都是 `OP_CONST` 才折叠。
+     - **覆盖范围**：`+ - * /` 与六个关系运算符（`== !=` 在相等层、`< <= > >=` 在关系层）；两侧都是 `OP_CONST` 才折叠。
        浮点走 `ConstFloat`（登记进 `m_ConstInfoTbl`，同时回填 `ConstEntry::m_szVal`，
        否则 `--dump-quads` 会把常量打印成空串），整型走 `ConstInt`；除法为 C 语义向零截断
        （`7 / 2` → `3`，不是 `3.5`）。
@@ -311,6 +311,37 @@
        `gui/src/syntax-book.js`（45 条 `example` 补 96 处换行，60 条 `output`/`err` 全部按
        实测重写，`ret-mismatch` 由 `limit` 改 `no`、`stmt-if` 的 else 分支补花括号）。
        `book-smoke` 60 条、`sample-smoke` 22 条断言全 PASS。
+ 24. **关系运算符按 C++ 分层（2026-10-27，鲍方乐）**：`==` `!=` 的优先级由「与 `<` `<=` `>` `>=`
+     同级」改为**低于**它们，与 C/C++ 一致。**不改动任何冻结签名**，但**是文法改动**，
+     需要同步「两处代码 + 一份工作簿 + 一份权威基线 + 全套文档」。
+     - **文法改动（编号 1–92 一字未动）**：新增非终结符 `相等表达式`(145)、`相等表达式1`(146)、
+       `相等运算符`(147)；新增产生式 103–105（`145→130 146`、`146→147 130 146 | sem 8@2`、`146→ε`）。
+       同时**就地改**产生式 53（`与表达式→相等表达式 与表达式1`）、54（`与表达式1→&& 相等表达式 与表达式1`）、
+       59/60（左部由 `关系运算符` 改 `相等运算符`）。非终结符 45 → **48**，产生式 102 → **105**，
+       终结符仍 41。`conflicts=0`，未引入新的 SELECT 冲突。
+     - **为什么只改文法不算修好**：`src/sema/semantic.cpp` 的 `DeduceBinOp` 关系分支要求
+       `IsNumeric(lt) && IsNumeric(rt)`，而 `IsNumeric` 只认 int/float/char（不含 bool）。
+       链式比较的中间结果都是 bool，所以改了文法后 `a == b < c` 仍会报
+       `relational operands must be numeric`，**分层不产生任何可观察变化**。
+       因此同批放开 bool 的比较能力：`const auto comparable = [](TokenType t) { return IsNumeric(t) || t == TOKEN_BOOL; };`
+       不满足时改报 `relational operands must be numeric or bool`。**bool 仍不参与算术**
+       （`b + 1` 照旧报 `arithmetic operands must be numeric`）、**仍不参与逻辑以外的地方**。
+     - **同步落点（五处，缺一不可）**：①`src/parser/grammar.cpp`（由 `tools/generate_grammar.py` 从
+       工作簿生成）；②`src/parser/grammar.h`（`MAX_NT=48` / `PROD_COUNT=105` / `PROD_TABLE_SIZE=106`）；
+       ③`E:\计算机软件实训\MiniC挑战版文法及其相关表格.xlsx`（`extend_workbook.py` 幂等重建，
+       15 张表里首/带语义/编码/编号/First/Follow/Select/预测表/说明 9 张要一起改）；
+       ④`tests/parser/expected/ll1_411.parse.txt`（**外部权威基线，取自设计文档 §4.11，
+       步骤 82 → 86，不能拿程序输出顶替**）；⑤`docs/MiniC编译器设计文档_v4.0_挑战版LL1.md` §4 全章。
+     - **实测对照（与 g++ 逐行相同）**：`a == b < c` 解析为 `a == (b < c)`（AST 顶层是
+       `BinOp(EQ) [ Ident(a), BinOp(LT)[Ident(b), Ident(c)] ]`）；`a < b == c` 解析为
+       `(a < b) == c`；`a < b < c` 是 `(a < b) < c`。运行值 `a=2,b=3,c=5` 时四条链式比较
+       输出 `0 / 0 / 1 / 1`，`g++` 编译等价 C++ 后输出完全相同。
+     - **仍与 C 不同的一点（如实记录）**：`<` 与 `<=` 之间**同级左结合**，`a < b <= c` 是
+       `(a < b) <= c`；C 里它们同级但语义上多数场景无差，这里不改（要做需再插两层）。
+     - **回归**：parser 49 → **50 例**（新增 `relational_layers.mc`）、quad 17 → **18 例**、
+       codegen 29 → **30 例**、sema 18 → **19 例**（`err_bool_arith.mc` 的 `if (a == b)` 现在合法，
+       换成 `b = a && 1;`；新增 `ok_bool_relational.mc` 锁住「bool 可比较、只告警不报错」）。
+       `build.bat test` 11 套全绿。
 
 > 说明：本节第 8–10 条为 2026-10-13 阶段⑤ 收尾时同步；**下面的"四、词法识别集合"仍是 v3.1 骨架版内容**，
 > 词法 v4.0 的现状（17 个挑战版终结符等）见 `README.md` 的模块状态表与

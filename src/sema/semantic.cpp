@@ -522,9 +522,14 @@ TokenType SemanticAnalyzer::DeduceBinOp(TokenType op, TokenType lt, TokenType rt
         op == TokenType::TOKEN_LT || op == TokenType::TOKEN_LE ||
         op == TokenType::TOKEN_GT || op == TokenType::TOKEN_GE)
     {
-        if (!IsNumeric(lt) || !IsNumeric(rt))
+        // bool 在比较里按整型提升（同 C/C++）：使 a < b < c 这类链式比较可用。
+        // 这里只放开比较，不放开算术 —— bool + 1 仍然报错（§8.1 类型表的约定）。
+        const auto comparable = [this](TokenType t) {
+            return IsNumeric(t) || t == TokenType::TOKEN_BOOL;
+        };
+        if (!comparable(lt) || !comparable(rt))
         {
-            EmitError("relational operands must be numeric", loc);
+            EmitError("relational operands must be numeric or bool", loc);
             return TokenType::TOKEN_NONE;
         }
         return TokenType::TOKEN_BOOL;

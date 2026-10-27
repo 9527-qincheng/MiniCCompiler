@@ -1,0 +1,39 @@
+Program  @1:1
+  Decl(INT a)  @1:1
+  Decl(INT b)  @2:1
+  Decl(INT c)  @3:1
+  Decl(INT r)  @4:1
+  FuncDef(INT main)  @5:1
+    Block  @6:1
+      Assign  @7:5
+        Ident(r)  @7:5
+        BinOp(EQ)  @7:11
+          Ident(a)  @7:9
+          BinOp(LT)  @7:16
+            Ident(b)  @7:14
+            Ident(c)  @7:18
+      Assign  @8:5
+        Ident(r)  @8:5
+        BinOp(EQ)  @8:15
+          BinOp(LT)  @8:11
+            Ident(a)  @8:9
+            Ident(b)  @8:13
+          Ident(c)  @8:18
+      Assign  @9:5
+        Ident(r)  @9:5
+        BinOp(LT)  @9:15
+          BinOp(LT)  @9:11
+            Ident(a)  @9:9
+            Ident(b)  @9:13
+          Ident(c)  @9:17
+      Assign  @10:5
+        Ident(r)  @10:5
+        BinOp(EQ)  @10:17
+          BinOp(LT)  @10:12
+            Ident(a)  @10:10
+            Ident(b)  @10:14
+          BinOp(LT)  @10:23
+            Ident(c)  @10:21
+            Ident(a)  @10:25
+      Return  @11:5
+        Num(0)  @11:12

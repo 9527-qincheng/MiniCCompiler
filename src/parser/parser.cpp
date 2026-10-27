@@ -68,6 +68,7 @@ const CodeName kNTermNames[] =
     { 136, "乘法表达式" }, { 137, "乘法表达式1" }, { 138, "乘除运算符" },
     { 139, "一元表达式" }, { 140, "后缀表达式" }, { 141, "后缀表达式1" },
     { 142, "基本表达式" }, { 143, "实参列表"   }, { 144, "实参列表1"  },
+    { 145, "相等表达式" }, { 146, "相等表达式1" }, { 147, "相等运算符" },
 };
 
 const char* TermName(int iCode)
@@ -943,12 +944,13 @@ void CParser::ReduceProduction(int iProdNum, std::size_t iValueBase)
         out = Node(nullptr, Loc0());
         break;
 
-    // ---------- 表达式（优先级 8 层 + 右递归尾） ----------
+    // ---------- 表达式（优先级 9 层 + 右递归尾） ----------
     case 49:   // 表达式 → 或表达式
         out = std::move(v[0]);
         break;
     case 50:   // 或表达式 → 与表达式 或表达式1
-    case 53:   // 与表达式 → 关系表达式 与表达式1
+    case 53:   // 与表达式 → 相等表达式 与表达式1
+    case 103:  // 相等表达式 → 关系表达式 相等表达式1
     case 56:   // 关系表达式 → 加法表达式 关系表达式1
     case 65:   // 加法表达式 → 乘法表达式 加法表达式1
     case 70:   // 乘法表达式 → 一元表达式 乘法表达式1
@@ -964,7 +966,8 @@ void CParser::ReduceProduction(int iProdNum, std::size_t iValueBase)
         break;
     }
     case 51:   // 或表达式1 → || 与表达式 或表达式1  | sem009@2
-    case 54:   // 与表达式1 → && 关系表达式 与表达式1 | sem009@2
+    case 54:   // 与表达式1 → && 相等表达式 与表达式1 | sem009@2
+    case 104:  // 相等表达式1 → 相等运算符 关系表达式 相等表达式1 | sem008@2
     case 57:   // 关系表达式1 → 关系运算符 加法表达式 关系表达式1 | sem008@2
     case 66:   // 加法表达式1 → 加减运算符 乘法表达式 加法表达式1 | sem007@2
     case 71:   // 乘法表达式1 → 乘除运算符 一元表达式 乘法表达式1 | sem007@2
@@ -979,11 +982,12 @@ void CParser::ReduceProduction(int iProdNum, std::size_t iValueBase)
         out.m_loc = Loc0();
         break;
     }
-    case 52: case 55: case 58: case 67: case 72:   // 各右递归尾 → ε
+    case 52: case 55: case 58: case 67: case 72: case 105:   // 各右递归尾 → ε
         out.m_kind = SemKind::PAIRS;
         out.m_loc  = Loc0();
         break;
-    case 59: case 60: case 61: case 62: case 63: case 64:   // 关系运算符 → == != < <= > >=
+    case 59: case 60:                                       // 相等运算符 → == !=
+    case 61: case 62: case 63: case 64:                     // 关系运算符 → < <= > >=
     case 68: case 69:                                       // 加减运算符 → + -
     case 73: case 74:                                       // 乘除运算符 → * /
         out = std::move(v[0]);

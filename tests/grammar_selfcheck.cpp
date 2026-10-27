@@ -55,7 +55,7 @@ const int kSemanticActionCount = 30;   // §8：semantic000..semantic029
 int main()
 {
     // --- 编号、左右部与语义动作 -------------------------------------------
-    Check(PROD_COUNT == 102, "PROD_COUNT is 102");
+    Check(PROD_COUNT == 105, "PROD_COUNT is 105");
     Check(g_Grammar[0].m_iNum == 0 && g_Grammar[0].m_Rhs.empty(),
           "g_Grammar[0] is an unused sentinel");
 
@@ -109,7 +109,7 @@ int main()
     Check(rhsOk, "every RHS symbol is a valid terminal/nonterminal code");
     Check(semOk, "semantic-action positions/ids are ordered and in range");
     Check(static_cast<int>(lhsCodes.size()) == MAX_NT,
-          "all 45 nonterminals appear on the left of some production");
+          "all 48 nonterminals appear on the left of some production");
 
     // --- FIRST / FOLLOW ----------------------------------------------------
     bool firstOk = true, followOk = true, firstHasEps = false, followHasEps = false;

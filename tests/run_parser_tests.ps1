@@ -114,6 +114,9 @@ $cases = @(
     # 错误例覆盖「非左值」与「非数值」两条语义约束。
     @{ name = "incdec";                  exit = 0 },
     @{ name = "err_incdec_operand";      exit = 1 },
+    # 挑战版关系运算分层（产生式 103~105，编码 145~147 相等表达式）：
+    # a == b < c 必须解析成 a == (b < c)（C++ 语义），a < b == c 解析成 (a < b) == c。
+    @{ name = "relational_layers";       exit = 0 },
     # §4.11 验收：输入即文档 82 步 golden trace 的示例；
     # parse = $true 表示另外逐字比对 expected\ll1_411.parse.txt（该 golden 直接取自文档 §4.11 表格）
     @{ name = "ll1_411";              exit = 0; parse = $true }

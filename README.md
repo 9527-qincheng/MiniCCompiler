@@ -38,7 +38,7 @@ MiniCCompiler/
 │   │   └── lexer.h/cpp     # CLex（词法）
 │   ├── parser/
 │   │   ├── ast.h/cpp       # ASTNode + 18 类节点（PROGRAM/DECL/FUNCDEF/PARAM/ARRAYDECL/BLOCK/ASSIGN/IF/WHILE/PRINT/RETURN/EMPTY/BINOP/UNOP/NUM/IDENT/INDEX/CALL，统一 m_children 多子节点）
-│   │   ├── grammar.h/cpp   # 102 条产生式 + FIRST/FOLLOW/SELECT + 预测分析表（脚本生成）
+│   │   ├── grammar.h/cpp   # 105 条产生式 + FIRST/FOLLOW/SELECT + 预测分析表（脚本生成）
 │   │   └── parser.h/cpp    # CParser（LL(1) 预测分析表驱动，分析栈 + 语义动作 + 轨迹）
 │   ├── symbol/
 │   │   └── symbol.h/cpp    # SymbolTable 多表（Var/Const/Type/Proc/Param/Label）+ 语义接口
@@ -58,21 +58,21 @@ MiniCCompiler/
 │   ├── bad_op.mc           # 运算符错误
 │   ├── parser_expr.mc      # 表达式优先级
 │   ├── bad_parser.mc       # 语法错误恢复
-│   ├── parser/             # Parser 回归用例（48 个 .mc）与期望结果
-│   │   ├── *.mc            #   合法 24 条 + 非法 24 条
+│   ├── parser/             # Parser 回归用例（49 个 .mc）与期望结果
+│   │   ├── *.mc            #   合法 25 条 + 非法 24 条
 │   │   └── expected/       #   *.ast.txt / *.err.txt / ll1_411.parse.txt
-│   ├── codegen/            # 目标代码端到端用例（27 个 .mc + 期望输出）
+│   ├── codegen/            # 目标代码端到端用例（30 个 .mc + 期望输出）
 │   ├── grammar_selfcheck.cpp      # 文法表自检（21 项断言）
 │   ├── parser_unit_test.cpp       # Parser 单元测试（AST 字段级）
 │   ├── symbol_test.cpp            # 符号表作用域链断言
 │   ├── run_lexer_tests.ps1        # 词法回归（6 例）
 │   ├── run_grammar_selfcheck.ps1  # 文法表自检
-│   ├── run_parser_tests.ps1       # 语法回归（49 例 AST / 错误基线）
+│   ├── run_parser_tests.ps1       # 语法回归（50 例 AST / 错误基线）
 │   ├── run_parser_unit.ps1        # Parser 单元测试
 │   ├── run_symbol_tests.ps1       # 符号表作用域链断言
 │   ├── run_symtab_tests.ps1       # 符号表 DumpSymTab 回归
-│   ├── run_sema_tests.ps1         # 语义诊断回归（12 例，含警告与多错并报）
-│   ├── run_quad_tests.ps1         # 四元式序列回归（16 例）
+│   ├── run_sema_tests.ps1         # 语义诊断回归（19 例，含警告与多错并报）
+│   ├── run_quad_tests.ps1         # 四元式序列回归（18 例）
 │   ├── sema/                      # 语义用例 *.mc + *.expected.diag.txt
 │   ├── quad/                      # 四元式用例 *.mc + *.expected.quad.txt
 │   └── run_codegen_tests.ps1      # 目标代码端到端（编译→gcc 链接→运行→比对输出）
@@ -82,7 +82,7 @@ MiniCCompiler/
 │   ├── interface.md                            # 接口备忘 + 冲突记录（模块接口定义）
 │   ├── MiniC编译器设计文档_v4.0_挑战版LL1.md     # 系统架构设计文档：文法/LL(1) 表/接口/语义动作
 │   ├── MiniC编译器数据结构设计.md               # 数据结构设计：多表符号表/四元式/AST/指令模板
-│   ├── MiniC语法支持清单.md                     # 语言规格：102 条产生式实测支持矩阵、与 C 的 19 条差异
+│   ├── MiniC语法支持清单.md                     # 语言规格：105 条产生式实测支持矩阵、与 C 的 19 条差异
 │   ├── 词法模块待改进清单.md                    # 词法模块实测复审记录（4 项问题的修复依据）
 │   ├── stage5_ast_review.md                     # 阶段⑤ AST 形状评审
 │   ├── 验收报告.md                              # 测试验收报告：交付物核对/五模块记录/11 套回归/偏差与遗留
@@ -327,13 +327,13 @@ pwsh -File tests/run_parser_tests.ps1 -Update
   该 golden 不随 `-Update` 刷新，需手工从文档重新提取
 - 额外固定校验：`tests/test.mc` 的 AST 必须与 `tests/test.ast.txt` 逐字一致
 - 需要已构建的 `build/minic.exe`（`cmake --build build`）
-- 当前用例数：48 条（含 24 条合法、24 条非法）+ 1 条既有黄金输出固定校验
+- 当前用例数：49 条（含 25 条合法、24 条非法）+ 1 条既有黄金输出固定校验
 
 新增挑战版语法用例（阶段④ 补充）：
 
 | 用例 | 覆盖点 |
 |---|---|
-| `compare_ops` | `< <= > >= == !=` 六种关系运算符及优先级 |
+| `compare_ops` | `< <= > >= == !=` 六种关系运算符及优先级（`< <= > >=` 高于 `== !=`，同 C++） |
 | `logic_ops` | `&& \|\| !` 与 `true/false` |
 | `bool_char` | `bool`/`char` 类型、字符常量、`print` |
 | `print_stmt` | `print(表达式);` 输出语句 |
@@ -389,7 +389,7 @@ pwsh -File tests/run_sema_tests.ps1 -Case err_duplicate
 pwsh -File tests/run_sema_tests.ps1 -Update
 ```
 
-- 用例输入：`tests/sema/*.mc` 共 12 条；期望诊断：`tests/sema/<case>.expected.diag.txt`
+- 用例输入：`tests/sema/*.mc` 共 19 条；期望诊断：`tests/sema/<case>.expected.diag.txt`
 - 期望类型写在用例首行 `/* expect: ok | err | warn:<条数> */`，新增用例不必改 runner
 - 比对**诊断行的完整文本**（`minic: error: 行:列: 消息`），含行列号与错误码措辞；
   只比条数会漏掉位置漂移，只比有无会漏掉措辞变化
@@ -407,7 +407,7 @@ pwsh -File tests/run_quad_tests.ps1 -Case arith_int
 pwsh -File tests/run_quad_tests.ps1 -Update
 ```
 
-- 用例输入：`tests/quad/*.mc` 共 17 条；期望序列：`tests/quad/<case>.expected.quad.txt`
+- 用例输入：`tests/quad/*.mc` 共 18 条；期望序列：`tests/quad/<case>.expected.quad.txt`
 - 校验收敛到 `.quad.txt` 的**结构**：表达式求值顺序、临时变量编号（`_T1`/`_T2`…）、
   标号编号（`L1`/`L2`…）、短路展开形态、`ITOF`/`FTOI` 插入位置、`PARA`/`CALL` 的相对次序。
   这些在端到端测试里完全测不出来（只比 stdout，结构变了照样输出对）
@@ -433,7 +433,7 @@ pwsh -File tests/run_quad_tests.ps1 -Update
 | CCodeGen（目标代码，挑战版） | CCodeGen(const CodeList&) / BindSymTab / Generate / IRtoASM / AsmOutput | **已实现**：x86-64 / GNU as（AT&T 语法），栈帧 + `%rbp` 基址寻址、整型 `%eax` / 浮点 `%xmm0` 双通道、数组按 `元素宽度×下标` 的 `(%rax,%rcx,4)` 寻址、**自定义栈传参**（调用方按 `i*8(%rsp)` 落第 i 个实参、槽位 16 字节对齐，被调方从 `16+8*(pos-1)(%rbp)` 取形参；不走 System V 寄存器传参）、`printf` 输出（浮点同时放 `%xmm` 与第 2 个整型槽以适配 Windows ABI）；`QuadOp` 24 个值全部覆盖；产物可被 gcc 直接汇编链接 |
 
 > **词法现状说明**：17 个挑战版终结符（`bool` `char` `print` `true` `false` `[` `]` `==` `!=` `<` `<=` `>` `>=` `&&` `||` `!` 字符常量）**词法层已全部支持**；
-> **语法层现状**：挑战版文法（102 条产生式）已由 LL(1) 预测分析驱动器全部覆盖，
+> **语法层现状**：挑战版文法（105 条产生式）已由 LL(1) 预测分析驱动器全部覆盖，
 > 原先"`print`/数组/函数等尚未实现"的表述已过时；仍属**预期报错**的是文法本身不允许的写法：
 > `print` 必须带括号（`print a;` 非法）、数组仅一维（`int b[2][3];` 非法）、
 > 声明必须全部位于语句之前（`程序 → 声明部分 语句部分`）。
@@ -503,9 +503,9 @@ pwsh -File tests/run_quad_tests.ps1 -Update
 - **挑战版（Q5 顺序）：控制流(if/while) → print → 数组 → 函数 → x86 汇编 —— 五步全部落地**
   - **语法侧已全部落地**：复合语句/if/while/return/一元运算、比较与逻辑运算符、
     `bool`/`char`/`true`/`false`、`print(表达式);`、一维数组声明与下标、函数定义/形参/调用
-  - **目标代码侧已全部落地**：`src/codegen/codegen.cpp`，`tests/run_codegen_tests.ps1` 27 例
+  - **目标代码侧已全部落地**：`src/codegen/codegen.cpp`，`tests/run_codegen_tests.ps1` 30 例
     （算术/比较/if-else/while/浮点/混合类型/逻辑/函数调用/递归/数组读写/字符/嵌套分支/短路/实参转换/返回值转换/
-    嵌套调用实参顺序/空函数/用户自定义 `main`/返回值语义/char 与 bool 返回/变量遮蔽/大栈帧）全部编译成汇编、经 gcc 链接、运行并比对输出，**26/26 通过**
+    嵌套调用实参顺序/空函数/用户自定义 `main`/返回值语义/char 与 bool 返回/变量遮蔽/大栈帧）全部编译成汇编、经 gcc 链接、运行并比对输出，**30/30 通过**
   - **差分测试验证**（2026-10-24，未入库，脚本在 `build/_s2/`）：除固定用例，另用「同一程序 MiniC 版 vs gcc 编译的等价 C 版」逐行比对 stdout，
     整数随机 240 例 + 浮点随机 240 例 **全部一致**，另覆盖 Ackermann(3,3)=61、深递归 20000 层、100 个函数、50 层括号嵌套、5000 元素局部数组（栈帧 20032 字节）。
     注意 C 参考版的浮点字面量必须加 `f` 后缀，否则 `3.1/12.8` 按 double 算成 `0.242188` 而 MiniC 按 float 算成 `0.242187` —— 属语义差异不是缺陷。
@@ -517,7 +517,7 @@ pwsh -File tests/run_quad_tests.ps1 -Update
       `as` 报 `symbol 'main' is already defined`）、显式 `return 5;` 被出口标号后的
       `xorl %eax,%eax` 清零（`int main(){return 5;}` 退出码实测为 0）、
       裸 `return;` 带出 `%eax` 残值、无 `return` 的 `int` 函数返回垃圾值（实测 2043900272）
-- **挑战版语法**：文法已定稿（102 条产生式、LL(1) 预测分析表，见 [docs/MiniC编译器设计文档_v4.0_挑战版LL1.md](docs/MiniC编译器设计文档_v4.0_挑战版LL1.md)）。
+- **挑战版语法**：文法已定稿（105 条产生式、LL(1) 预测分析表，见 [docs/MiniC编译器设计文档_v4.0_挑战版LL1.md](docs/MiniC编译器设计文档_v4.0_挑战版LL1.md)）。
   - 阶段③ 编码层 + 文法表（`src/parser/grammar.h/.cpp`）**已完成**：产生式/FIRST/FOLLOW/SELECT/预测分析表，
     由 `tools/generate_grammar.py` 从 xlsx 生成（**禁止手工编辑 grammar.cpp**），
     自检 `pwsh -File tests/run_grammar_selfcheck.ps1` 全绿
@@ -543,10 +543,11 @@ MiniC 是教学子集语言，下列写法**不在文法/语义支持范围内**
 - 声明必须全部位于语句之前（`int a; a=1; int b;` 报 `unexpected 'int'`）。
 - 数组长度只能是整型常量（`int b[3+5];` 报 `expected ']'`）。
 - 逻辑运算符 `&&` `||` 要求 `bool` 操作数（`int` 直接参与会报 `logical operators require bool operands`）。
-- `char` **可以**参与算术与关系运算（按整型提升，C 语义）：`c + 1` 得 `int`、`c == 'x'` 得 `bool`、`c++` 合法；`bool` 仍不参与算术（报 `arithmetic operands must be numeric`）。
+- `char` **可以**参与算术与关系运算（按整型提升，C 语义）：`c + 1` 得 `int`、`c == 'x'` 得 `bool`、`c++` 合法；`bool` 参与**比较**也合法（`a == b`、`a < b == b < c` 都能写），但仍不参与算术（报 `arithmetic operands must be numeric`）。
+- 关系运算符**已按 C++ 分层**：`<` `<=` `>` `>=` 高于 `==` `!=`，所以 `a == b < c` 是 `a == (b < c)`、`a < b == c` 是 `(a < b) == c`；`<` 与 `<=` 之间仍同级左结合（`a < b <= c` = `(a < b) <= c`）。
 - 语义阶段**检查**：函数实参个数、`return` 类型（void 带值、非 void 裸 return 都报错）；**不检查**：数组下标越界。
 - `print` **不自动换行**：连续两条 `print` 接在同一行，要换行写 `print('\n');`。
 - 浮点字面量：`1.` 合法、`.5` 不合法；不支持 `0x1F` 十六进制与 `1e5` 指数形式。
 
-完整语法支持清单（102 条产生式、类型规则、与 C 的 19 条差异、报错速查、实测记录）见
+完整语法支持清单（105 条产生式、类型规则、与 C 的 19 条差异、报错速查、实测记录）见
 [docs/MiniC语法支持清单.md](docs/MiniC语法支持清单.md)。

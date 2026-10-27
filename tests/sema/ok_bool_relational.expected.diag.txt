@@ -1,0 +1,5 @@
+warning: 9:5: suspicious assignment between INT and BOOL
+warning: 10:5: suspicious assignment between INT and BOOL
+warning: 11:5: suspicious assignment between INT and BOOL
+warning: 12:5: suspicious assignment between INT and BOOL
+warning: 13:5: suspicious assignment between INT and BOOL

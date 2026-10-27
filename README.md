@@ -67,7 +67,7 @@ MiniCCompiler/
 │   ├── symbol_test.cpp            # 符号表作用域链断言
 │   ├── run_lexer_tests.ps1        # 词法回归（6 例）
 │   ├── run_grammar_selfcheck.ps1  # 文法表自检
-│   ├── run_parser_tests.ps1       # 语法回归（43 例 AST / 错误基线）
+│   ├── run_parser_tests.ps1       # 语法回归（47 例 AST / 错误基线）
 │   ├── run_parser_unit.ps1        # Parser 单元测试
 │   ├── run_symbol_tests.ps1       # 符号表作用域链断言
 │   ├── run_symtab_tests.ps1       # 符号表 DumpSymTab 回归

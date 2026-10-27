@@ -435,6 +435,9 @@ void CLex::ScanOperator()
         else if (two[0]=='>' && two[1]=='=') dbl = TokenType::TOKEN_GE;
         else if (two[0]=='&' && two[1]=='&') dbl = TokenType::TOKEN_AND;
         else if (two[0]=='|' && two[1]=='|') dbl = TokenType::TOKEN_OR;
+        // 挑战版扩展：自增/自减（最长匹配优先，+ + 不会被拆成两个 PLUS）
+        else if (two[0]=='+' && two[1]=='+') dbl = TokenType::TOKEN_INC;
+        else if (two[0]=='-' && two[1]=='-') dbl = TokenType::TOKEN_DEC;
         if (dbl != TokenType::TOKEN_NONE)
         {
             m_TokenList.emplace_back(dbl, std::string(two, 2), m_iRow, col);

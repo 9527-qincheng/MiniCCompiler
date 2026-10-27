@@ -462,7 +462,7 @@ int main() {
     label: '缺分号 + 未声明标识符',
     name: 'error-demo.mc',
     expect: 'error',
-    err: "minic: error: 8:5: unexpected 'y' (IDENT); expected one of: ( [ (in 后缀表达式1)",
+    err: "minic: error: 8:5: unexpected 'y' (IDENT); expected one of: ( [ ++ -- (in 后缀表达式1)",
     text: `/* 错误演示：第 7 行 x = 36 少了分号，第 8 行的 y 被当成表达式续接 */
 int a;
 float b;
@@ -499,7 +499,7 @@ int main() {
     label: '顶层声明写在语句之后',
     name: 'error-decl-order.mc',
     expect: 'error',
-    err: "minic: error: 4:1: unexpected 'int' (INT); expected one of: if while print return { ; 标识符 (in 语句部分)",
+    err: "minic: error: 4:1: unexpected 'int' (INT); expected one of: if while print return { ; ++ -- 标识符 (in 语句部分)",
     text: `/* 错误演示：顶层声明必须全部排在语句之前，int b 出现在赋值之后 */
 int a;
 a = 1;

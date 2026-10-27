@@ -5,10 +5,10 @@
 Reads the challenge-edition workbook ("MiniC挑战版文法及其相关表格.xlsx") and
 emits the pure-data layer declared by src/parser/grammar.h:
 
-    g_Grammar       92 productions (index = production number, 0 = sentinel)
+    g_Grammar       100 productions (index = production number, 0 = sentinel)
     g_FirstSet      FIRST(A)  for the 45 nonterminals
     g_FollowSet     FOLLOW(A) for the 45 nonterminals
-    g_SelectSet     SELECT(p) for the 92 productions
+    g_SelectSet     SELECT(p) for the 102 productions
     g_PredictTable  M[nonterminal][terminal] -> production number (-1 = error)
 
 The workbook is the same artifact the design document (v4.0, sections 4.3-4.9)
@@ -39,7 +39,8 @@ except ImportError:  # pragma: no cover - environment dependent
 MAX_NT = 45
 MAX_TERM = 100
 NTERM_CODE_BASE = 100
-PROD_COUNT = 92
+PROD_COUNT = 102
+TERM_COUNT = 41
 PROD_TABLE_SIZE = PROD_COUNT + 1
 
 # Nonterminal code of 否则部分 / terminal code of "else": the single cell where
@@ -139,8 +140,9 @@ def load_workbook_data(xlsx_path):
     if len(set(nt_code_by_name.values())) != MAX_NT:
         fail("expected %d distinct nonterminals, found %d"
              % (MAX_NT, len(set(nt_code_by_name.values()))))
-    if len(term_codes) != 39:
-        fail("expected 39 terminals in the code table, found %d" % len(term_codes))
+    if len(term_codes) != TERM_COUNT:
+        fail("expected %d terminals in the code table, found %d"
+             % (TERM_COUNT, len(term_codes)))
 
     nt_name_by_code = {v: k for k, v in nt_code_by_name.items()}
 
@@ -172,7 +174,8 @@ def load_workbook_data(xlsx_path):
     ws = wb[SHEET_PRED]
     header = [int(c.value) for c in ws[1][2:]]
     if header != sorted(term_codes):
-        fail("prediction-table header does not match the 39 terminal codes")
+        fail("prediction-table header does not match the %d terminal codes"
+             % TERM_COUNT)
     pred = [[-1] * MAX_TERM for _ in range(MAX_NT)]
     for row in ws.iter_rows(min_row=3, max_row=2 + MAX_NT, values_only=True):
         idx = row[0]
@@ -242,7 +245,7 @@ def check_workbook(productions, first, follow, pred, nt_name_by_code):
 
     print("workbook OK: %d productions, %d nonterminals, %d terminals; "
           "dangling-else cell %s x else -> %d"
-          % (len(productions), MAX_NT, 39,
+          % (len(productions), MAX_NT, TERM_COUNT,
              nt_name_by_code[DANGLING_ELSE_NT], pred[DANGLING_ELSE_NT - NTERM_CODE_BASE][
                  DANGLING_ELSE_TERM]))
 
@@ -264,7 +267,7 @@ def emit_grammar_cpp(productions, first, follow, pred):
     out.append("// Indexing (see the encoding tables in sections 4.1 / 4.2 of the doc):")
     out.append("//   terminal     001..054, 099  -> used directly as an index")
     out.append("//   nonterminal  100..144      -> index = code - NTERM_CODE_BASE (0..44)")
-    out.append("//   production   1..92         -> index = production number (0 = sentinel)")
+    out.append("//   production   1..102        -> index = production number (0 = sentinel)")
     out.append("//   epsilon      000           -> represented as an empty m_Rhs")
     out.append("// ============================================================================")
     out.append('#include "parser/grammar.h"')
@@ -309,7 +312,7 @@ def emit_grammar_cpp(productions, first, follow, pred):
 
     out.append("// g_PredictTable: M[nonterminal - NTERM_CODE_BASE][terminal code]")
     out.append("// Row 0..44 = nonterminal codes 100..144; column = terminal code")
-    out.append("// (only 001..012, 021..028, 031..044, 051..054 and 099 are ever used).")
+    out.append("// (only 001..012, 021..028, 031..046, 051..054 and 099 are ever used).")
     out.append("// -1 = error entry. Section 4.8: 否则部分 x else = 42 (dangling else).")
     out.append("const int g_PredictTable[MAX_NT][MAX_TERM] =")
     out.append("{")

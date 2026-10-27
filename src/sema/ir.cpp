@@ -233,6 +233,114 @@ Operand IRGenerator::FloatToIntConv(const Operand& op, const LineInfo& loc)
 }
 
 // ----------------------------------------------------------------------------
+// 自增自减（挑战版 ++/--，B 方案：表达式有值）
+// ----------------------------------------------------------------------------
+// 语义约定：
+//   前缀 ++x / --x ：x 先加/减 1，表达式的值 = 新值；
+//   后缀 x++ / x-- ：表达式的值 = 旧值，x 再加/减 1。
+// 因此两种写法都只生成「旧值快照 + 原位 ±1」这两条四元式，区别只在返回哪个操作数：
+//   形如  (_T_old = x)        ← 仅当需要旧值时才发
+//         (_T_new = x + 1)
+//         (x = _T_new)
+// 为避免多一条临时量，实现上直接：
+//   旧值快照  (_T_old = x)          bReturnOld == true 时
+//   自增      (x = x + 1)           Q_ADD，操作数 1 = x，操作数 2 = 常量 1
+// 返回：bReturnOld ? _T_old : x（前缀直接用变量本身作为新值操作数，省一条四元式）。
+// 数组元素 x[i] 走 Q_INDEX 的读/写两支，与赋值语句的处理保持一致。
+Operand IRGenerator::GenIncDec(const UnOpNode* u, bool bReturnOld)
+{
+    if (!u || u->m_children.empty())
+    {
+        return Operand();
+    }
+    ASTNode* target = u->m_children[0].get();
+    const LineInfo& loc = u->m_loc;
+    const bool bInc = (u->m_op == TokenType::TOKEN_INC);
+    const QuadOp arith = bInc ? QuadOp::Q_ADD : QuadOp::Q_SUB;
+
+    if (target && target->m_kind == ASTNodeKind::AST_NODE_IDENT)
+    {
+        auto* id = static_cast<IdentNode*>(target);
+        if (id->m_iSymIdx < 0 ||
+            static_cast<size_t>(id->m_iSymIdx) >= m_symtab.m_VarInfoTbl.size())
+        {
+            return Operand();
+        }
+        const TokenType t = m_symtab.m_VarInfoTbl[id->m_iSymIdx].m_type;
+        const Operand cur = Operand::Var(id->m_iSymIdx, t);
+
+        // 旧值快照（后缀才需要）
+        Operand snapshot;
+        if (bReturnOld)
+        {
+            const int tOld = GetTmpVar(t);
+            EmitIR(QuadOp::Q_ASSIGN, cur, Operand(), Operand::Temp(tOld, t), loc);
+            snapshot = Operand::Temp(tOld, t);
+        }
+
+        // 原位 ±1：常量 1 按目标类型取（float 变量走 ITOF 后仍是常量 1 的浮点形式）
+        Operand one = ConstInt(1, loc);
+        if (IsFloatType(t))
+        {
+            one = IntToFloatConv(one, loc);
+        }
+        const int tNew = GetTmpVar(t);
+        EmitIR(arith, cur, one, Operand::Temp(tNew, t), loc);
+        EmitIR(QuadOp::Q_ASSIGN, Operand::Temp(tNew, t), Operand(), cur, loc);
+
+        return bReturnOld ? snapshot : cur;
+    }
+
+    if (target && target->m_kind == ASTNodeKind::AST_NODE_INDEX)
+    {
+        // 数组元素：先读出旧值，再原地写回 旧值 ± 1
+        auto* ix = static_cast<IndexNode*>(target);
+        if (ix->m_children.size() < 2)
+        {
+            return Operand();
+        }
+        ASTNode* base = ix->m_children[0].get();
+        if (!base || base->m_kind != ASTNodeKind::AST_NODE_IDENT)
+        {
+            return Operand();
+        }
+        auto* id = static_cast<IdentNode*>(base);
+        if (id->m_iSymIdx < 0 ||
+            static_cast<size_t>(id->m_iSymIdx) >= m_symtab.m_VarInfoTbl.size())
+        {
+            return Operand();
+        }
+        const TokenType elemT = m_symtab.m_VarInfoTbl[id->m_iSymIdx].m_type;
+        Operand idxOp = EvalExpr(ix->m_children[1]);
+        if (idxOp.m_kind == OperandKind::OP_NONE)
+        {
+            return Operand();
+        }
+
+        // 旧值：(_T_old = 数组[下标])
+        const int tOld = GetTmpVar(elemT);
+        EmitIR(QuadOp::Q_INDEX, Operand::Var(id->m_iSymIdx, elemT), idxOp,
+               Operand::Temp(tOld, elemT), loc);
+        const Operand oldVal = Operand::Temp(tOld, elemT);
+
+        Operand one = ConstInt(1, loc);
+        if (IsFloatType(elemT))
+        {
+            one = IntToFloatConv(one, loc);
+        }
+        const int tNew = GetTmpVar(elemT);
+        EmitIR(arith, oldVal, one, Operand::Temp(tNew, elemT), loc);
+        EmitIR(QuadOp::Q_INDEX, Operand::Temp(tNew, elemT), idxOp,
+               Operand::Var(id->m_iSymIdx, elemT), loc);
+
+        return bReturnOld ? oldVal : Operand::Temp(tNew, elemT);
+    }
+
+    // 其余形态（字面量、调用结果等）不是左值，语义阶段已报错，这里静默跳过
+    return Operand();
+}
+
+// ----------------------------------------------------------------------------
 // 形参类型表（P2 缺陷修复用）
 // 符号表的 ParamEntry 没有过程归属，m_ParamInfoTbl 是所有函数形参混在一起的一张
 // 扁平表，无法按被调函数定位形参类型。故在 IR 阶段自己扫一遍 AST 的
@@ -424,6 +532,12 @@ Operand IRGenerator::EvalExpr(const ASTNodePtr& node)
         {
             return Operand();
         }
+        if (u->m_op == TokenType::TOKEN_INC || u->m_op == TokenType::TOKEN_DEC)
+        {
+            // 自增自减有副作用，必须走 GenIncDec（不能像 -x 那样先求值再算）
+            // 后缀取旧值，前缀取新值 —— 这正是 B 方案要求的表达式值语义
+            return GenIncDec(u, u->m_bPostfix);
+        }
         Operand op = EvalExpr(u->m_children[0]);
         if (op.m_kind == OperandKind::OP_NONE)
         {
@@ -584,6 +698,16 @@ void IRGenerator::GenStmt(const ASTNodePtr& node)
     case ASTNodeKind::AST_NODE_FUNCDEF:
         GenFuncDef(static_cast<FuncDefNode*>(node.get()));
         return;
+    case ASTNodeKind::AST_NODE_UNOP:
+    {
+        // ++a; / a++; 作为语句：只求副作用，返回值丢弃
+        auto* u = static_cast<UnOpNode*>(node.get());
+        if (u->m_op == TokenType::TOKEN_INC || u->m_op == TokenType::TOKEN_DEC)
+        {
+            GenIncDec(u, u->m_bPostfix);
+        }
+        return;
+    }
     case ASTNodeKind::AST_NODE_ASSIGN:
     {
         auto* a = static_cast<AssignNode*>(node.get());

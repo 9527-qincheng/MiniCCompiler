@@ -110,6 +110,10 @@ $cases = @(
     #         err_zero_array_local.mc：函数体内 `int c[0];`；旧：同样静默通过
     @{ name = "err_zero_array";          exit = 1 },
     @{ name = "err_zero_array_local";    exit = 1 },
+    # 挑战版 ++/--（产生式 93~102）：正例覆盖前缀/后缀/单独成句/数组元素，
+    # 错误例覆盖「非左值」与「非数值」两条语义约束。
+    @{ name = "incdec";                  exit = 0 },
+    @{ name = "err_incdec_operand";      exit = 1 },
     # §4.11 验收：输入即文档 82 步 golden trace 的示例；
     # parse = $true 表示另外逐字比对 expected\ll1_411.parse.txt（该 golden 直接取自文档 §4.11 表格）
     @{ name = "ll1_411";              exit = 0; parse = $true }

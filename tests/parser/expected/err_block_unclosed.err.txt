@@ -1,2 +1,2 @@
-minic: error: 4:1: unexpected '<eof>' (EOF); expected one of: int float bool char void if while print return { ; 标识符 (in 块项序列)
+minic: error: 4:1: unexpected '<eof>' (EOF); expected one of: int float bool char void if while print return { ; ++ -- 标识符 (in 块项序列)
 minic: 1 error(s) found, compilation failed

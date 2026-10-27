@@ -1,7 +1,7 @@
 
 # MiniC 编译器（挑战版，C++17）—— 项目说明
 
-**当前进度**：六个阶段全部打通，**编译器已可端到端运行**。词法模块已按 v4.0 挑战版完成（17 个新终结符、编码映射、双字符运算符、字符常量）；语法模块已按 v4.0 挑战版落地为 **LL(1) 预测分析表驱动**（92 条产生式，非递归分析栈 + `src/parser/grammar.cpp` 预测表，`--dump-parse` 输出分析过程）；符号表模块已实现多表登记、作用域链查找与数组登记；语义分析模块已实现并接入主流程（`src/sema/semantic.cpp`，遍历 AST 登记变量/数组/函数/常量并做类型检查）；**中间代码模块已实现**（`src/sema/ir.cpp`，四元式含 ITOF/FTOI 类型转换、`&&`/`||` 真短路、数组读写、函数调用与递归，`--dump-quads` 输出）；**目标代码模块已实现**（`src/codegen/codegen.cpp`，x86-64 / GNU as 汇编，产物可直接用 gcc 汇编链接成 exe 运行）。
+**当前进度**：六个阶段全部打通，**编译器已可端到端运行**。词法模块已按 v4.0 挑战版完成（17 个新终结符、编码映射、双字符运算符、字符常量）；语法模块已按 v4.0 挑战版落地为 **LL(1) 预测分析表驱动**（102 条产生式，非递归分析栈 + `src/parser/grammar.cpp` 预测表，`--dump-parse` 输出分析过程）；符号表模块已实现多表登记、作用域链查找与数组登记；语义分析模块已实现并接入主流程（`src/sema/semantic.cpp`，遍历 AST 登记变量/数组/函数/常量并做类型检查）；**中间代码模块已实现**（`src/sema/ir.cpp`，四元式含 ITOF/FTOI 类型转换、`&&`/`||` 真短路、数组读写、函数调用与递归，`--dump-quads` 输出）；**目标代码模块已实现**（`src/codegen/codegen.cpp`，x86-64 / GNU as 汇编，产物可直接用 gcc 汇编链接成 exe 运行）。
 
 依据：[docs/MiniC编译器数据结构设计.md](docs/MiniC编译器数据结构设计.md) 第 4 章（数据结构）与第 6 章（接口契约，Q1~Q12 定稿）；挑战版文法见 [docs/MiniC编译器设计文档_v4.0_挑战版LL1.md](docs/MiniC编译器设计文档_v4.0_挑战版LL1.md)。
 
@@ -38,7 +38,7 @@ MiniCCompiler/
 │   │   └── lexer.h/cpp     # CLex（词法）
 │   ├── parser/
 │   │   ├── ast.h/cpp       # ASTNode + 18 类节点（PROGRAM/DECL/FUNCDEF/PARAM/ARRAYDECL/BLOCK/ASSIGN/IF/WHILE/PRINT/RETURN/EMPTY/BINOP/UNOP/NUM/IDENT/INDEX/CALL，统一 m_children 多子节点）
-│   │   ├── grammar.h/cpp   # 92 条产生式 + FIRST/FOLLOW/SELECT + 预测分析表（脚本生成）
+│   │   ├── grammar.h/cpp   # 102 条产生式 + FIRST/FOLLOW/SELECT + 预测分析表（脚本生成）
 │   │   └── parser.h/cpp    # CParser（LL(1) 预测分析表驱动，分析栈 + 语义动作 + 轨迹）
 │   ├── symbol/
 │   │   └── symbol.h/cpp    # SymbolTable 多表（Var/Const/Type/Proc/Param/Label）+ 语义接口
@@ -82,7 +82,7 @@ MiniCCompiler/
 │   ├── interface.md                            # 接口备忘 + 冲突记录（模块接口定义）
 │   ├── MiniC编译器设计文档_v4.0_挑战版LL1.md     # 系统架构设计文档：文法/LL(1) 表/接口/语义动作
 │   ├── MiniC编译器数据结构设计.md               # 数据结构设计：多表符号表/四元式/AST/指令模板
-│   ├── MiniC语法支持清单.md                     # 语言规格：92 条产生式实测支持矩阵、与 C 的 15 条差异
+│   ├── MiniC语法支持清单.md                     # 语言规格：102 条产生式实测支持矩阵、与 C 的 15 条差异
 │   ├── 词法模块待改进清单.md                    # 词法模块实测复审记录（4 项问题的修复依据）
 │   ├── stage5_ast_review.md                     # 阶段⑤ AST 形状评审
 │   ├── 验收报告.md                              # 测试验收报告：交付物核对/五模块记录/11 套回归/偏差与遗留
@@ -426,14 +426,14 @@ pwsh -File tests/run_quad_tests.ps1 -Update
 | 模块 | 接口 | 状态 |
 |---|---|---|
 | CLex（词法） | OpenSource / Run / GetTokenList | **已实现（v4.0 挑战版）**：关键字(int/float/bool/char/void/if/else/while/print/return/true/false)、标识符、整型/实型/字符常量、运算符(+ - * / = == != < <= > >= && \|\| !)、界符((){}[];,)；注释与字符串；常量登记 m_ConstTexts；错误含行列号。**已补 TokenTypeToCode / CodeToTokenType 编码映射** |
-| CParser（语法） | CParser(TokenList&) / Parse / HasError / GetErrors / GetTrace | **已实现（v4.0 挑战版 LL(1) 预测分析表驱动）**：92 条产生式驱动的非递归分析栈（`StackItem{TERM/NTERM/ACTION}` + 内部规约标记），语义动作 semantic000–027 按设计文档 §8 位置调度（符号表/IR 类动作登记占位，待阶段⑥⑦）；支持声明（含 `int a, b;` 多声明符与一维数组）、赋值/下标赋值/调用语句、表达式优先级与结合性、一元 `- !`、比较与逻辑运算符、`bool`/`char`/`true`/`false`、`print`、`if/else`（就近配对）、`while`、`return`、复合语句、函数定义与调用；恐慌式错误恢复可连续报错不崩溃；`GetTrace()` 输出分析轨迹供 `--dump-parse` 使用。公开签名与 §7.2 一致，`GetTrace()` 为新增 |
+| CParser（语法） | CParser(TokenList&) / Parse / HasError / GetErrors / GetTrace | **已实现（v4.0 挑战版 LL(1) 预测分析表驱动）**：102 条产生式驱动的非递归分析栈（`StackItem{TERM/NTERM/ACTION}` + 内部规约标记），语义动作 semantic000–027 按设计文档 §8 位置调度（符号表/IR 类动作登记占位，待阶段⑥⑦）；支持声明（含 `int a, b;` 多声明符与一维数组）、赋值/下标赋值/调用语句、表达式优先级与结合性、一元 `- !`、比较与逻辑运算符、`bool`/`char`/`true`/`false`、`print`、`if/else`（就近配对）、`while`、`return`、复合语句、函数定义与调用；恐慌式错误恢复可连续报错不崩溃；`GetTrace()` 输出分析轨迹供 `--dump-parse` 使用。公开签名与 §7.2 一致，`GetTrace()` 为新增 |
 | SymbolTable（符号表） | EnterScope / ExitScope / RecVar / RecArray / RecConst / SearchVar / SearchConst / BackfillConst / CheckAssign / DumpSymTab | **已实现**：多表登记、作用域链自内向外查找（内层可遮蔽外层）、数组登记（m_bIsArray / m_iArraySize）、常量回填、float→int 告警（Q9） |
 | SemanticAnalyzer（语义分析） | SemanticAnalyzer(SymbolTable&) / Analyze(const ASTNodePtr&) | **已实现**：遍历 AST 登记变量/数组/函数/形参/常量，未声明与重复声明报错，按 §8.1 类型系统做运算与赋值检查 |
 | IRGenerator（中间代码） | IRGenerator(SymbolTable&) / Generate / GetTmpVar / GetTmpLabel / EmitIR / GetCodes / OperandToString | **已实现**：遍历 AST 生成四元式（23 种 `QuadOp`），含算术/关系/逻辑、`&&`/`||` 真短路（`Q_JZ`/`Q_JNZ`）、`ITOF`/`FTOI` 类型转换（赋值、实参、返回值三处均插）、一维数组读写（`Q_INDEX` 双向）、`if/else`、`while`、`print`、函数定义（四元式存入 `ProcEntry::m_Codes`）与调用（`Q_PARA` + `Q_CALL`）、递归；`--dump-quads` 输出顶层代码与各过程 |
 | CCodeGen（目标代码，挑战版） | CCodeGen(const CodeList&) / BindSymTab / Generate / IRtoASM / AsmOutput | **已实现**：x86-64 / GNU as（AT&T 语法），栈帧 + `%rbp` 基址寻址、整型 `%eax` / 浮点 `%xmm0` 双通道、数组按 `元素宽度×下标` 的 `(%rax,%rcx,4)` 寻址、**自定义栈传参**（调用方按 `i*8(%rsp)` 落第 i 个实参、槽位 16 字节对齐，被调方从 `16+8*(pos-1)(%rbp)` 取形参；不走 System V 寄存器传参）、`printf` 输出（浮点同时放 `%xmm` 与第 2 个整型槽以适配 Windows ABI）；`QuadOp` 24 个值全部覆盖；产物可被 gcc 直接汇编链接 |
 
 > **词法现状说明**：17 个挑战版终结符（`bool` `char` `print` `true` `false` `[` `]` `==` `!=` `<` `<=` `>` `>=` `&&` `||` `!` 字符常量）**词法层已全部支持**；
-> **语法层现状**：挑战版文法（92 条产生式）已由 LL(1) 预测分析驱动器全部覆盖，
+> **语法层现状**：挑战版文法（102 条产生式）已由 LL(1) 预测分析驱动器全部覆盖，
 > 原先"`print`/数组/函数等尚未实现"的表述已过时；仍属**预期报错**的是文法本身不允许的写法：
 > `print` 必须带括号（`print a;` 非法）、数组仅一维（`int b[2][3];` 非法）、
 > 声明必须全部位于语句之前（`程序 → 声明部分 语句部分`）。
@@ -517,7 +517,7 @@ pwsh -File tests/run_quad_tests.ps1 -Update
       `as` 报 `symbol 'main' is already defined`）、显式 `return 5;` 被出口标号后的
       `xorl %eax,%eax` 清零（`int main(){return 5;}` 退出码实测为 0）、
       裸 `return;` 带出 `%eax` 残值、无 `return` 的 `int` 函数返回垃圾值（实测 2043900272）
-- **挑战版语法**：文法已定稿（92 条产生式、LL(1) 预测分析表，见 [docs/MiniC编译器设计文档_v4.0_挑战版LL1.md](docs/MiniC编译器设计文档_v4.0_挑战版LL1.md)）。
+- **挑战版语法**：文法已定稿（102 条产生式、LL(1) 预测分析表，见 [docs/MiniC编译器设计文档_v4.0_挑战版LL1.md](docs/MiniC编译器设计文档_v4.0_挑战版LL1.md)）。
   - 阶段③ 编码层 + 文法表（`src/parser/grammar.h/.cpp`）**已完成**：产生式/FIRST/FOLLOW/SELECT/预测分析表，
     由 `tools/generate_grammar.py` 从 xlsx 生成（**禁止手工编辑 grammar.cpp**），
     自检 `pwsh -File tests/run_grammar_selfcheck.ps1` 全绿
@@ -537,7 +537,8 @@ pwsh -File tests/run_quad_tests.ps1 -Update
 
 MiniC 是教学子集语言，下列写法**不在文法/语义支持范围内**，属预期行为而非缺陷：
 
-- 不支持：`++` `--` `+=` 等复合赋值、`%` 取模、`?:`、`for`、`do-while`、`break`、`continue`、
+- 支持 `++` `--`（前缀与后缀：`b = a++` 取旧值、`b = ++a` 取新值；`++5` 报 `'++' requires a modifiable lvalue`，`++true` 报 `'++' requires a numeric operand`）。
+- 不支持：`+=` 等复合赋值、`%` 取模、`?:`、`for`、`do-while`、`break`、`continue`、
   `switch`、`goto`、多维数组、字符串字面量、逗号表达式、链式赋值、函数原型声明、赋值表达式（`a = b = 1`）。
 - 声明必须全部位于语句之前（`int a; a=1; int b;` 报 `unexpected 'int'`）。
 - 数组长度只能是整型常量（`int b[3+5];` 报 `expected ']'`）。
@@ -546,5 +547,5 @@ MiniC 是教学子集语言，下列写法**不在文法/语义支持范围内**
 - 语义阶段**不检查**：数组下标越界、函数实参个数、`return` 类型匹配。
 - 浮点字面量：`1.` 合法、`.5` 不合法；不支持 `0x1F` 十六进制与 `1e5` 指数形式。
 
-完整语法支持清单（92 条产生式、类型规则、与 C 的 15 条差异、报错速查、实测记录）见
+完整语法支持清单（102 条产生式、类型规则、与 C 的 15 条差异、报错速查、实测记录）见
 [docs/MiniC语法支持清单.md](docs/MiniC语法支持清单.md)。

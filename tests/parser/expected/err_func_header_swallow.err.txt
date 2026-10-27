@@ -1,5 +1,5 @@
 minic: error: 1:13: unexpected 'int' (INT); expected one of: [ (in 数组后缀)
-minic: error: 2:7: unexpected ';' (SEMI); expected one of: true false ( - ! 标识符 整型常量 实型常量 字符常量 (in 表达式)
-minic: error: 3:7: unexpected ';' (SEMI); expected one of: true false ( - ! 标识符 整型常量 实型常量 字符常量 (in 表达式)
+minic: error: 2:7: unexpected ';' (SEMI); expected one of: true false ( - ! ++ -- 标识符 整型常量 实型常量 字符常量 (in 表达式)
+minic: error: 3:7: unexpected ';' (SEMI); expected one of: true false ( - ! ++ -- 标识符 整型常量 实型常量 字符常量 (in 表达式)
 minic: error: 8:3: undefined identifier z (possibly caused by earlier lexical/syntax errors)
 minic: 4 error(s) found, compilation failed

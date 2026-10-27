@@ -48,14 +48,14 @@ bool IsValidSymbolCode(int code)
     return IsTerminalCode(code) || IsNonterminalCode(code);
 }
 
-const int kSemanticActionCount = 28;   // §8：semantic000..semantic027
+const int kSemanticActionCount = 30;   // §8：semantic000..semantic029
 
 } // namespace
 
 int main()
 {
     // --- 编号、左右部与语义动作 -------------------------------------------
-    Check(PROD_COUNT == 92, "PROD_COUNT is 92");
+    Check(PROD_COUNT == 102, "PROD_COUNT is 102");
     Check(g_Grammar[0].m_iNum == 0 && g_Grammar[0].m_Rhs.empty(),
           "g_Grammar[0] is an unused sentinel");
 

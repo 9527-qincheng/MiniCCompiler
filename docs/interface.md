@@ -197,6 +197,37 @@
       `char`/`bool` 作函数返回类型、局部变量与形参遮蔽同名全局变量、1000 元素局部数组的大栈帧，
       期望输出 15 行（`100/10/0/a/b/c/1/0/0/x/y/z/7.5/499500/Z`），
       `tests/run_codegen_tests.ps1` 从 24 例增至 **25 例全通过**。
+ 20. **挑战版新增 `++` / `--` 运算符（2026-10-27，鲍方乐）**：语义与 C 一致——`b = a++` 取**旧值**、
+      `b = ++a` 取**新值**；单独成句 `a++;`、数组元素 `arr[i]++;` 均可。
+      - **词法**：新增终结符 `TOKEN_INC = 045`、`TOKEN_DEC = 046`（插在 `TOKEN_NOT = 044` 之后，
+        **不改动任何既有编码**）。`ScanOperator()` 的双字符表在 `&&`/`||` 之后追加 `++`/`--`，
+        最长匹配优先，因此 `++ +` 不会被拆成三个 `+`。
+      - **文法**：产生式 92 → **102 条**（新增 93–102，1–92 的编号与内容一字未改），
+        终结符 39 → **41 个**，非终结符仍 45 个，语义动作 28 → **30 个**（`semantic028` 自增、
+        `semantic029` 自减）。**SELECT 冲突数不变**（仍只有悬挂 else 那一处），由
+        `tests/grammar_selfcheck.cpp` 的 `conflicts == 1` 断言守住。
+        - 前缀：`一元表达式 → ++ 一元表达式`（93）、`--`（94）——与一元 `-` 同层；
+        - 后缀：`后缀表达式1 → ++ 后缀表达式1`（95）、`--`（96）——与 `[]` `()` 同层；
+        - 语句：`标识符后续 → ++ ;`（97/98，`a++;`）、`语句 → ++ 一元表达式 ;`（99/100，`++a;`）、
+          `赋值 → ++ ;`（101/102，`arr[i]++;`）。
+      - **AST**：**不新增节点类别**（仍 19 类），复用 `UnOpNode`；新增 `bool m_bPostfix` 区分前后缀，
+        构造函数签名扩为 `UnOpNode(TokenType op, ASTNodePtr operand, const LineInfo& loc, bool isPostfix = false)`
+        （**带默认值，既有调用点无需改动**）。`FillOpenBase` 的下钻条件补上 `AST_NODE_UNOP`，
+        否则 `arr[i]++` 的数组基址填不进去。
+      - **中间代码**：**不新增 `QuadOp`**（该枚举的追加规则要求新码只能加在末尾，本次全部复用）。
+        `IRGenerator::GenIncDec(const UnOpNode*, bool bReturnOld)` 产出「旧值快照 → 原值 ±1 → 写回」，
+        自增用 `Q_ADD`、自减用 `Q_SUB`；变量走 `Q_ASSIGN`、数组元素走 `Q_INDEX` 读写两支。
+      - **目标代码**：**零改动**（复用 `Q_ADD`/`Q_SUB`/`Q_ASSIGN`/`Q_INDEX` 的既有翻译）。
+      - **语义检查**：操作数必须是可修改左值（`AST_NODE_IDENT` / `AST_NODE_INDEX`），否则报
+        `'++' requires a modifiable lvalue`；类型必须是 int/float（`IsNumeric`，char 与 bool 不接受），
+        否则报 `'++' requires a numeric operand`。
+      - 回归：`tests/parser/incdec.mc`（正例，前/后缀/语句/数组四形态）、
+        `tests/parser/err_incdec_operand.mc`（非左值 + 非数值两条）、`tests/quad/incdec.mc`、
+        `tests/codegen/incdec.mc`（期望 `5/6/7/7`，验证前后缀取值差异）。
+        parser 47 → **49 例**、quad 14 → **15 例**、codegen 25 → **26 例**，全绿。
+      - **变异测试**：把 `EvalExpr` 里的 `GenIncDec(u, u->m_bPostfix)` 改成 `!u->m_bPostfix`
+        （即前后缀语义对调），`tests/codegen/incdec.mc` 立刻报
+        `expect: 5|6|7|7 / actual: 6|6|6|7`——证明该用例确实锁住了语义。
 
 > 说明：本节第 8–10 条为 2026-10-13 阶段⑤ 收尾时同步；**下面的"四、词法识别集合"仍是 v3.1 骨架版内容**，
 > 词法 v4.0 的现状（17 个挑战版终结符等）见 `README.md` 的模块状态表与
@@ -208,6 +239,6 @@
 - 关键字：int / float / if / else / while / return / void
 - 标识符：`[A-Za-z_][A-Za-z0-9_]*`
 - 常量：整数 `[0-9]+`、浮点 `[0-9]+.[0-9]+`（登记入 m_ConstTexts，Token.m_iConstIdx 记录位序）
-- 运算符：+ - * / =
+- 运算符：+ - * / =  < 以及 v4.0 挑战版新增的 == != <= >= && || ! ++ -- 与 `char`/`bool` 字面量、`char` 关键字符号
 - 界符：( ) { } ; ,
 - 结束：EOF

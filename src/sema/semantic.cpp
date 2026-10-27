@@ -311,6 +311,25 @@ TokenType SemanticAnalyzer::VisitUnOp(UnOpNode* u)
         }
         return TokenType::TOKEN_BOOL;
     }
+    if (u->m_op == TokenType::TOKEN_INC || u->m_op == TokenType::TOKEN_DEC)
+    {
+        // 自增自减：操作数必须是可修改左值，且为非 bool 的数值类型
+        const ASTNode* operand = u->m_children[0].get();
+        const ASTNodeKind k = operand ? operand->m_kind : ASTNodeKind::AST_NODE_NONE;
+        if (k != ASTNodeKind::AST_NODE_IDENT && k != ASTNodeKind::AST_NODE_INDEX)
+        {
+            EmitError(std::string(u->m_op == TokenType::TOKEN_INC ? "'++'" : "'--'") +
+                      " requires a modifiable lvalue", u->m_loc);
+            return TokenType::TOKEN_NONE;
+        }
+        if (!IsNumeric(t))
+        {
+            EmitError(std::string(u->m_op == TokenType::TOKEN_INC ? "'++'" : "'--'") +
+                      " requires a numeric operand", u->m_loc);
+            return TokenType::TOKEN_NONE;
+        }
+        return t;   // 前缀与后缀的表达式类型相同（值不同，由中间代码区分）
+    }
     return t;
 }
 

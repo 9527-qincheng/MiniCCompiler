@@ -218,8 +218,8 @@ std::string BinOpNode::Label() const
     return "BinOp(" + std::string(TokenTypeToString(m_op)) + ")";
 }
 
-UnOpNode::UnOpNode(TokenType op, ASTNodePtr operand, const LineInfo& loc)
-    : ASTNode(ASTNodeKind::AST_NODE_UNOP, loc), m_op(op)
+UnOpNode::UnOpNode(TokenType op, ASTNodePtr operand, const LineInfo& loc, bool isPostfix)
+    : ASTNode(ASTNodeKind::AST_NODE_UNOP, loc), m_op(op), m_bPostfix(isPostfix)
 {
     m_children.push_back(std::move(operand)); // children[0] = 操作数
 }

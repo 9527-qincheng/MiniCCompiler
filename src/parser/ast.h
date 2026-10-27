@@ -206,10 +206,11 @@ public:
 class UnOpNode : public ASTNode
 {
 public:
-    UnOpNode(TokenType op, ASTNodePtr operand, const LineInfo& loc);
+    UnOpNode(TokenType op, ASTNodePtr operand, const LineInfo& loc, bool isPostfix = false);
     std::string Label() const override;
 
-    TokenType m_op;   // TOKEN_NOT / TOKEN_MINUS
+    TokenType m_op;        // TOKEN_NOT / TOKEN_MINUS / TOKEN_INC / TOKEN_DEC
+    bool      m_bPostfix;  // ++/-- 是否为后缀写法（x++ 取值旧值；前缀 ++x 取新值）
 };
 
 // 数值常量（整型/实型/字符/布尔统一）：无子节点

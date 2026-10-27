@@ -121,6 +121,8 @@ private:
     Operand IntToFloatConv(const Operand& op, const LineInfo& loc); // 插入 ITOF
     Operand FloatToIntConv(const Operand& op, const LineInfo& loc); // 插入 FTOI
     Operand ConstInt(int value, const LineInfo& loc); // 取整型常量 0/1（无则登记）
+    // 自增自减（挑战版 ++/--）：生成「旧值快照 + 原位 ±1」两条四元式，returnOld 决定返回哪个
+    Operand GenIncDec(const UnOpNode* u, bool bReturnOld);
     void    BuildParamTypeTable(const ASTNodePtr& root); // 扫描 AST 建「函数名 → 形参类型表」
     // 形参类型查询：按「被调函数名 + 实参序号」取形参声明类型（供 Q_PARA 插类型转换）
     TokenType ParamTypeOf(const std::string& procName, int pos) const;

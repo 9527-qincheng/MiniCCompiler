@@ -1,0 +1,34 @@
+Program  @2:1
+  Decl(INT a)  @2:1
+  ArrayDecl(INT arr[3])  @3:1
+    Decl(INT arr)  @3:1
+    Num(3)  @3:8
+  FuncDef(INT main)  @5:1
+    Block  @5:12
+      Assign  @6:5
+        Ident(a)  @6:5
+        Num(1)  @6:9
+      UnOp(INC)  @7:5
+        Ident(a)  @7:5
+      UnOp(INC)  @8:5
+        Ident(a)  @8:7
+      UnOp(DEC)  @9:5
+        Ident(a)  @9:5
+      UnOp(DEC)  @10:5
+        Ident(a)  @10:7
+      Assign  @11:5
+        Index  @11:8
+          Ident(arr)  @11:5
+          Num(0)  @11:9
+        Num(2)  @11:14
+      UnOp(INC)  @12:5
+        Index  @12:8
+          Ident(arr)  @12:5
+          Num(0)  @12:9
+      UnOp(INC)  @13:5
+        Index  @13:10
+          Ident(arr)  @13:7
+          Num(1)  @13:11
+      Return  @14:5
+        UnOp(INC)  @14:13
+          Ident(a)  @14:12

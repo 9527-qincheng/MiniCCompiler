@@ -50,7 +50,7 @@ enum class TokenType
     TOKEN_RBRACKET,     // 026 ]
     TOKEN_SEMI,         // 027 ;
     TOKEN_COMMA,        // 028 ,
-    /* 运算符（编码 031~044） */
+    /* 运算符（编码 031~046） */
     TOKEN_PLUS,         // 031 +
     TOKEN_MINUS,        // 032 -
     TOKEN_MUL,          // 033 *
@@ -65,6 +65,8 @@ enum class TokenType
     TOKEN_AND,          // 042 &&
     TOKEN_OR,           // 043 ||
     TOKEN_NOT,          // 044 !
+    TOKEN_INC,          // 045 ++（自增，前缀与后缀两种写法）
+    TOKEN_DEC,          // 046 --（自减，前缀与后缀两种写法）
     /* 标识符 / 常量（编码 051~054） */
     TOKEN_IDENT,        // 051 标识符
     TOKEN_NUM_INT,      // 052 整型常量

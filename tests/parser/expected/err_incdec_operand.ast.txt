@@ -1,0 +1,24 @@
+Program  @2:1
+  FuncDef(INT main)  @2:1
+    Block  @2:12
+      Decl(INT a)  @3:5
+      Decl(INT b)  @4:5
+      Decl(BOOL f)  @5:5
+      Assign  @6:5
+        Ident(a)  @6:5
+        Num(1)  @6:9
+      Assign  @7:5
+        Ident(b)  @7:5
+        UnOp(INC)  @7:9
+          Num(5)  @7:11
+      Assign  @8:5
+        Ident(b)  @8:5
+        UnOp(INC)  @8:10
+          Ident(a)  @8:9
+      Assign  @9:5
+        Ident(f)  @9:5
+        Num(1)  @9:9
+      UnOp(INC)  @10:5
+        Ident(f)  @10:5
+      Return  @11:5
+        Ident(b)  @11:12

@@ -6,7 +6,7 @@
 // 数组下标约定（与 §4.1 / §4.2 的编码表一致）：
 //   · 终结符    编码 001~054、099，直接作为下标（g_PredictTable 第二维）
 //   · 非终结符  编码 100~144，数组下标 = 编码 - NTERM_CODE_BASE，即 0~44
-//   · 产生式    编号 1~92，  数组下标 = 编号（下标 0 为哨兵，不使用）
+//   · 产生式    编号 1~100， 数组下标 = 编号（下标 0 为哨兵，不使用）
 //   · 空串 ε    编码 000；在 m_Rhs 中表示为空序列，表中不再出现 000
 //
 // 数据来源：codex/MiniC挑战版文法及其相关表格.xlsx，
@@ -25,15 +25,15 @@ constexpr int MAX_NT          = 45;   // 非终结符个数：编码 100..144
 constexpr int MAX_TERM        = 100;  // 终结符编码上界 + 1：编码 001..054、099
 constexpr int NTERM_CODE_BASE = 100;  // 非终结符编码基址（下标 = 编码 - 100）
 constexpr int TERM_CODE_EOF   = 99;   // 输入结束符 '#' 的编码
-constexpr int PROD_COUNT      = 92;   // 产生式条数（编号 1..92）
-constexpr int PROD_TABLE_SIZE = 93;   // g_Grammar / g_SelectSet 元素个数（下标 0 为哨兵）
+constexpr int PROD_COUNT      = 102;  // 产生式条数（编号 1..102）
+constexpr int PROD_TABLE_SIZE = 103;  // g_Grammar / g_SelectSet 元素个数（下标 0 为哨兵）
 
 // ----------------------------------------------------------------------------
 // 5.3.1 产生式表元素
 // ----------------------------------------------------------------------------
 struct Production
 {
-    int m_iNum;                  // 产生式编号 1..92
+    int m_iNum;                  // 产生式编号 1..102
     int m_iLhs;                  // 左部非终结符编码（100..144）
     std::vector<int> m_Rhs;      // 右部符号编码序列（终结符 <100，非终结符 >=100）
                                  // ε 产生式：m_Rhs 为空
@@ -50,7 +50,7 @@ struct Production
 // 5.3.1 五张表（定义见 grammar.cpp）
 // ----------------------------------------------------------------------------
 
-// 产生式表：下标 = 产生式编号（1..92），下标 0 为哨兵
+// 产生式表：下标 = 产生式编号（1..102），下标 0 为哨兵
 extern const Production g_Grammar[PROD_TABLE_SIZE];
 
 // FIRST / FOLLOW / SELECT（§4.5~§4.7）
@@ -59,7 +59,7 @@ extern const Production g_Grammar[PROD_TABLE_SIZE];
 extern const std::set<int> g_FirstSet[MAX_NT];
 extern const std::set<int> g_FollowSet[MAX_NT];
 
-// 下标 = 产生式编号（1..92），下标 0 为哨兵
+// 下标 = 产生式编号（1..102），下标 0 为哨兵
 extern const std::set<int> g_SelectSet[PROD_TABLE_SIZE];
 
 // 预测分析表（§4.9）：M[非终结符下标][终结符编码] = 产生式编号，-1 为出错项

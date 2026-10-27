@@ -46,6 +46,7 @@ const CodeName kTermNames[] =
     { 35, "="       }, { 36, "=="      }, { 37, "!="      }, { 38, "<"       },
     { 39, "<="      }, { 40, ">"       }, { 41, ">="      }, { 42, "&&"      },
     { 43, "||"      }, { 44, "!"       },
+    { 45, "++"      }, { 46, "--"      },
     { 51, "标识符"  }, { 52, "整型常量" }, { 53, "实型常量" }, { 54, "字符常量" },
     { 99, "#"       },
 };
@@ -201,9 +202,10 @@ void FillOpenBase(ASTNodePtr& root, ASTNodePtr base)
             return;
         }
         if (node->m_kind == ASTNodeKind::AST_NODE_INDEX ||
-            node->m_kind == ASTNodeKind::AST_NODE_CALL)
+            node->m_kind == ASTNodeKind::AST_NODE_CALL ||
+            node->m_kind == ASTNodeKind::AST_NODE_UNOP)
         {
-            node = node->m_children[0].get();   // 继续下钻链式后缀
+            node = node->m_children[0].get();   // 继续下钻链式后缀（含 arr[i]++ 的 UNOP→INDEX）
             continue;
         }
         break;
@@ -554,6 +556,10 @@ bool CParser::ExecuteAction(int iSemantic)
         break;
     case 27:  // semantic027 空语句：无动作
         break;
+    case 28:  // semantic028 自增 ++：语义/中间代码阶段按 UnOpNode 处理，此处仅保留调度点
+        break;
+    case 29:  // semantic029 自减 --：同上
+        break;
     default:
         ReportError("内部错误：未知语义动作编号 " + std::to_string(iSemantic));
         return false;
@@ -868,6 +874,33 @@ void CParser::ReduceProduction(int iProdNum, std::size_t iValueBase)
                    Loc0());
         break;
     }
+    case 97:   // 标识符后续 → ++ ;               | sem028@2
+    case 98:   // 标识符后续 → -- ;               | sem029@2
+    {
+        // a++; / a--; 作为语句：操作数槽先置空，由 语句 → 标识符 标识符后续 回填（FillOpenBase）
+        out = Node(std::make_unique<UnOpNode>(v[0].m_token.m_type, nullptr, Loc0()), Loc0());
+        break;
+    }
+    case 99:   // 语句 → ++ 一元表达式 ;           | sem028@3
+    case 100:  // 语句 → -- 一元表达式 ;          | sem029@3
+    {
+        // ++a; / --a; 作为语句：表达式已在语法层构造，返回值在此丢弃
+        out = Node(std::make_unique<UnOpNode>(v[0].m_token.m_type,
+                                              std::move(v[1].m_node),
+                                              Loc0()),
+                   Loc0());
+        break;
+    }
+    case 101:  // 赋值 → ++ ;                      | sem028@2
+    case 102:  // 赋值 → -- ;                     | sem029@2
+    {
+        // arr[i]++; / arr[i]--; ：左部由 标识符后续 → [ 表达式 ] 赋值 在外层回填，
+        // 这里只造一个操作数暂空的 UNOP 节点（后缀形式，取值旧值）。
+        out = Node(std::make_unique<UnOpNode>(v[0].m_token.m_type, nullptr, Loc0(),
+                                              true /* 后缀：取旧值 */),
+                   Loc0());
+        break;
+    }
     case 41:   // 条件语句 → if ( 表达式 ) 语句 否则部分 | sem012@4, sem014@6
     {
         ASTNodePtr node = std::make_unique<IfNode>(std::move(v[2].m_node),
@@ -957,6 +990,8 @@ void CParser::ReduceProduction(int iProdNum, std::size_t iValueBase)
         break;
     case 75:   // 一元表达式 → ! 一元表达式        | sem011@2
     case 76:   // 一元表达式 → - 一元表达式        | sem010@2
+    case 93:   // 一元表达式 → ++ 一元表达式       | sem028@2
+    case 94:   // 一元表达式 → -- 一元表达式       | sem029@2
     {
         // 阶段⑤：UNOP 节点（原 UnaryOpNode 改名），children[0] = 操作数
         ASTNodePtr node = std::make_unique<UnOpNode>(v[0].m_token.m_type,
@@ -970,13 +1005,18 @@ void CParser::ReduceProduction(int iProdNum, std::size_t iValueBase)
         break;
     case 78:   // 后缀表达式 → 基本表达式 后缀表达式1
     {
-        // 阶段⑤：链式后缀按 INDEX / CALL 节点自左向右套用（基址已在基本表达式中确定）
+        // 阶段⑤：链式后缀按 INDEX / CALL / 自增自减节点自左向右套用（基址已在基本表达式中确定）
         ASTNodePtr cur = std::move(v[0].m_node);
         for (SuffixItem& s : v[1].m_suffixes)
         {
             if (s.m_bCall)
             {
                 cur = std::make_unique<CallNode>(std::move(cur), std::move(s.m_args), s.m_loc);
+            }
+            else if (s.m_unary != TokenType::TOKEN_NONE)
+            {
+                // 后缀自增自减：x++ 的值是旧值，故 m_bPostfix = true
+                cur = std::make_unique<UnOpNode>(s.m_unary, std::move(cur), s.m_loc, true);
             }
             else
             {
@@ -1007,6 +1047,20 @@ void CParser::ReduceProduction(int iProdNum, std::size_t iValueBase)
         out.m_kind = SemKind::SUFFIX;
         out.m_suffixes.push_back(std::move(s));
         for (SuffixItem& q : v[3].m_suffixes) { out.m_suffixes.push_back(std::move(q)); }
+        out.m_loc = Loc0();
+        break;
+    }
+    case 95:   // 后缀表达式1 → ++ 后缀表达式1      | sem028@2
+    case 96:   // 后缀表达式1 → -- 后缀表达式1      | sem029@2
+    {
+        // 后缀自增自减（x++ / x--）：与下标/调用一样按后缀链自左向右套用，
+        // 故先登记为 SuffixItem，由 case 78 统一装配成 UnOpNode。
+        SuffixItem s;
+        s.m_unary = v[0].m_token.m_type;   // TOKEN_INC / TOKEN_DEC
+        s.m_loc   = Loc0();
+        out.m_kind = SemKind::SUFFIX;
+        out.m_suffixes.push_back(std::move(s));
+        for (SuffixItem& q : v[1].m_suffixes) { out.m_suffixes.push_back(std::move(q)); }
         out.m_loc = Loc0();
         break;
     }

@@ -86,11 +86,12 @@ private:
         LineInfo    m_loc;
     };
 
-    struct SuffixItem   // 后缀表达式1 的一个后缀：[] 下标 或 () 调用
+    struct SuffixItem   // 后缀表达式1 的一个后缀：[] 下标、() 调用、++/-- 自增自减
     {
         bool        m_bCall = false;
         ASTNodePtr  m_operand;                  // [] 下标表达式
         std::vector<ASTNodePtr> m_args;         // () 实参序列（CALL 节点 children[1..]）
+        TokenType   m_unary = TokenType::TOKEN_NONE;  // TOKEN_INC / TOKEN_DEC：后缀自增自减
         LineInfo    m_loc;
     };
 

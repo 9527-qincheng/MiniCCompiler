@@ -1,0 +1,3 @@
+minic: error: 7:9: '++' requires a modifiable lvalue
+minic: error: 10:5: '++' requires a numeric operand
+minic: 2 error(s) found, compilation failed

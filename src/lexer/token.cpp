@@ -53,6 +53,8 @@ const char* TokenTypeToString(TokenType t)
     case TokenType::TOKEN_AND:        return "AND";
     case TokenType::TOKEN_OR:         return "OR";
     case TokenType::TOKEN_NOT:        return "NOT";
+    case TokenType::TOKEN_INC:        return "INC";
+    case TokenType::TOKEN_DEC:        return "DEC";
     /* 常量 */
     case TokenType::TOKEN_IDENT:       return "IDENT";
     case TokenType::TOKEN_NUM_INT:     return "NUM_INT";
@@ -67,7 +69,7 @@ const char* TokenTypeToString(TokenType t)
 
 // ----------------------------------------------------------------------------
 // T3：编码双向映射
-//   编码区间：关键字 001~012、界符 021~028、运算符 031~044、
+//   编码区间：关键字 001~012、界符 021~028、运算符 031~046、
 //             标识符/常量 051~054、结束 099
 // ----------------------------------------------------------------------------
 int TokenTypeToCode(TokenType t)
@@ -110,6 +112,8 @@ int TokenTypeToCode(TokenType t)
     case TokenType::TOKEN_AND:      return 42;
     case TokenType::TOKEN_OR:       return 43;
     case TokenType::TOKEN_NOT:      return 44;
+    case TokenType::TOKEN_INC:      return 45;
+    case TokenType::TOKEN_DEC:      return 46;
 
     case TokenType::TOKEN_IDENT:       return 51;
     case TokenType::TOKEN_NUM_INT:     return 52;
@@ -166,6 +170,8 @@ TokenType CodeToTokenType(int code)
     case 42: return TokenType::TOKEN_AND;
     case 43: return TokenType::TOKEN_OR;
     case 44: return TokenType::TOKEN_NOT;
+    case 45: return TokenType::TOKEN_INC;
+    case 46: return TokenType::TOKEN_DEC;
 
     case 51: return TokenType::TOKEN_IDENT;
     case 52: return TokenType::TOKEN_NUM_INT;

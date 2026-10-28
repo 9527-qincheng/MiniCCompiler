@@ -88,7 +88,7 @@ MiniCCompiler/
 │   ├── 验收报告.md                              # 测试验收报告：交付物核对/五模块记录/11 套回归/偏差与遗留
 │   ├── 小组分工表.md                            # 第 5 组 12 人任务分工表（对应项目书表 3）
 │   ├── 项目总结.md                              # 项目总结：架构/成果/困难与解决/经验/不足
-│   ├── MiniC编译器_答辩演示.pptx                # 答辩 PPT（17 页）
+│   ├── MiniC编译器_答辩演示.pptx                # 答辩 PPT（18 页）
 │   ├── 语法分析过程_示例.xlsx                   # 分析过程示例（LL(1) 逐步推导）
 │   ├── 语法分析过程_ll1_411.xlsx                # §4.11 的 82 步分析轨迹
 │   ├── gui-implementation/                      # GUI 实现截图（01~11）
@@ -464,7 +464,7 @@ pwsh -File tests/run_quad_tests.ps1 -Update
 | ② 技术文档 | [docs/MiniC编译器设计文档_v4.0_挑战版LL1.md](docs/MiniC编译器设计文档_v4.0_挑战版LL1.md)（系统架构设计）、[docs/MiniC编译器数据结构设计.md](docs/MiniC编译器数据结构设计.md)、[docs/interface.md](docs/interface.md)（模块接口定义）、[docs/MiniC语法支持清单.md](docs/MiniC语法支持清单.md)（语言规格） | ✅ 完成 |
 | ③ 测试用例集 | `tests/`，11 套回归（9 套编译阶段 + 2 套 GUI 冒烟，见「构建」一节的 `build.bat test`） | ✅ 完成 |
 | ④ 验收报告 | [docs/验收报告.md](docs/验收报告.md)（交付物核对 / 五模块十字段记录 / 11 套回归 / 偏差与遗留） | ✅ 完成 |
-| ⑤ 答辩材料 | 答辩 PPT：[docs/MiniC编译器_答辩演示.pptx](docs/MiniC编译器_答辩演示.pptx)（17 页）<br>项目总结：[docs/项目总结.md](docs/项目总结.md) | ✅ 完成 |
+| ⑤ 答辩材料 | 答辩 PPT：[docs/MiniC编译器_答辩演示.pptx](docs/MiniC编译器_答辩演示.pptx)（18 页）<br>项目总结：[docs/项目总结.md](docs/项目总结.md) | ✅ 完成 |
 | 个人任务计划（附录 A） | [docs/plans/](docs/plans/README.md)，12 人各一份 | ✅ 完成 |
 | 小组分工表（项目书表 3） | [docs/小组分工表.md](docs/小组分工表.md)，12 人 + 模块人数 + 署名差异说明 | ✅ 完成 |
 | 过程文档存档 | [docs/archive/](docs/archive/README.md)，协作说明 4 + 审查报告 9 + 整改说明 8 + 模块任务书 8 | ✅ 完成 |

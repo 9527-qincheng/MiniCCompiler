@@ -35,8 +35,6 @@ main:
     movss %xmm0, -16(%rbp)
     movss -16(%rbp), %xmm0
     cvttss2si %xmm0, %eax
-    movl %eax, -24(%rbp)
-    movl -24(%rbp), %eax
     movl %eax, a(%rip)
     xorl %eax, %eax
 .Lret0:

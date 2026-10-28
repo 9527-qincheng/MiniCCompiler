@@ -1,7 +1,7 @@
 # 语义分析与中间代码模块（sema/）
 
 > 上游：`parser/`（AST）+ `symbol/`　下游：`codegen/`（`CodeList`）
-> 规模：6 个文件 2 941 行（`ir.cpp` 1 380 / `ir.h` 439 / `semantic.cpp` 714 / `semantic.h` 99 / `optimizer.cpp` 267 / `optimizer.h` 42）
+> 规模：6 个文件 3 283 行（`ir.cpp` 1 380 / `ir.h` 439 / `semantic.cpp` 714 / `semantic.h` 99 / `optimizer.cpp` 267 / `optimizer.h` 42）
 
 ## 1. 职责
 

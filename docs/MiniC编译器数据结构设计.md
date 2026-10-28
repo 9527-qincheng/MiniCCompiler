@@ -47,14 +47,14 @@
 - 标注说明：
   - **【PPT】**：课程 PPT 明确规定，直接采用；
   - **【参考书】**：参考书 NeoPascal 设计，作为基准借鉴，按 MiniC 简化落地；
-  - **【扩展预留】**：挑战版（if/while/函数/数组）预留，基础版可不实现；
+  - **【扩展预留】**：挑战版（if/while/函数/数组）预留，最低规格可不实现；
   - **【待确认】**：两资料均未明确、影响设计方向的事项，原见第 7 节清单，**已于 2026-10-08 定稿**（现第 8 节，全部按建议默认值确认）。
 
 ---
 
 ## 2. MiniC 语言子集与实训要求（PPT 硬性约束）
 
-### 2.1 语言范围（基础版，PPT 规定）
+### 2.1 语言范围（最低规格，PPT 规定）
 
 | 项目 | 内容 |
 |---|---|
@@ -150,10 +150,10 @@ extern vector<CompileError> g_ErrorList;   // CompileError{ szMsg; LineInfo loc;
 第 6 章接口契约 `EnterScope(ScopeType t)` 需要作用域类型参数，此处补充定义（与骨架实现 `ScopeType{SCOPE_GLOBAL, SCOPE_FUNCTION}` 对齐）：
 
 ```cpp
-// 作用域类型：基础版仅全局作用域，挑战版函数作用域（参考书过程嵌套）
+// 作用域类型：最低规格仅全局作用域，挑战版函数作用域（参考书过程嵌套）
 enum class ScopeType
 {
-    SCOPE_GLOBAL,    // 全局作用域（基础版仅此一种）
+    SCOPE_GLOBAL,    // 全局作用域（最低规格仅此一种）
     SCOPE_FUNCTION   // 函数作用域（挑战版）
 };
 ```
@@ -347,7 +347,7 @@ public:
 enum class ASTNodeKind
 {
     Program, DeclList, Decl, StmtList, Assign,
-    Expr, Op, Num, Ident,           // 基础版
+    Expr, Op, Num, Ident,           // 最低规格
     If, While, FuncDef, Call, Array // 挑战版扩展
 };
 
@@ -467,8 +467,8 @@ class SymbolEntry
 {
 public:
     string  m_szName;        // 【PPT】符号名
-    int     m_iProcIndex;    // 所属过程/作用域索引（参考书 m_iProcIndex；基础版恒为主程序 0）
-    int     m_scope;         // 【PPT】作用域编号（基础版全局=0；挑战版随 ProcStack 递增）
+    int     m_iProcIndex;    // 所属过程/作用域索引（参考书 m_iProcIndex；最低规格恒为主程序 0）
+    int     m_scope;         // 【PPT】作用域编号（最低规格全局=0；挑战版随 ProcStack 递增）
     int     m_line;          // 【PPT】声明所在行
     bool    m_bUsed;         // 是否被引用（参考书 VarInfo::m_bUsed，供"声明未使用"警告）
 
@@ -481,7 +481,7 @@ class VarEntry : public SymbolEntry
 {
 public:
     int       m_iTypeLink;    // 类型链接：指向 TypeInfoTbl 中该变量的类型表项（参考书 m_iTypeLink）
-    TokenType m_baseType;     // 基础版直接冗余类型：TOKEN_INT / TOKEN_FLOAT（便于快速访问）
+    TokenType m_baseType;     // 最低规格直接冗余类型：TOKEN_INT / TOKEN_FLOAT（便于快速访问）
     int       m_eRank;        // 符号种类：VAR=0 / PARA=1 / RET=2（参考书 eRank；挑战版用）
     bool      m_bRef;         // 是否为引用参数（参考书 m_bRef；挑战版用）
     int       m_iMemoryAlloc; // 存储分配偏移（参考书 m_iMemoryAlloc；目标代码阶段回填）
@@ -496,7 +496,7 @@ public:
     int       m_iVal;         // 整型值
     float     m_fVal;         // 浮点值
     int       m_iEnumIdx;     // 所属枚举类型表项索引（挑战版枚举用）
-    int       m_storeType;    // 存储类型（参考书 StoreType，基础版=INTEGER/REAL）
+    int       m_storeType;    // 存储类型（参考书 StoreType，最低规格=INTEGER/REAL）
 };
 
 // 类型表项：参考书 TypeInfo（类型链核心）
@@ -568,7 +568,7 @@ public:
 
 #### 4.4.2 符号表容器 SymbolTable（参考书 CSymbolTbl 多表组织）
 
-参考书采用多表组织（变量表、常量表、类型表、过程表、枚举表、标号表），并配有 `ProcStack` 管理过程嵌套；MiniC 基础版只需变量/常量/类型三张主表，其余表保留为挑战版扩展，**结构完全对齐参考书**。
+参考书采用多表组织（变量表、常量表、类型表、过程表、枚举表、标号表），并配有 `ProcStack` 管理过程嵌套；MiniC 最低规格只需变量/常量/类型三张主表，其余表保留为挑战版扩展，**结构完全对齐参考书**。
 
 ```cpp
 // 符号表：参考书 CSymbolTbl 多表组织
@@ -623,7 +623,7 @@ extern SymbolTable g_SymbolTbl;   // 全局符号表单例（参考书全局 Sym
 |---|---|---|
 | 声明 | 遇 `DeclNode`：`SearchVarInfoTbl` 查重 → `RecVar` 登记 → 回填 `m_iSymIdx` | semantic 处理变量定义部分 |
 | 常量 | 词法识别常量即 `RecConstTbl` 登记，语义阶段按名回填 `m_szName/m_iProcIndex` | semantic004（常量定义→标识符=常量） |
-| 类型 | 基础版类型为内建 int/float（TypeEntry 预置 T_INTEGER/T_REAL）；挑战版类型声明用 `m_iTypePos` 栈 + `m_iTypeFlag` 栈构造类型链 | semantic006/015/010 |
+| 类型 | 最低规格类型为内建 int/float（TypeEntry 预置 T_INTEGER/T_REAL）；挑战版类型声明用 `m_iTypePos` 栈 + `m_iTypeFlag` 栈构造类型链 | semantic006/015/010 |
 
 > **⚠ 2026-10-27 实现变更**：挑战版**没有**做类型链（不设 `m_iTypePos`/`m_iTypeFlag` 栈）。
 > 实际做法是 `SemanticAnalyzer::Analyze()` 开头调 `SymbolTable::RecBuiltinTypes()`，
@@ -633,7 +633,7 @@ extern SymbolTable g_SymbolTbl;   // 全局符号表单例（参考书全局 Sym
 | 语句 | 遇 `IdentNode`：查变量表，未声明报错；标记 `m_bUsed = true` | 变量引用的语义检查 |
 | 类型检查 | 赋值/表达式类型相容：int↔float 按 C 语义转换；挑战版引入类型系统表（见 4.5.4） | 参考书第 6 章 |
 
-**MiniC 简化说明**：参考书为 Pascal 完整类型系统设置六张表 + 复杂辅助栈；MiniC 基础版仅全局 int/float 变量，**仅启用 `m_VarInfoTbl / m_ConstInfoTbl / m_TypeInfoTbl` 三张表**，辅助栈可不实例化；挑战版按需启用其余表与栈（避免过度设计，见第 6 节决策说明）。
+**MiniC 简化说明**：参考书为 Pascal 完整类型系统设置六张表 + 复杂辅助栈；MiniC 最低规格仅全局 int/float 变量，**仅启用 `m_VarInfoTbl / m_ConstInfoTbl / m_TypeInfoTbl` 三张表**，辅助栈可不实例化；挑战版按需启用其余表与栈（避免过度设计，见第 6 节决策说明）。
 
 > **⚠ 2026-10-27 实现现状**：实际启用的是 **7 张表全部启用**
 > （`m_VarInfoTbl` / `m_ConstInfoTbl` / `m_TypeInfoTbl` / `m_ProcInfoTbl` /
@@ -718,7 +718,7 @@ public:
     TokenType   m_type;       // 数据类型：TOKEN_INT / TOKEN_FLOAT（供目标代码确定字节宽度）
     bool        m_bRef;       // 是否为间接引用（参考书 m_bRef，指针/数组挑战版用）
     int         m_iDetailType;// 详细类型信息（参考书 m_iDetailType，栈式类型链用）
-    // UD/DU 链（参考书 m_udChain / m_duChain）：优化阶段回填，基础版暂不启用
+    // UD/DU 链（参考书 m_udChain / m_duChain）：优化阶段回填，最低规格暂不启用
 
     Operand() : m_kind(OperandKind::OP_NONE), m_iLink(-1), m_type(TOKEN_EOF), m_bRef(false), m_iDetailType(0) {}
 
@@ -828,7 +828,7 @@ extern const vector<TypeSysInfo> g_TypeSysTable;
 // 3) 常量折叠（参考书 OpConstSemantic）：两个常量运算直接在语义期求值，不生成 IR
 ```
 
-**基础版表达式翻译示例**（`a = b * 2 + 1`，int 型）：
+**表达式翻译示例**（`a = b * 2 + 1`，int 型）：
 
 ```
 1.  (Q_MUL,   Var(b),   Const(2),  Temp(_T1))      // GetTmpVar(int) → _T1
@@ -838,7 +838,7 @@ extern const vector<TypeSysInfo> g_TypeSysTable;
 
 ### 4.6 目标代码生成（参考书第 9 章，扩展设计）
 
-> 课程基础版验收产物止于四元式，目标代码生成非基础版必做（PPT 未要求，见 Q3）。本节依据参考书第 9 章（i386 示例）给出可扩展 C++ 骨架，**暂不承诺实现**。
+> 课程最低要求止于四元式，目标代码生成不在必做范围（PPT 未要求，见 Q3）。本节依据参考书第 9 章（i386 示例）给出可扩展 C++ 骨架，**暂不承诺实现**。
 
 #### 4.6.1 指令模板库（参考书 Pattern / Code / RegFlg）
 
@@ -1029,7 +1029,7 @@ public:
 class SymbolTable
 {
 public:
-    bool    EnterScope(ScopeType t);                    // 进入作用域（基础版仅全局，挑战版函数）
+    bool    EnterScope(ScopeType t);                    // 进入作用域（最低规格仅全局，挑战版函数）
     void    ExitScope();                                // 退出作用域
     VarEntry*    RecVar(const std::string& name, TokenType type, int line, int col);   // 登记变量（重名报错）
     ConstEntry*  RecConst(const std::string& name, TokenType type, double value, int line, int col); // 登记常量
@@ -1062,13 +1062,13 @@ public:
 ### 6.6 CCodeGen 目标代码生成模块（接口约定）
 
 ```cpp
-// 职责：四元式 → x86 汇编（Q3 定稿：基础版止于四元式，挑战版做 x86 汇编）；
+// 职责：四元式 → x86 汇编（Q3 定稿：最低规格止于四元式，挑战版做 x86 汇编）；
 //       指令模板匹配 + 寄存器分配（§4.6 骨架）。
 class CCodeGen
 {
 public:
     explicit CCodeGen(const CodeList& codes);           // 构造：绑定 IR 输入
-    bool    Generate(AsmOutput& out);                   // 生成汇编文本（挑战版；基础版不调用）
+    bool    Generate(AsmOutput& out);                   // 生成汇编文本（挑战版；最低规格不调用）
 };
 ```
 
@@ -1117,7 +1117,7 @@ public:
 | 单词三元组 CToken (m_iKind, m_szContent, m_LineInfo) | `Token` 类 | 保留 m_iKind/m_szContent/行号，扩展 PPT 列号与常量表位序 |
 | 转换表 m_szLexTbl[50][130]、关键字表 map<string,int> | `CLex` 成员 | 直接采用 |
 | LL(1) + First/Follow + 预测表 + 辅助栈 | `CParser` | 直接采用；MiniC 文法简单，辅助栈多为挑战版启用 |
-| 多表符号表 CSymbolTbl（Var/Const/Type/Proc/Label/Enum） | `SymbolTable` 多表 | 基础版启用 3 张主表，其余挑战版启用 |
+| 多表符号表 CSymbolTbl（Var/Const/Type/Proc/Label/Enum） | `SymbolTable` 多表 | 最低规格启用 3 张主表，其余挑战版启用 |
 | ObjectInfo 基类 | `SymbolEntry` 基类 | 保留 m_szName/m_iProcIndex，扩展 PPT scope/line |
 | VarInfo/ConstInfo/TypeInfo | `VarEntry/ConstEntry/TypeEntry` | 字段对齐参考书 |
 | IRCode + OpInfo + EmitIR | `Quad + Operand + EmitIR` | 直接采用，操作码按 MiniC 收窄 |
@@ -1129,7 +1129,7 @@ public:
 ### 6.3 刻意简化（避免过度设计，与 v1.0 结论一致）
 
 - 参考书类型系统含 1300+ 规则；MiniC 仅 int/float，`g_TypeSysTable` 规则数个位数；
-- 参考书六张符号表为完整 Pascal 语言服务；MiniC 基础版启用三张表即可满足 PPT 验收；
+- 参考书六张符号表为完整 Pascal 语言服务；MiniC 最低规格启用三张表即可满足 PPT 验收；
 - 参考书目标代码基于 i386 完整工程；MiniC 是否启用取决于课程要求（Q3）。
 
 ---
@@ -1142,7 +1142,7 @@ public:
 |---|---|---|---|
 | Q1 | **符号表采用多表组织**（变量表/常量表/类型表分表，参考书 CSymbolTbl），不回退单表 | §4.4 | **已定稿** |
 | Q2 | **开发语言 C++17 + CMake** 构建（VS/MinGW 兼容） | 全部代码 | **已定稿** |
-| Q3 | **目标代码**：基础版止于四元式；**挑战版做 x86 汇编**（启用 §4.6 骨架） | §4.6 | **已定稿** |
+| Q3 | **目标代码**：最低规格止于四元式；**挑战版做 x86 汇编**（启用 §4.6 骨架） | §4.6 | **已定稿** |
 | Q4 | **语法分析采用递归下降**（保留 LL(1) 思路，不另做预测表驱动） | §4.3 CParser | **已定稿** |
 | Q5 | **挑战版功能顺序**：控制流(if/while) → print → 数组 → 函数 | 各模块扩展预留 | **已定稿** |
 | Q6 | **四元式操作数引用式**（表索引）；打印时按索引转原文（OperandToString） | §4.5 Operand | **已定稿** |

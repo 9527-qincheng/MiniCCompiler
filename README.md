@@ -218,7 +218,7 @@ build\minic.exe tests\test.mc --dump-tokens --dump-ast --dump-symtab --dump-quad
 | `--dump-parse` | `tests/test.parse.txt` | 已实现（分析栈/剩余输入/动作 逐步轨迹，对齐设计文档 §4.11） |
 | `--dump-symtab` | `tests/test.sym.txt` | 已实现（语义分析填充的多表符号表） |
 | `--dump-quads` | `tests/test.quad.txt` | 已实现（四元式，含顶层代码与各函数过程） |
-| `-O` / `--optimize` | （无独立产物） | 四元式窥孔优化：常量条件跳转折叠 / 删不可达 / 删空跳 / 死临时量与死标号；**默认关闭**，关时产物与未加此选项完全一致 |
+| `-O` / `--optimize` | （无独立产物） | 四元式优化：前三轮窥孔（常量条件跳转折叠 / 删不可达 / 删空跳 / 死临时量与死标号）+ 第四轮按基本块做常量传播 / 公共子表达式 / 死存储，迭代到不动点；**默认关闭**，关时产物与未加此选项完全一致 |
 | `-h` / `--help` | stdout | 打印用法后退出码 0 |
 | `-V` / `--version` | stdout | 打印 `MiniC Compiler 4.0 (challenge, x86-64)` 后退出码 0 |
 

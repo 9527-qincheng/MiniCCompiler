@@ -13,7 +13,7 @@
 | SemanticAnalyzer | `explicit SemanticAnalyzer(SymbolTable&)` / `void Analyze(const ASTNodePtr&)`（阶段⑥ 新增，遍历 AST 填充符号表；不新增独立产物） | ASTNodePtr → 符号表 |
 | IRGenerator | `explicit IRGenerator(SymbolTable&)` / `Generate(const ASTNodePtr&)` / `GetTmpVar(TokenType)` / `GetTmpLabel()` / `EmitIR(op,op1,op2,rslt)` / `GetCodes() const` / `GetCodesMutable()`（2026-10-27 新增，供 `-O` 原地改写） / `OperandToString(op)` | CodeList → CCodeGen / --dump-quads |
 | CCodeGen | `explicit CCodeGen(const CodeList&)` / `void BindSymTab(const SymbolTable&)` / `bool Generate(AsmOutput&)` | 汇编输出（挑战版） |
-| minic_opt（新增） | `void Optimize(CodeList&, const SymbolTable&, OptStats&)`（2026-10-27 新增，仅 `-O` 时调用；四轮窥孔，原地改写 CodeList） | CodeList 原地改写 → CCodeGen |
+| minic_opt（新增） | `void Optimize(CodeList&, const SymbolTable&, OptStats&)`（2026-10-27 新增，仅 `-O` 时调用；四轮窥孔 + 基本块内三项优化，原地改写 CodeList） | CodeList 原地改写 → CCodeGen |
 
 ## 二、main 约定（第 6.7 节）
 
@@ -513,14 +513,14 @@
 
  31. **四元式窥孔优化 `-O / --optimize`（2026-10-27，鲍方乐）**：
       新增 `src/sema/optimizer.{h,cpp}`（`namespace minic_opt`），
-      `void Optimize(CodeList& codes, const SymbolTable& symtab, OptStats& st)` 四轮原地改写：
+      `void Optimize(CodeList& codes, const SymbolTable& symtab, OptStats& st)` 前三轮为窥孔，第 4 轮按基本块做（见第 36 条）：
       ①常量条件跳转折叠（条件查 `m_ConstInfoTbl` 拿真实值，为整型 0 时 `Q_JNT`→`Q_JMP`、
       `Q_JT`→删）②删不可达（块结束符之后到下一个 `Q_LABEL` 之前整段删）
       ③空跳（`JMP L` 紧跟 `LABEL L` 删 JMP）④死临时量与死标号（先扫全段收集活跃集再删，
       **收集时须排除 `Q_LABEL` 自身的 Op1**，否则标号永远删不掉）。
       `main.cpp` 只加 `-O` 时，对 `ir.GetCodesMutable()` 与 `symtab.m_ProcInfoTbl` 各
       `p.m_Codes` 逐个调用，并向 stderr 打
-      `minic: -O removed N redundant quad(s) [branch .., unreachable .., jumps .., temps .., labels ..]`。
+      `minic: -O removed N quad(s), rewrote M operand(s) [branch .., unreachable .., jumps .., temps .., labels .., const-prop .., cse .., dead-store ..]`。
       - **最重要的一条约束**：判「后续不可达」时**只有 `Q_JMP` 与 `Q_RETV` 算块结束**，
         **`Q_JT` / `Q_JNT` 绝不能算**。`JNT cond -> L` 是「条件为假才跳」，为真时继续往下走，
         紧随其后的正是 `if` 的真分支。第一版把条件跳转也当转移，结果 `-O` 把真分支当死代码删掉 ——
@@ -582,7 +582,8 @@
          里报的，放早了拿不到源码（第一次误插进 `if (!OpenSource(...))` 的失败分支，一行都没打印）。
        - `src/lexer/token.cpp` 新增匿名命名空间里的 `SourceLineOf(int, std::string&)` /
          `ExpandTabs` / `PrintDiagContext(const LineInfo&)`：按 `
-` 数到目标行、去掉尾部 ``、
+` 数到目标行、去掉尾部 `
+`、
          制表符展开成 4 空格以保证「源码行」与「`^` 行」列对齐、空行不打印。
        - **指针为空时自动跳过**，直接调 `EmitError` 的单元测试行为与从前一致。
        - **影响面**：语义基线按 `minic: error:` 前缀过滤，32 例一字未改；语法基线是整段 stderr
@@ -597,6 +598,30 @@
          删了会让四份正式文档与代码不一致。
        - **保留不动** `CCodeGen::m_TemplateLib`（设计文档 §4.6.2 的模板库预留）与
          `SymbolTable::m_EnumInfoTbl`（项目书/PPT/README 多处写到的「七张分表」之一）。
+
+ 36. **基本块划分与块内三项优化（2026-10-28，鲍方乐）**：
+      前三轮是纯窥孔，不需要控制流信息；第 4 轮先把序列按「标号 / 无条件或条件转移之后」
+      切成基本块（`EndsFlow` 含 `Q_JMP` / `Q_RETV` / `Q_JT` / `Q_JNT` —— 条件跳转在这里**算**
+      块结束，与第 1 轮「不可达」的判据不同，两者不是一回事：前者是切块，后者是判死代码）。
+      块内没有跳转进入，状态才能安全地向前传播。
+      - **常量传播**：块内 `v = 整型常量`（`ASSIGN_4` + `OP_CONST`）之后的读直接换成常量操作数。
+      - **公共子表达式**：二元纯计算（`QuadCatOf` 落在 `CAT_EQU`…`CAT_AND`）第二次出现时，
+        改写为「从前一次的结果临时量搬运」，用**写入代数**（`epoch`）判断两个操作数期间
+        有没有被改过。搬运用哪条 ASSIGN 由 `AssignOpOf` 决定：**关系类固定 `ASSIGN_4`**
+        （比较结果恒为 int，哪怕操作数是浮点），算术类才跟 `QuadOpByteWidth` / `QuadOpIsFloat` 走。
+      - **死存储**：块内同一变量两次赋值之间没人读过前一次，前一次删掉。
+      **保守边界**：`Q_CALL` 清空 `constOf` / `epoch` / `cse` / `pending` 全部状态
+      （被调函数可能改任何全局量）；标号与转移处结束当前块；数组元素写入（`Q_INDEX`）
+      一律 `pending.erase`，不当死存储处理。
+      外层改为**迭代到不动点**（最多 3 遍）：常量传播与 CSE 本身不减少条数，但会让
+      「结果没人读的临时量」「条件恒假的跳转」在下一轮浮现。
+      统计口径拆成 `Removed()`（真删条数）与 `Rewritten()`（只改写的操作数个数）。
+      **同时修掉一个真 bug**：第 2 轮「空跳」查的是 `Op1`，而跳转目标实际在 **`Rslt`**
+      （四元式打印成 `(JMP, -, -, L2)`），所以这一轮此前从未命中过 —— `-O` 统计里 `jumps`
+      恒为 0 就是这个原因。改成两处都查。
+      实测（140 个 `.mc`，93 个可编译）：删除 54 条四元式、改写 150 个操作数（此前只删 2 条）；
+      一致性 sweep 93 例 `-O` 前后 stdout 与退出码零差异；随机差分 200 个直线程序 +
+      80 个含循环/全局/函数调用的程序全部一致。
 
 > 说明：本节第 8–10 条为 2026-10-13 阶段⑤ 收尾时同步；**下面的"四、词法识别集合"仍是 v3.1 骨架版内容**，
 > 词法 v4.0 的现状（17 个挑战版终结符等）见 `README.md` 的模块状态表与

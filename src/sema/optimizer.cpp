@@ -480,7 +480,197 @@ void RunOnce(CodeList& codes, const SymbolTable& symtab, OptStats& st)
         }
     }
 
-    codes.swap(stage5);
+    // ---- 第 6 轮：循环不变量外提（LICM） ----
+    // 只处理「最内层」循环：区间内不再包含别的循环。外层留到下一遍 RunOnce ——
+    // 那时内层提上来的部分可能又变成了外层的循环不变量。
+    //
+    // 判据（宁可不提也不提错）：
+    //   1. 只提纯算术 / 关系 / int↔float 转换，结果必须是临时量；
+    //      除法与取模一律不动 —— 除数可能是 0，把计算提到循环外，就把
+    //      「循环一次都没进」变成「一进来就除零」，那是可观测的行为改变。
+    //   2. 操作数只能是：常量，或循环体内从未被写过的变量，或已被提出去的临时量。
+    //   3. 循环体内不能有 CALL —— 调用可能改写任何全局量，变量就不再恒定。
+    //   4. 该临时量在循环体内只能被定义这一次。
+    // 提到哪：循环入口那个 LABEL 之前，也就是前导块（preheader）的末尾 ——
+    // 所有进入循环的路径都从 LABEL 过，插在它前面就一定先于循环体执行。
+    CodeList stage6;
+    stage6.reserve(stage5.size());
+    {
+        const std::size_t n = stage5.size();
+        std::map<int, std::size_t> labelAt;
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            if (stage5[i].m_eOp == QuadOp::Q_LABEL &&
+                stage5[i].m_Op1.m_kind == OperandKind::OP_LABEL &&
+                stage5[i].m_Op1.m_iLink >= 0)
+            {
+                labelAt[stage5[i].m_Op1.m_iLink] = i;
+            }
+        }
+
+        struct LoopSpan
+        {
+            std::size_t beg;   // 入口 LABEL 的位置
+            std::size_t end;   // 回到该 LABEL 的 JMP 的位置
+        };
+        std::vector<LoopSpan> loops;
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            if (stage5[i].m_eOp != QuadOp::Q_JMP)
+            {
+                continue;
+            }
+            // 跳转目标在 Rslt（(JMP, -, -, L2)），兼容放在 Op1 的形态
+            const Operand& tgt = (stage5[i].m_Rslt.m_kind == OperandKind::OP_LABEL)
+                                     ? stage5[i].m_Rslt
+                                     : stage5[i].m_Op1;
+            if (tgt.m_kind != OperandKind::OP_LABEL)
+            {
+                continue;
+            }
+            const auto it = labelAt.find(tgt.m_iLink);
+            if (it != labelAt.end() && it->second < i)
+            {
+                LoopSpan sp;
+                sp.beg = it->second;
+                sp.end = i;
+                loops.push_back(sp);
+            }
+        }
+
+        std::vector<LoopSpan> inner;
+        for (std::size_t a = 0; a < loops.size(); ++a)
+        {
+            bool bContains = false;
+            for (std::size_t b = 0; b < loops.size(); ++b)
+            {
+                if (a != b && loops[a].beg < loops[b].beg && loops[b].end < loops[a].end)
+                {
+                    bContains = true;
+                    break;
+                }
+            }
+            if (!bContains)
+            {
+                inner.push_back(loops[a]);
+            }
+        }
+
+        std::map<std::size_t, std::vector<Quad> > hoistAt;
+        std::set<std::size_t> hoistedIdx;
+        for (const auto& sp : inner)
+        {
+            bool bHasCall = false;
+            std::set<std::string> written;
+            for (std::size_t k = sp.beg; k <= sp.end; ++k)
+            {
+                if (stage5[k].m_eOp == QuadOp::Q_CALL)
+                {
+                    bHasCall = true;
+                }
+                if (stage5[k].m_Rslt.m_kind == OperandKind::OP_VAR)
+                {
+                    written.insert(OperandKey(stage5[k].m_Rslt));
+                }
+            }
+            if (bHasCall)
+            {
+                continue;
+            }
+
+            std::map<std::string, int> defCount;
+            for (std::size_t k = sp.beg; k <= sp.end; ++k)
+            {
+                if (!IsPureCompute(stage5[k].m_eOp))
+                {
+                    continue;
+                }
+                const std::string t = TempKey(stage5[k].m_Rslt);
+                if (!t.empty())
+                {
+                    defCount[t]++;
+                }
+            }
+
+            std::set<std::string> hoisted;
+            for (std::size_t k = sp.beg + 1; k < sp.end; ++k)
+            {
+                const Quad& q = stage5[k];
+                if (!IsPureCompute(q.m_eOp))
+                {
+                    continue;
+                }
+                const int cat = QuadCatOf(q.m_eOp);
+                if (cat == static_cast<int>(QuadCat::CAT_DIV) ||
+                    cat == static_cast<int>(QuadCat::CAT_MOD))
+                {
+                    continue;   // 可能除零，不提
+                }
+                if (q.m_eOp == QuadOp::Q_INDEX_1 || q.m_eOp == QuadOp::Q_INDEX_4 ||
+                    q.m_eOp == QuadOp::Q_INDEX_4F ||
+                    q.m_eOp == QuadOp::Q_ASSIGN_1 || q.m_eOp == QuadOp::Q_ASSIGN_4 ||
+                    q.m_eOp == QuadOp::Q_ASSIGN_4F)
+                {
+                    continue;   // 读内存 / 写变量，不提
+                }
+                const std::string t = TempKey(q.m_Rslt);
+                if (t.empty() || defCount[t] != 1)
+                {
+                    continue;
+                }
+                bool bInvariant = true;
+                for (const Operand* p : {&q.m_Op1, &q.m_Op2})
+                {
+                    if (p->m_kind == OperandKind::OP_NONE || p->m_kind == OperandKind::OP_CONST)
+                    {
+                        continue;
+                    }
+                    if (p->m_kind == OperandKind::OP_VAR)
+                    {
+                        if (written.count(OperandKey(*p)) != 0)
+                        {
+                            bInvariant = false;
+                            break;
+                        }
+                        continue;
+                    }
+                    if (p->m_kind == OperandKind::OP_TEMP && hoisted.count(OperandKey(*p)) != 0)
+                    {
+                        continue;
+                    }
+                    bInvariant = false;
+                    break;
+                }
+                if (!bInvariant)
+                {
+                    continue;
+                }
+                hoistAt[sp.beg].push_back(q);
+                hoistedIdx.insert(k);
+                hoisted.insert(t);
+                st.iHoisted++;
+            }
+        }
+
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            const auto it = hoistAt.find(i);
+            if (it != hoistAt.end())
+            {
+                for (const auto& q : it->second)
+                {
+                    stage6.push_back(q);
+                }
+            }
+            if (hoistedIdx.count(i) != 0)
+            {
+                continue;
+            }
+            stage6.push_back(stage5[i]);
+        }
+    }
+
+    codes.swap(stage6);
 }
 
 } // namespace

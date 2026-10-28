@@ -277,7 +277,8 @@ int main(int argc, char* argv[])
                   << ", labels " << optStats.iDeadLabel
               << ", const-prop " << optStats.iConstProp
               << ", cse " << optStats.iCse
-              << ", dead-store " << optStats.iDeadStore << "]\n";
+              << ", dead-store " << optStats.iDeadStore
+              << ", hoisted " << optStats.iHoisted << "]\n";
     }
 
     if (dumpQuads)

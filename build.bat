@@ -249,6 +249,11 @@ pwsh -NoProfile -File "tests\run_quad_tests.ps1"
 if errorlevel 1 set "TESTRC=1"
 
 echo.
+echo [TEST] optimized quad dump regression (-O) ...
+pwsh -NoProfile -File "tests\run_opt_tests.ps1"
+if errorlevel 1 set "TESTRC=1"
+
+echo.
 echo [TEST] target code (asm assemble + link + run) ...
 pwsh -NoProfile -File "tests\run_codegen_tests.ps1"
 if errorlevel 1 set "TESTRC=1"

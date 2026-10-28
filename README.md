@@ -74,8 +74,10 @@ MiniCCompiler/
 │   ├── run_symtab_tests.ps1       # 符号表 DumpSymTab 回归
 │   ├── run_sema_tests.ps1         # 语义诊断回归（32 例，含警告与多错并报）
 │   ├── run_quad_tests.ps1         # 四元式序列回归（18 例）
+│   ├── run_opt_tests.ps1          # 优化后四元式回归（-O，2 例）
 │   ├── sema/                      # 语义用例 *.mc + *.expected.diag.txt
 │   ├── quad/                      # 四元式用例 *.mc + *.expected.quad.txt
+│   ├── opt/                       # 优化后四元式用例（-O）
 │   └── run_codegen_tests.ps1      # 目标代码端到端（编译→gcc 链接→运行→比对输出）
 ├── examples/
 │   └── example.mc          # 挑战版关键字示例
@@ -86,7 +88,7 @@ MiniCCompiler/
 │   ├── MiniC语法支持清单.md                     # 语言规格：105 条产生式实测支持矩阵、与 C 的 19 条差异
 │   ├── 词法模块待改进清单.md                    # 词法模块实测复审记录（4 项问题的修复依据）
 │   ├── stage5_ast_review.md                     # 阶段⑤ AST 形状评审
-│   ├── 验收报告.md                              # 测试验收报告：交付物核对/五模块记录/11 套回归/偏差与遗留
+│   ├── 验收报告.md                              # 测试验收报告：交付物核对/五模块记录/12 套回归/偏差与遗留
 │   ├── 小组分工表.md                            # 第 5 组 12 人任务分工表（对应项目书表 3）
 │   ├── 项目总结.md                              # 项目总结：架构/成果/困难与解决/经验/不足
 │   ├── MiniC编译器_答辩演示.pptx                # 答辩 PPT（18 页）
@@ -119,7 +121,7 @@ build.bat
 | 命令 | 作用 |
 |---|---|
 | `build.bat` | 编译，产出 `build\minic.exe` |
-| `build.bat test` | 编译后跑全部 11 套测试（9 套编译阶段回归 + 2 套 GUI 冒烟），任一失败即返回 1 |
+| `build.bat test` | 编译后跑全部 12 套测试（9 套编译阶段回归 + 2 套 GUI 冒烟），任一失败即返回 1 |
 | `build.bat run tests\test.mc` | 编译后运行指定源文件 |
 | `build.bat list` | 列出参与编译的源文件 |
 | `build.bat clean` | 清理 `build` 目录 |
@@ -127,7 +129,7 @@ build.bat
 
 > `build.bat test` 等价于依次执行 `run_lexer_tests.ps1`、`run_grammar_selfcheck.ps1`、
 > `run_parser_tests.ps1`、`run_parser_unit.ps1`、`run_symbol_tests.ps1`、`run_symtab_tests.ps1`、
-> `run_sema_tests.ps1`、`run_quad_tests.ps1`、`run_codegen_tests.ps1`，再跑 GUI 的
+> `run_sema_tests.ps1`、`run_quad_tests.ps1`、`run_opt_tests.ps1`、`run_codegen_tests.ps1`，再跑 GUI 的
 > `gui\test\book-smoke.js`（语法手册数据与渲染）与 `gui\test\sample-smoke.js`（示例库数据与
 > 可编译性），两者都是纯 Node、不需要 Electron 窗口；PATH 里没有 `node` 时整体跳过，
 > 适合提交前自检与 CI。仓库已配 `.github/workflows/ci.yml`：在 `windows-latest` 上装
@@ -427,6 +429,21 @@ pwsh -File tests/run_quad_tests.ps1 -Update
 - 用例输入：`tests/quad/*.mc` 共 18 条；期望序列：`tests/quad/<case>.expected.quad.txt`
 - 校验收敛到 `.quad.txt` 的**结构**：表达式求值顺序、临时变量编号（`_T1`/`_T2`…）、
   标号编号（`L1`/`L2`…）、短路展开形态、`ITOF`/`FTOI` 插入位置、`PARA`/`CALL` 的相对次序。
+
+## 优化后四元式回归测试（-O）
+
+```bash
+pwsh -File tests/run_opt_tests.ps1
+pwsh -File tests/run_opt_tests.ps1 -Case licm_hoist
+pwsh -File tests/run_opt_tests.ps1 -Update
+```
+
+- 与上一节的唯一区别是编译时多带 `-O`：默认路径的产物由 `run_quad_tests.ps1` 守着，
+  优化路径的产物由这一套守着，两边互不影响。
+- 用例：`tests/opt/licm_hoist.mc`（`gi * 2` 应被提到前导块）、
+  `tests/opt/licm_not_hoist.mc`（除法、依赖循环变量、循环内有函数调用，三种都不许提）。
+- 这一套同时是「优化器的『不做』也要有基线」的落地：只测「提了没有」不足以发现问题，
+  反例能拦住「提过头」。
   **操作码用参考书表 5-2 的助记符**（`ADD_4` / `ASSIGN_4F` / `LS_1` / `INDEX_4` / `PRINT_4` / `RETV` / `JNT`），
   宽度后缀直接体现在基线里：`ASSIGN_1` 是 char、`ASSIGN_4` 是 int、`ASSIGN_4F` 是 float。
   这些在端到端测试里完全测不出来（只比 stdout，结构变了照样输出对）
@@ -466,8 +483,8 @@ pwsh -File tests/run_quad_tests.ps1 -Update
 |---|---|---|
 | ① 编译器源码 | `src/`（六段流水线） | ✅ 完成 |
 | ② 技术文档 | [docs/MiniC编译器设计文档_v4.0_挑战版LL1.md](docs/MiniC编译器设计文档_v4.0_挑战版LL1.md)（系统架构设计）、[docs/MiniC编译器数据结构设计.md](docs/MiniC编译器数据结构设计.md)、[docs/interface.md](docs/interface.md)（模块接口定义）、[docs/MiniC语法支持清单.md](docs/MiniC语法支持清单.md)（语言规格） | ✅ 完成 |
-| ③ 测试用例集 | `tests/`，11 套回归（9 套编译阶段 + 2 套 GUI 冒烟，见「构建」一节的 `build.bat test`） | ✅ 完成 |
-| ④ 验收报告 | [docs/验收报告.md](docs/验收报告.md)（交付物核对 / 五模块十字段记录 / 11 套回归 / 偏差与遗留） | ✅ 完成 |
+| ③ 测试用例集 | `tests/`，12 套回归（9 套编译阶段 + 2 套 GUI 冒烟，见「构建」一节的 `build.bat test`） | ✅ 完成 |
+| ④ 验收报告 | [docs/验收报告.md](docs/验收报告.md)（交付物核对 / 五模块十字段记录 / 12 套回归 / 偏差与遗留） | ✅ 完成 |
 | ⑤ 答辩材料 | 答辩 PPT：[docs/MiniC编译器_答辩演示.pptx](docs/MiniC编译器_答辩演示.pptx)（18 页）<br>项目总结：[docs/项目总结.md](docs/项目总结.md) | ✅ 完成 |
 | 个人任务计划（附录 A） | [docs/plans/](docs/plans/README.md)，12 人各一份 | ✅ 完成 |
 | 小组分工表（项目书表 3） | [docs/小组分工表.md](docs/小组分工表.md)，12 人 + 模块人数 + 署名差异说明 | ✅ 完成 |

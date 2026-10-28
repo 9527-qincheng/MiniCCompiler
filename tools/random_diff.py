@@ -257,6 +257,10 @@ def _preamble(lang):
     return head
 
 
+# 附加给 minic 的命令行参数（--opt 时是 ["-O"]）
+EXTRA_ARGS = []
+
+
 def render_minic(body):
     lines = _preamble("minic")
     for s in body:
@@ -291,7 +295,7 @@ def run_case(case_dir, minic, keep):
     mc = os.path.join(case_dir, "prog.mc")
     cc = os.path.join(case_dir, "prog.c")
 
-    rc, _, err = run([minic, mc], case_dir)
+    rc, _, err = run([minic, mc] + EXTRA_ARGS, case_dir)
     asm = os.path.join(case_dir, "prog.asm")
     if rc != 0 or not os.path.exists(asm):
         return None, "minic failed: " + err.decode("utf-8", "replace").strip()[:300]
@@ -328,7 +332,11 @@ def main():
     ap.add_argument("--minic", default=default_minic, help="minic.exe 路径")
     ap.add_argument("--workdir", default=None, help="工作目录（默认用系统临时目录）")
     ap.add_argument("--keep", action="store_true", help="保留全部中间文件")
+    ap.add_argument("--opt", action="store_true",
+                    help="编译时附加 -O，用于验证优化前后行为一致")
     args = ap.parse_args()
+    if args.opt:
+        EXTRA_ARGS.append("-O")
 
     if not os.path.exists(args.minic):
         print("找不到 minic.exe：%s\n先跑 build.bat build。" % args.minic)

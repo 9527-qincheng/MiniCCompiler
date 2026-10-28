@@ -125,6 +125,14 @@ private:
     int  m_iFlagsCat  = 0;    // 该比较的 QuadCat（CAT_EQU … CAT_ME）
     bool m_bFlagsValid = false;
 
+    // 【地址复用 / 写入即读回】只对「紧邻的下一条 INDEX」有效，见 GenIndex。
+    // 写操作之后 %rax 是数组基址、%rcx 是已左移过的下标，两者都还在；
+    // 读操作会把元素值读进 %eax，基址就没了，所以读路径一律作废。
+    bool        m_bAddrValid = false;   // %rax / %rcx 里是不是有效的 (数组, 下标) 地址
+    std::string m_szAddrKey;            // 那个地址对应的键
+    bool        m_bStoreValid = false;  // %edx / %xmm0 里是不是刚写进该元素的值
+    std::string m_szStoreKey;           // 那个元素对应的键
+
     static const char* CmpJumpMnemonic(int cat, bool bJumpIfZero);
     void EmitIntoVariable(const Quad& q, const char* iOp, const Operand& dest);
 
@@ -137,6 +145,7 @@ private:
     void EnsureVarLoaded(const Operand& op, const std::string& reg);
 
     static std::string AccKeyOf(const Operand& op);
+    static std::string IndexKeyOf(const Operand& arr, const Operand& idx, int w);
     void ClobberAcc() { m_szAcc.clear(); }
     void AnalyzeTempReuse(const CodeList& codes);
 
@@ -395,6 +404,25 @@ std::string AsmEmitter::AccKeyOf(const Operand& op)
         return "T" + std::to_string(op.m_iLink);
     }
     return std::string();
+}
+
+// 比 AccKeyOf 多认常量与标号：数组下标常常是常量（a[0] / a[1]），
+// 只按「变量/临时量」建键会让 a[0] 与 a[1] 撞成同一个地址。
+static std::string OpKeyOf(const Operand& op)
+{
+    switch (op.m_kind)
+    {
+    case OperandKind::OP_VAR:   return "V" + std::to_string(op.m_iLink);
+    case OperandKind::OP_TEMP:  return "T" + std::to_string(op.m_iLink);
+    case OperandKind::OP_CONST: return "C" + std::to_string(op.m_iLink);
+    case OperandKind::OP_LABEL: return "L" + std::to_string(op.m_iLink);
+    default:                    return "-";
+    }
+}
+
+std::string AsmEmitter::IndexKeyOf(const Operand& arr, const Operand& idx, int w)
+{
+    return OpKeyOf(arr) + "|" + OpKeyOf(idx) + "|" + std::to_string(w);
 }
 
 // 判断某条四元式是否「一进来就把 Op1 读进 %eax」。
@@ -1175,12 +1203,19 @@ void AsmEmitter::GenIndex(const Quad& q)
                          static_cast<std::size_t>(q.m_Rslt.m_iLink) < m_sym->m_VarInfoTbl.size() &&
                          m_sym->m_VarInfoTbl[static_cast<std::size_t>(q.m_Rslt.m_iLink)].m_bIsArray);
 
+    const int w = bStore ? ElemWidth(q.m_Rslt) : ElemWidth(q.m_Op1);
+    const std::string szKey = IndexKeyOf(bStore ? q.m_Rslt : q.m_Op1, q.m_Op2, w);
+
     if (bStore)
     {
-        const int w = ElemWidth(q.m_Rslt);
-        LoadAddr(q.m_Rslt, "%rax");
-        LoadInt(q.m_Op2, "%ecx");
-        Emit("movslq %ecx, %rcx");
+        // 【地址复用】上一条四元式刚算过同一个 (数组, 下标) 并且是写操作，
+        // %rax / %rcx 里的地址还没被动过（写只读 %edx / %xmm0），直接接着用。
+        if (!(m_bAddrValid && m_szAddrKey == szKey))
+        {
+            LoadAddr(q.m_Rslt, "%rax");
+            LoadInt(q.m_Op2, "%ecx");
+            Emit("movslq %ecx, %rcx");
+        }
         if (IsFloatType(q.m_Op1.m_type))
         {
             LoadFloat(q.m_Op1, "%xmm0");
@@ -1192,11 +1227,19 @@ void AsmEmitter::GenIndex(const Quad& q)
             Emit(std::string(w == 1 ? "movb %dl, " : "movl %edx, ") +
                  "(%rax,%rcx," + std::to_string(w) + ")");
         }
+        // 写完之后 %rax / %rcx 仍是地址，%edx（或 %xmm0）里是刚写进去的值。
+        m_szAddrKey  = szKey;
+        m_bAddrValid = true;
+        m_bStoreValid = false;
+        if (w == 4)   // 1 字节元素的值在 %dl / %al，不能直接当 32 位源寄存器用，不参与
+        {
+            m_szStoreKey  = szKey;
+            m_bStoreValid = true;
+        }
         return;
     }
 
     // 读：元素宽度由数组声明类型决定
-    const int w = ElemWidth(q.m_Op1);
     bool bFloatElem = IsFloatType(q.m_Rslt.m_type);
     if (q.m_Op1.m_kind == OperandKind::OP_VAR && m_sym && q.m_Op1.m_iLink >= 0 &&
         static_cast<std::size_t>(q.m_Op1.m_iLink) < m_sym->m_VarInfoTbl.size())
@@ -1204,9 +1247,28 @@ void AsmEmitter::GenIndex(const Quad& q)
         bFloatElem = IsFloatType(
             m_sym->m_VarInfoTbl[static_cast<std::size_t>(q.m_Op1.m_iLink)].m_type);
     }
-    LoadAddr(q.m_Op1, "%rax");
-    LoadInt(q.m_Op2, "%ecx");
-    Emit("movslq %ecx, %rcx");
+    // 【写入即读回】上一条刚把同一个值写进同一个元素，值还在 %edx / %xmm0 里，
+    // 不必再访存读一遍（common subexpression 的一种特例，安全性由「紧邻」保证）。
+    if (m_bStoreValid && m_szStoreKey == szKey)
+    {
+        if (bFloatElem)
+        {
+            StoreFloat("%xmm0", q.m_Rslt);
+        }
+        else
+        {
+            StoreInt("%edx", q.m_Rslt);
+        }
+        m_bAddrValid  = false;
+        m_bStoreValid = false;
+        return;
+    }
+    if (!(m_bAddrValid && m_szAddrKey == szKey))
+    {
+        LoadAddr(q.m_Op1, "%rax");
+        LoadInt(q.m_Op2, "%ecx");
+        Emit("movslq %ecx, %rcx");
+    }
     if (bFloatElem)
     {
         Emit("movss (%rax,%rcx," + std::to_string(w) + "), %xmm0");
@@ -1222,6 +1284,9 @@ void AsmEmitter::GenIndex(const Quad& q)
         Emit("movl (%rax,%rcx,4), %eax");
         StoreInt("%eax", q.m_Rslt);
     }
+    // 读回把 %rax 覆盖成元素值了，地址不再有效
+    m_bAddrValid  = false;
+    m_bStoreValid = false;
 }
 
 void AsmEmitter::GenReturn(const Quad& q)
@@ -1262,6 +1327,13 @@ void AsmEmitter::GenQuad(const Quad& q)
     if (m_bFlagsValid && q.m_eOp != QuadOp::Q_JT && q.m_eOp != QuadOp::Q_JNT)
     {
         m_bFlagsValid = false;
+    }
+    // 地址复用与写入即读回同理：只认「紧邻的下一条 INDEX」，中间隔了别的四元式就作废
+    if (q.m_eOp != QuadOp::Q_INDEX_1 && q.m_eOp != QuadOp::Q_INDEX_4 &&
+        q.m_eOp != QuadOp::Q_INDEX_4F)
+    {
+        m_bAddrValid = false;
+        m_bStoreValid = false;
     }
     switch (q.m_eOp)
     {

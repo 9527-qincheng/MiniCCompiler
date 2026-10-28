@@ -98,6 +98,22 @@ private:
     // --- 调用现场 ---
     std::vector<Operand> m_pendingArgs;         // Q_PARA 暂存（Q_CALL 时统一落栈）
 
+    // --- 累加器直通（2026-10-28 新增）---
+    // 每个四元式原本严格「load → 运算 → store」，临时量也落栈，于是
+    // `b = a * 4` 会生成「存 _T1 / 立刻读 _T1」这样一对纯搬运指令。
+    // 这里做两件事：
+    //   ① m_szAcc 记住 %eax 当前装的是哪个操作数的值；LoadInt 遇到同一个
+    //      操作数、且目标寄存器正是 %eax 时，跳过读取；
+    //   ② m_forwardedTemps 记录「定义之后立刻被下一条四元式当 Op1 消费、
+    //      且全函数只消费一次」的临时量，这类临时量干脆不落栈。
+    // 两者都不改四元式，也不改内存语义：被直通的临时量本来就没有第二个读者。
+    std::string             m_szAcc;            // "V<idx>"/"T<idx>"，空 = %eax 内容未知
+    std::unordered_set<int> m_forwardedTemps;   // 免落栈的临时量编号
+
+    static std::string AccKeyOf(const Operand& op);
+    void ClobberAcc() { m_szAcc.clear(); }
+    void AnalyzeTempReuse(const CodeList& codes);
+
     // --- 数据段字面量 ---
     std::unordered_map<double, std::string> m_floatLbl;
     int  m_iFloatSeq = 0;
@@ -134,6 +150,13 @@ private:
     void StoreInt(const std::string& reg, const Operand& op);
     void StoreFloat(const std::string& xmm, const Operand& op);
     void LoadAddr(const Operand& op, const std::string& reg);
+
+    // --- 立即数直用（2026-10-28 新增）---
+    // 常量参与运算时，原实现先 `movl $k, %ecx` 再 `imull %ecx, %eax`，
+    // 白多一条指令。这里直接把常量当立即数操作数用：
+    //   imull $4, %eax   /   cmpl $3, %eax   /   movl $7, slot(%rbp)
+    bool IntConstOf(const Operand& op, long long& v) const;
+    void StoreImmInt(long long v, const Operand& op);
 
     // --- 四元式翻译 ---
     void GenQuad(const Quad& q);
@@ -332,6 +355,121 @@ void AsmEmitter::EmitParams()
 // ----------------------------------------------------------------------------
 // 操作数 → 寄存器
 // ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// 累加器直通辅助（2026-10-28 新增）
+// ----------------------------------------------------------------------------
+std::string AsmEmitter::AccKeyOf(const Operand& op)
+{
+    if (op.m_kind == OperandKind::OP_VAR)
+    {
+        return "V" + std::to_string(op.m_iLink);
+    }
+    if (op.m_kind == OperandKind::OP_TEMP)
+    {
+        return "T" + std::to_string(op.m_iLink);
+    }
+    return std::string();
+}
+
+// 判断某条四元式是否「一进来就把 Op1 读进 %eax」。
+// 只有这类指令才能作为免落栈临时量的消费者 —— 例如 GenPrint 把值读进 %edx、
+// GenIndex 先把数组基址装进 %rax，它们都不看 %eax 里现成的东西，
+// 若把临时量直通给它们，就会读到从未写过的栈槽。
+static bool ConsumesEaxFirst(QuadOp op)
+{
+    switch (op)
+    {
+    case QuadOp::Q_ASSIGN_1: case QuadOp::Q_ASSIGN_4: case QuadOp::Q_ASSIGN_4F:
+    case QuadOp::Q_ADD_4:  case QuadOp::Q_ADD_4F:
+    case QuadOp::Q_SUB_4:  case QuadOp::Q_SUB_4F:
+    case QuadOp::Q_MUL_4:  case QuadOp::Q_MUL_4F:
+    case QuadOp::Q_DIV_4:  case QuadOp::Q_DIV_4F:
+    case QuadOp::Q_NEG_4:  case QuadOp::Q_NEG_4F:
+    case QuadOp::Q_NOT_4:
+    case QuadOp::Q_EQU_1:  case QuadOp::Q_EQU_4:  case QuadOp::Q_EQU_4F:
+    case QuadOp::Q_NEQU_1: case QuadOp::Q_NEQU_4: case QuadOp::Q_NEQU_4F:
+    case QuadOp::Q_LS_1:   case QuadOp::Q_LS_4:   case QuadOp::Q_LS_4F:
+    case QuadOp::Q_LE_1:   case QuadOp::Q_LE_4:   case QuadOp::Q_LE_4F:
+    case QuadOp::Q_MR_1:   case QuadOp::Q_MR_4:   case QuadOp::Q_MR_4F:
+    case QuadOp::Q_ME_1:   case QuadOp::Q_ME_4:   case QuadOp::Q_ME_4F:
+    case QuadOp::Q_JT:     case QuadOp::Q_JNT:
+    case QuadOp::Q_ITOF:
+    case QuadOp::Q_RETV:
+        return true;
+    default:
+        return false;
+    }
+}
+
+// 找出「定义后立刻被下一条四元式当 Op1 消费、且全函数只消费一次」的临时量。
+// 判据有三条，缺一不可：
+//   1. 全函数里只被读过一次（读两次就不能省栈槽）；
+//   2. 唯一的读者就是紧邻的下一条四元式（中间隔着别的指令，%eax 早被覆盖了）；
+//   3. 读者是「一进来就读 %eax」的指令（见 ConsumesEaxFirst），
+//      否则该指令根本不看 %eax，直通过去就会读到没写过的栈槽。
+void AsmEmitter::AnalyzeTempReuse(const CodeList& codes)
+{
+    m_forwardedTemps.clear();
+    std::unordered_map<int, int> useCount;
+    for (const Quad& q : codes)
+    {
+        if (q.m_Op1.m_kind == OperandKind::OP_TEMP) { ++useCount[q.m_Op1.m_iLink]; }
+        if (q.m_Op2.m_kind == OperandKind::OP_TEMP) { ++useCount[q.m_Op2.m_iLink]; }
+    }
+    for (std::size_t i = 0; i + 1 < codes.size(); ++i)
+    {
+        const Quad& q  = codes[i];
+        const Quad& nq = codes[i + 1];
+        if (q.m_Rslt.m_kind != OperandKind::OP_TEMP) { continue; }
+        const int t = q.m_Rslt.m_iLink;
+        if (useCount[t] != 1) { continue; }
+        if (nq.m_Op1.m_kind != OperandKind::OP_TEMP || nq.m_Op1.m_iLink != t) { continue; }
+        if (!ConsumesEaxFirst(nq.m_eOp)) { continue; }
+        m_forwardedTemps.insert(t);
+    }
+}
+
+// 取「整型/字符/布尔常量」的字面值；浮点常量或非常量返回 false。
+// 浮点不参与立即数优化：addss 没有立即数形式，只能走内存操作数。
+bool AsmEmitter::IntConstOf(const Operand& op, long long& v) const
+{
+    if (op.m_kind != OperandKind::OP_CONST || !m_sym || op.m_iLink < 0 ||
+        static_cast<std::size_t>(op.m_iLink) >= m_sym->m_ConstInfoTbl.size())
+    {
+        return false;
+    }
+    const ConstEntry& ce = m_sym->m_ConstInfoTbl[static_cast<std::size_t>(op.m_iLink)];
+    if (ce.m_bIsFloat)
+    {
+        return false;
+    }
+    v = ce.m_iValue;
+    return true;
+}
+
+// 把常量直接写进目标栈槽/全局变量，省掉「先装 %eax 再存」的一次搬运。
+void AsmEmitter::StoreImmInt(long long v, const Operand& op)
+{
+    const std::string src = "$" + IntToStr(v);
+    if (op.m_kind == OperandKind::OP_VAR)
+    {
+        if (m_sym && op.m_iLink >= 0 &&
+            static_cast<std::size_t>(op.m_iLink) < m_sym->m_VarInfoTbl.size() &&
+            !IsLocalVar(op.m_iLink))
+        {
+            Emit("movl " + src + ", " +
+                 m_sym->m_VarInfoTbl[static_cast<std::size_t>(op.m_iLink)].m_szName + "(%rip)");
+            return;
+        }
+        Emit("movl " + src + ", " + std::to_string(SlotOf(op)) + "(%rbp)");
+        return;
+    }
+    if (op.m_kind == OperandKind::OP_TEMP)
+    {
+        Emit("movl " + src + ", " + std::to_string(SlotOf(op)) + "(%rbp)");
+    }
+}
+
 int AsmEmitter::SlotOf(const Operand& op) const
 {
     if (op.m_kind == OperandKind::OP_TEMP)
@@ -349,6 +487,18 @@ int AsmEmitter::SlotOf(const Operand& op) const
 
 void AsmEmitter::LoadInt(const Operand& op, const std::string& reg)
 {
+    // 【累加器直通】%eax 里已经是这个操作数了，不必再读一次。
+    // 只对 %eax 生效：其它寄存器（%ecx/%edx）不参与缓存，
+    // 否则 GenPrint 那种「值必须落到 %edx」的场景会读不到数。
+    if (reg == "%eax")
+    {
+        const std::string key = AccKeyOf(op);
+        if (!key.empty() && key == m_szAcc)
+        {
+            return;
+        }
+        m_szAcc = key;      // 常量/无操作数 → 空串，表示 %eax 内容未知
+    }
     switch (op.m_kind)
     {
     case OperandKind::OP_CONST:
@@ -437,6 +587,19 @@ void AsmEmitter::LoadAsFloat(const Operand& op, const std::string& xmm)
 
 void AsmEmitter::StoreInt(const std::string& reg, const Operand& op)
 {
+    // movl 不改源寄存器，所以存完之后 reg 里仍然是这个值；
+    // 先记下状态，下面即使因「免落栈」提前返回，%eax 的内容也依然有效。
+    if (reg == "%eax")
+    {
+        m_szAcc = AccKeyOf(op);
+        // 【免落栈】这个临时量在下一条四元式里就会被 %eax 直接消费，
+        // 中间没有别的指令，落栈再读回来纯属搬运，直接省掉这次 store。
+        if (op.m_kind == OperandKind::OP_TEMP &&
+            m_forwardedTemps.count(op.m_iLink) != 0)
+        {
+            return;
+        }
+    }
     if (op.m_kind == OperandKind::OP_VAR)
     {
         if (m_sym && op.m_iLink >= 0 &&
@@ -513,6 +676,14 @@ void AsmEmitter::GenBinary(const Quad& q, const char* iOp, const char* fOp)
         return;
     }
     LoadInt(q.m_Op1, "%eax");
+    // 常量右操作数直接当立即数用（idiv 没有立即数形式，只能走寄存器）
+    long long k = 0;
+    if (std::string(iOp) != "idiv" && IntConstOf(q.m_Op2, k))
+    {
+        Emit(std::string(iOp) + " $" + IntToStr(k) + ", %eax");
+        StoreInt("%eax", q.m_Rslt);
+        return;
+    }
     LoadInt(q.m_Op2, "%ecx");
     if (std::string(iOp) == "idiv")
     {
@@ -539,8 +710,16 @@ void AsmEmitter::GenCompare(const Quad& q, const char* iCc, const char* fCc)
     else
     {
         LoadInt(q.m_Op1, "%eax");
-        LoadInt(q.m_Op2, "%ecx");
-        Emit("cmpl %ecx, %eax");
+        long long k = 0;
+        if (IntConstOf(q.m_Op2, k))
+        {
+            Emit("cmpl $" + IntToStr(k) + ", %eax");
+        }
+        else
+        {
+            LoadInt(q.m_Op2, "%ecx");
+            Emit("cmpl %ecx, %eax");
+        }
         Emit(std::string("set") + iCc + " %al");
     }
     Emit("movzbl %al, %eax");
@@ -620,6 +799,7 @@ void AsmEmitter::GenPrint(const Quad& q)
         Emit("movl $0, %eax");
     }
     Emit("call printf");
+    ClobberAcc();                       // call 会覆盖 %eax
     Emit("addq $32, %rsp");
 }
 
@@ -660,6 +840,7 @@ void AsmEmitter::GenCall(const Quad& q)
         }
     }
     Emit("call " + fname);
+    ClobberAcc();                       // call 会覆盖 %eax/%ecx/%edx
     if (slot > 0)
     {
         Emit("addq $" + std::to_string(slot) + ", %rsp");
@@ -699,6 +880,11 @@ void AsmEmitter::GenIndex(const Quad& q)
     // 读：(INDEX, 数组, 下标, 临时量 t) —— t = 数组[下标]
     // 写：(INDEX, 值,   下标, 数组)   —— 数组[下标] = 值
     // 判据：写操作的 m_Rslt 一定是「数组变量」，读操作的 m_Rslt 一定是临时量。
+    //
+    // 注意：下面 LoadAddr 往 %rax 写地址，会把 %eax 一起覆盖掉，
+    // 所以进函数第一件事就是作废累加器缓存（否则下一条四元式会误以为
+    // %eax 里还是上一个值而跳过读取）。
+    ClobberAcc();
     const bool bStore = (q.m_Rslt.m_kind == OperandKind::OP_VAR && m_sym &&
                          q.m_Rslt.m_iLink >= 0 &&
                          static_cast<std::size_t>(q.m_Rslt.m_iLink) < m_sym->m_VarInfoTbl.size() &&
@@ -755,6 +941,10 @@ void AsmEmitter::GenIndex(const Quad& q)
 
 void AsmEmitter::GenReturn(const Quad& q)
 {
+    // 注意：这里**不能**在函数开头就 ClobberAcc()。RETV 的操作数常常正是
+    // 上一条四元式刚算出来、因「免落栈」而没有写回栈槽的临时量，此时它的值
+    // 只存在于 %eax 里；提前清掉缓存会让下面的 LoadInt 去读一个从未写过的
+    // 栈槽（实测把 `int add(x,y){return x+y;}` 的返回值变成了栈垃圾）。
     if (q.m_Op1.m_kind != OperandKind::OP_NONE)
     {
         if (IsFloatType(q.m_Op1.m_type))
@@ -776,6 +966,7 @@ void AsmEmitter::GenReturn(const Quad& q)
         //   - 其余函数按声明的返回类型清零（float 清 %xmm0，int/char/bool/void 清 %eax）。
         const bool bFloat = m_bCurIsMain ? false : m_bCurRetFloat;
         Emit(bFloat ? "xorps %xmm0, %xmm0" : "xorl %eax, %eax");
+        ClobberAcc();                   // 上面直接写了 %eax，缓存作废
     }
     Emit("jmp " + m_szRetLabel);
 }
@@ -816,6 +1007,14 @@ void AsmEmitter::GenQuad(const Quad& q)
         }
         else
         {
+            // 整数 ← 整数常量：直接写内存，省一次「装 %eax 再存」
+            long long k = 0;
+            if (IntConstOf(q.m_Op1, k))
+            {
+                StoreImmInt(k, q.m_Rslt);
+                ClobberAcc();
+                return;
+            }
             LoadInt(q.m_Op1, "%eax");
             StoreInt("%eax", q.m_Rslt);
         }
@@ -834,6 +1033,7 @@ void AsmEmitter::GenQuad(const Quad& q)
 
     case QuadOp::Q_JMP:
         Emit("jmp " + Lbl(q.m_Rslt.m_iLink));
+        ClobberAcc();                   // 跳转后 %eax 的状态无法跨基本块推断
         return;
     case QuadOp::Q_JNT:                      // 条件假跳转（原 Q_JZ）
         GenBranch(q, true);
@@ -843,6 +1043,7 @@ void AsmEmitter::GenQuad(const Quad& q)
         return;
     case QuadOp::Q_LABEL:
         EmitRaw(Lbl(q.m_Op1.m_iLink) + ":");
+        ClobberAcc();                   // 基本块入口：%eax 可能是任一路径带过来的
         return;
 
     case QuadOp::Q_RETV:                     // 传递返回值（原 Q_RETURN）
@@ -934,6 +1135,8 @@ void AsmEmitter::EmitFunction(const std::string& name, const CodeList& codes, bo
     }
 
     EmitParams();
+    AnalyzeTempReuse(codes);
+    ClobberAcc();       // 形参搬运用的是裸 movl，%eax 内容不可信
 
     for (const Quad& q : codes)
     {

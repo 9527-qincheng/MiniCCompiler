@@ -132,9 +132,11 @@ const ConstEntry* SymbolTable::SearchConst(const std::string& name) const
     return const_cast<SymbolTable*>(this)->SearchConstInfoTbl(name);
 }
 
+// 【零调用，2026-10-28 标注】Q12 遗留接口：词法阶段登记文本，语义阶段按位序回填
+// 名字与类型。现在由 SemanticAnalyzer::VisitNum 直接调 RecConst 一次登记完，
+// 本函数不再被调用；保留是为对齐参考书契约（docs/interface.md）。
 void SymbolTable::BackfillConst(int iConstIdx, const std::string& name, TokenType type)
 {
-    // Q12：常量语义回填——词法阶段登记文本，语义阶段按位序回填名字/类型
     if (iConstIdx < 0 || static_cast<size_t>(iConstIdx) >= m_ConstInfoTbl.size())
     {
         return;
@@ -269,9 +271,11 @@ int SymbolTable::RecVarTbl(const std::string& name, TokenType type, int line)
     return ve ? static_cast<int>(ve - m_VarInfoTbl.data()) : -1;
 }
 
+// 【零调用，2026-10-28 标注】与 BackfillConst 配对的 Q12 遗留接口。
+// 注意它与 RecConst 的区别：RecConstTbl 只收「文本 + 类型」，靠 strtod 解析，
+// 且不去重；RecConst 直接收「已解析的值 + 行列号」，是当前唯一在用的路径。
 int SymbolTable::RecConstTbl(const std::string& szVal, TokenType constType)
 {
-    // Q12：词法常量登记（文本先入表，名字语义阶段回填）
     ConstEntry ce;
     ce.m_szVal = szVal;
     ce.m_constType = constType;

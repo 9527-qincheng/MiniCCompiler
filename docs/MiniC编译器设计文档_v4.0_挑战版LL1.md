@@ -1417,7 +1417,7 @@ class VarEntry : public SymbolEntry
 {
 public:
     TokenType m_type = TokenType::TOKEN_NONE;  // int/float/bool/char
-    int       m_iOffset = 0;                   // 目标代码偏移
+    // 注：m_iOffset 已于 2026-10-28 删除（全仓零读写，偏移由 codegen 维护）
     bool      m_bIsArray = false;              // 【新增】是否数组
     int       m_iArraySize = 0;                // 【新增】数组元素个数
 };

@@ -608,7 +608,7 @@ public:
 
     /* ---- 类型链/引用检查 ---- */
     bool PtrCheck(int& iPos);        // 指针类型 miLink 回填（参考书程序 4-28，挑战版）
-    string GetSerialId();             // 匿名类型唯一序号（参考书 "_noname" + GetSerialId）
+    // string GetSerialId();          // 已于 2026-10-28 删除（全仓零调用，MiniC 无匿名类型）
 
     /* ---- 输出：符号表打印（交付物） ---- */
     void Print(ostream& os) const;

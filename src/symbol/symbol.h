@@ -41,7 +41,9 @@ class VarEntry : public SymbolEntry
 {
 public:
     TokenType m_type = TokenType::TOKEN_NONE; // 变量类型（TOKEN_INT / TOKEN_FLOAT）
-    int       m_iOffset = 0;                  // 目标代码偏移（挑战版）
+    // 注：这里曾有一个 int m_iOffset（参考书 VarInfo 的「目标代码偏移」字段），
+    // 2026-10-28 删除 —— 全仓零读写，栈帧偏移实际由 codegen 的 AssignOffsets
+    // 单独维护，留在符号表里只会让人误以为偏移存在这儿。
     bool      m_bIsArray = false;             // 【新增 v4.0】是否数组
     int       m_iArraySize = 0;               // 【新增 v4.0】数组元素个数
 };
@@ -128,12 +130,16 @@ public:
     ConstEntry* RecConst(const std::string& name, TokenType type, double value, int line, int col);
     const VarEntry*   SearchVar(const std::string& name) const;
     const ConstEntry* SearchConst(const std::string& name) const;
+    // 【零调用】Q12 方案（词法先登记文本、语义回填名字与类型）的遗留接口。
+    // 现在常量的名字/类型/值由 RecConst 一次性登记，本函数不再被调用，
+    // 保留仅为对齐参考书契约（docs/interface.md 与设计文档 §6 有签名）。
     void        BackfillConst(int iConstIdx, const std::string& name, TokenType type);
     bool        CheckAssign(TokenType lhs, TokenType rhs, int line, int col);
     void        DumpSymTab(std::ostream& os) const;
 
     // ================= 第 4 章参考书扩展接口 =================
     int         RecVarTbl(const std::string& name, TokenType type, int line);       // 返回索引（参考书 RecVar 风格）
+    // 【零调用】同上，Q12 遗留。请用 RecConst(name, type, value, line, col)。
     int         RecConstTbl(const std::string& szVal, TokenType constType);         // 词法常量登记（Q12）
     VarEntry*   SearchVarInfoTbl(const std::string& name);                          // 查变量表
     ConstEntry* SearchConstInfoTbl(const std::string& name);                        // 查常量表
@@ -153,7 +159,9 @@ public:
     static int  SizeOfType(TokenType baseType);
     LabelEntry* RecLabel(const std::string& name, int labelIdx, int line, int col); // 登记标号（挑战版）
     LabelEntry* SearchLabelInfoTbl(const std::string& name);                        // 查标号表
-    int         GetSerialId() const { return m_iSerialId; }                         // 对象序号
+    // 注：这里曾有 GetSerialId()（参考书「_noname + 序号」匿名类型命名），
+    // 2026-10-28 删除 —— 全仓零调用；它暗示支持结构体这类匿名类型，而 MiniC
+    // 没有结构体，留着反而误导。m_iSerialId 字段仍保留（SymbolEntry 用）。
 
     // ================= 多表成员（参考书 CSymbolTbl） =================
     std::vector<VarEntry>    m_VarInfoTbl;      // 变量表

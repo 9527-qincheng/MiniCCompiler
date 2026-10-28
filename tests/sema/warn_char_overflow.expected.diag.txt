@@ -1,0 +1,1 @@
+warning: 5:5: value 300 cannot be represented in char (-128..127); it will be truncated to 44

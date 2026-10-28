@@ -12,6 +12,31 @@
 
 #include <cstdio>
 #include <string>
+#include <vector>
+
+namespace {
+
+// 实参类型兼容判定（2026-10-28 新增）。
+// 只把「int / float / char 三者互转」当作可接受的隐式转换（C 的常规算术转换），
+// bool 与数值之间、void 与任何类型之间都视为不兼容 —— 那两类基本只会是写错，
+// 而不是有意转换。
+bool ArgCompatible(TokenType want, TokenType got)
+{
+    if (want == got) return true;
+    const auto numeric = [](TokenType t) {
+        return t == TokenType::TOKEN_INT || t == TokenType::TOKEN_FLOAT ||
+               t == TokenType::TOKEN_CHAR;
+    };
+    return numeric(want) && numeric(got);
+}
+
+// char 只能表示 -128..127（codegen 用 movb 存单字节，超范围静默截断）。
+int TruncateToChar(long long v)
+{
+    return static_cast<int>(static_cast<signed char>(static_cast<int>(v)));
+}
+
+}  // namespace
 
 SemanticAnalyzer::SemanticAnalyzer(SymbolTable& symtab) : m_symtab(symtab) {}
 
@@ -337,6 +362,26 @@ void SemanticAnalyzer::VisitAssign(AssignNode* assign)
     TokenType rt = Visit(assign->m_children[1]);
     if (lt == TokenType::TOKEN_NONE || rt == TokenType::TOKEN_NONE) return;
     m_symtab.CheckAssign(lt, rt, assign->m_loc.m_iRow, assign->m_loc.m_iCol);
+
+    // char 越界赋值检查（2026-10-28 新增）。
+    // `char c; c = 300;` 原先静默通过，codegen 用 movb 存单字节，实际存进去是 44。
+    // 只查「右边是整型字面量」这一种形态 —— 变量里的值静态看不出来，
+    // 运行期检查不在本编译器范围内（见项目总结 6.2 限制）。
+    if (lt == TokenType::TOKEN_CHAR && rt == TokenType::TOKEN_INT &&
+        assign->m_children[1] &&
+        assign->m_children[1]->m_kind == ASTNodeKind::AST_NODE_NUM)
+    {
+        const auto* lit = static_cast<const NumNode*>(assign->m_children[1].get());
+        if (!lit->m_bIsFloat && !lit->m_isChar && !lit->m_isBool &&
+            (lit->m_fValue > 127.0 || lit->m_fValue < -128.0))
+        {
+            const long long v = static_cast<long long>(lit->m_fValue);
+            EmitWarning("value " + std::to_string(v) +
+                        " cannot be represented in char (-128..127); it will be "
+                        "truncated to " + std::to_string(TruncateToChar(v)),
+                        assign->m_loc);
+        }
+    }
 }
 
 // ---------------------------------------------------------------- 表达式
@@ -565,8 +610,9 @@ TokenType SemanticAnalyzer::VisitCall(CallNode* call)
     TokenType ft = Visit(call->m_children[0]);
 
     // children[1..] = 实参，逐个求值（顺带检查未声明/类型）
+    std::vector<TokenType> argTypes;
     for (std::size_t i = 1; i < call->m_children.size(); ++i)
-        Visit(call->m_children[i]);
+        argTypes.push_back(Visit(call->m_children[i]));
 
     // ---- 实参个数检查（挑战版第 ⑥ 项）----
     // 只对被调者是「已声明的函数」生效：标识符可能解析到普通变量，
@@ -585,6 +631,25 @@ TokenType SemanticAnalyzer::VisitCall(CallNode* call)
                 EmitError("function '" + id->m_szName + "' expects " +
                           std::to_string(iWant) + " argument(s), but " +
                           std::to_string(iGot) + " given", call->m_loc);
+            }
+            else
+            {
+                // 实参类型检查（2026-10-28 新增）。
+                // 修复前 `int f(int a)` 传 float 会静默截断，编译器一声不吭。
+                // 判为警告而非错误：int/float/char 之间的隐式转换是 C 的常规行为，
+                // 只有 bool↔数值、void 实参这类才提示。
+                for (std::size_t i = 0; i < iGot; ++i)
+                {
+                    const TokenType want = it->second[i];
+                    const TokenType got  = argTypes[i];
+                    if (got == TokenType::TOKEN_NONE || ArgCompatible(want, got))
+                    {
+                        continue;
+                    }
+                    EmitWarning("argument " + std::to_string(i + 1) + " of function '" +
+                                id->m_szName + "' expects " + TokenTypeToString(want) +
+                                ", but " + TokenTypeToString(got) + " given", call->m_loc);
+                }
             }
         }
     }
@@ -616,6 +681,17 @@ void SemanticAnalyzer::VisitNum(NumNode* num)
     }
     else
     {
+        // 整型字面量越界检查（2026-10-28 新增）。
+        // 阈值取 2147483648 而不是 2147483647：`-2147483648` 在 AST 里是
+        // UnOp(-, Num(2147483648))，只看 Num 节点无法区分「INT_MIN 的绝对值」
+        // 与「真的溢出」。宁可放过 2147483648 这一个值，也不误报 INT_MIN。
+        if (num->m_fValue > 2147483648.0 || num->m_fValue < -2147483648.0)
+        {
+            char ob[64] = {0};
+            std::snprintf(ob, sizeof(ob), "%.0f", num->m_fValue);
+            EmitError(std::string("integer literal ") + ob +
+                      " is out of range for int (-2147483648..2147483647)", num->m_loc);
+        }
         std::snprintf(buf, sizeof(buf), "%lld", static_cast<long long>(num->m_fValue));
         nm = buf;
     }

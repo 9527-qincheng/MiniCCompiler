@@ -30,6 +30,7 @@ compile_commands.json
 *.quad.txt
 # ...但回归基线要入库：它们叫 *.expected.quad.txt，minic 永远不会写这个文件名
 !tests/quad/*.expected.quad.txt
+!tests/opt/*.expected.quad.txt
 
 # GUI（Electron）依赖
 gui/node_modules/

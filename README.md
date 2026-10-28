@@ -132,6 +132,7 @@ build.bat
 > 适合提交前自检与 CI。仓库已配 `.github/workflows/ci.yml`：在 `windows-latest` 上装
 > MSYS2 的 MinGW-w64，跑同一套 `build.bat test`，另加六份产物节标题核对与
 > `-O` 语义一致性冒烟（优化前后 stdout 与退出码必须一致），失败时上传产物供排查。
+> **该工作流已在 `dev` 上启用：2026-10-28 首次运行 85 秒全绿（7 个 step 全 success）。**
 > 九个编译阶段各有自己的回归网：词法比 `.token.txt`、语法比 `.ast.txt`/错误消息、
 > 符号表比 `.sym.txt`、语义比 stderr 诊断（含行列号）、中间代码比 `.quad.txt`、
 > 目标代码是唯一走"汇编→链接→运行→比 stdout"的端到端。

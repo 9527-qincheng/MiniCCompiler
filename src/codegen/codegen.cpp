@@ -111,6 +111,23 @@ private:
     std::string             m_szAcc;            // "V<idx>"/"T<idx>"，空 = %eax 内容未知
     std::unordered_set<int> m_forwardedTemps;   // 免落栈的临时量编号
 
+    // --- 窥孔：比较塌缩 + 原地更新（2026-10-28 新增）---
+    // ① 比较塌缩：`_T = (a < b); JNT _T` 原本要 setcc → movzbl → cmpl $0 → je，
+    //    四条指令只是为了把标志位搬进 %eax 再搬回来。若 _T 只被这条分支消费，
+    //    就让比较结果留在标志位里，由 GenBranch 直接发一条 jcc。
+    //    只对整型比较生效 —— 浮点走 ucomiss，NaN 时 setcc 与 jcc 的方向并不一致。
+    // ② 原地更新：`_T = i + 1; i = _T` 原本发「装 %eax → 算 → 存回」，两头都是搬运。
+    //    若 _T 只被这条赋值消费、且赋值目标正是二元式的 Op1，就把运算直接做到
+    //    目标变量的家里（%ebx/%esi 或栈槽/全局符号）。
+    std::unordered_map<int, int>     m_cmpFuseTemp;      // 临时量 → 0=JT / 1=JNT
+    std::unordered_map<int, Operand> m_computeIntoTemp;  // 临时量 → 可直接写入的目标变量
+    int  m_iFlagsTemp = -1;   // 标志位来自哪个临时量的比较（-1 = 无效）
+    int  m_iFlagsCat  = 0;    // 该比较的 QuadCat（CAT_EQU … CAT_ME）
+    bool m_bFlagsValid = false;
+
+    static const char* CmpJumpMnemonic(int cat, bool bJumpIfZero);
+    void EmitIntoVariable(const Quad& q, const char* iOp, const Operand& dest);
+
     // 【寄存器分配】本函数固定分配在 %rbx / %rsi 的局部整型变量：变量表下标 → 寄存器名
     std::unordered_map<int, std::string> m_varInReg;
     // 已经把值装进寄存器的变量下标（首次访问前需要先从栈槽装一次）
@@ -410,6 +427,24 @@ static bool ConsumesEaxFirst(QuadOp op)
     }
 }
 
+// 整型比较（大类 1~6）。浮点比较不参与「比较塌缩」，原因见 m_cmpFuseTemp 的注释。
+static bool IsIntCompareOp(QuadOp op)
+{
+    const int cat = QuadCatOf(op);
+    return cat >= static_cast<int>(QuadCat::CAT_EQU) &&
+           cat <= static_cast<int>(QuadCat::CAT_ME);
+}
+
+// 可以原地进行的整型算术：加、减、乘。
+// 除法不在其中 —— idivl 的结果必须经 %eax/%edx，没法直接写目标操作数。
+static bool IsIntArithOp(QuadOp op)
+{
+    const int cat = QuadCatOf(op);
+    return cat == static_cast<int>(QuadCat::CAT_ADD) ||
+           cat == static_cast<int>(QuadCat::CAT_SUB) ||
+           cat == static_cast<int>(QuadCat::CAT_MUL);
+}
+
 // 找出「定义后立刻被下一条四元式当 Op1 消费、且全函数只消费一次」的临时量。
 // 判据有三条，缺一不可：
 //   1. 全函数里只被读过一次（读两次就不能省栈槽）；
@@ -419,6 +454,10 @@ static bool ConsumesEaxFirst(QuadOp op)
 void AsmEmitter::AnalyzeTempReuse(const CodeList& codes)
 {
     m_forwardedTemps.clear();
+    m_cmpFuseTemp.clear();
+    m_computeIntoTemp.clear();
+    m_bFlagsValid = false;
+    m_iFlagsTemp  = -1;
     std::unordered_map<int, int> useCount;
     for (const Quad& q : codes)
     {
@@ -435,6 +474,26 @@ void AsmEmitter::AnalyzeTempReuse(const CodeList& codes)
         if (nq.m_Op1.m_kind != OperandKind::OP_TEMP || nq.m_Op1.m_iLink != t) { continue; }
         if (!ConsumesEaxFirst(nq.m_eOp)) { continue; }
         m_forwardedTemps.insert(t);
+
+        // ① 比较塌缩：nq 就是这个比较结果的条件分支
+        if (IsIntCompareOp(q.m_eOp) &&
+            !IsFloatType(q.m_Op1.m_type) && !IsFloatType(q.m_Op2.m_type) &&
+            (nq.m_eOp == QuadOp::Q_JT || nq.m_eOp == QuadOp::Q_JNT))
+        {
+            m_cmpFuseTemp[t] = (nq.m_eOp == QuadOp::Q_JNT) ? 1 : 0;
+        }
+
+        // ② 原地更新：nq 是把该临时量赋回二元式左操作数的赋值
+        if (IsIntArithOp(q.m_eOp) &&
+            q.m_Op1.m_kind == OperandKind::OP_VAR &&
+            !IsFloatType(q.m_Op1.m_type) && !IsFloatType(q.m_Op2.m_type) &&
+            !IsFloatType(q.m_Rslt.m_type) &&
+            (nq.m_eOp == QuadOp::Q_ASSIGN_1 || nq.m_eOp == QuadOp::Q_ASSIGN_4) &&
+            nq.m_Rslt.m_kind == OperandKind::OP_VAR &&
+            nq.m_Rslt.m_iLink == q.m_Op1.m_iLink)
+        {
+            m_computeIntoTemp[t] = nq.m_Rslt;
+        }
     }
 }
 
@@ -816,6 +875,16 @@ void AsmEmitter::GenBinary(const Quad& q, const char* iOp, const char* fOp)
         StoreFloat("%xmm0", q.m_Rslt);
         return;
     }
+    // 【原地更新】见 m_computeIntoTemp 的注释
+    if (q.m_Rslt.m_kind == OperandKind::OP_TEMP)
+    {
+        const auto itIn = m_computeIntoTemp.find(q.m_Rslt.m_iLink);
+        if (itIn != m_computeIntoTemp.end())
+        {
+            EmitIntoVariable(q, iOp, itIn->second);
+            return;
+        }
+    }
     LoadInt(q.m_Op1, "%eax");
     // 常量右操作数直接当立即数用（idiv 没有立即数形式，只能走寄存器）
     long long k = 0;
@@ -861,6 +930,17 @@ void AsmEmitter::GenCompare(const Quad& q, const char* iCc, const char* fCc)
             LoadInt(q.m_Op2, "%ecx");
             Emit("cmpl %ecx, %eax");
         }
+        // 【比较塌缩】下一条四元式就是这个比较结果的分支消费者：
+        // 把结果留在标志位里，交给 GenBranch 直接 jcc，省 setcc/movzbl/cmpl 三条。
+        if (q.m_Rslt.m_kind == OperandKind::OP_TEMP &&
+            m_cmpFuseTemp.count(q.m_Rslt.m_iLink) != 0)
+        {
+            m_iFlagsTemp  = q.m_Rslt.m_iLink;
+            m_iFlagsCat   = QuadCatOf(q.m_eOp);
+            m_bFlagsValid = true;
+            ClobberAcc();       // %eax 里是 Op1 的残值，不能当成任何变量的值
+            return;
+        }
         Emit(std::string("set") + iCc + " %al");
     }
     Emit("movzbl %al, %eax");
@@ -904,6 +984,17 @@ void AsmEmitter::GenNot(const Quad& q)
 
 void AsmEmitter::GenBranch(const Quad& q, bool bJumpIfZero)
 {
+    // 【比较塌缩】标志位上正好是这条分支要判的比较结果，直接跳
+    if (m_bFlagsValid && q.m_Op1.m_kind == OperandKind::OP_TEMP &&
+        q.m_Op1.m_iLink == m_iFlagsTemp)
+    {
+        m_bFlagsValid = false;
+        m_iFlagsTemp  = -1;
+        Emit(std::string(CmpJumpMnemonic(m_iFlagsCat, bJumpIfZero)) + " " +
+             Lbl(q.m_Rslt.m_iLink));
+        return;
+    }
+    m_bFlagsValid = false;      // 兜底：标志位对不上就按常规路径重新比较
     if (IsFloatType(q.m_Op1.m_type))
     {
         LoadFloat(q.m_Op1, "%xmm0");
@@ -918,6 +1009,59 @@ void AsmEmitter::GenBranch(const Quad& q, bool bJumpIfZero)
     Emit(std::string(bJumpIfZero ? "je " : "jne ") + Lbl(q.m_Rslt.m_iLink));
 }
 
+// 比较大类 + 「结果为 0 时跳 / 不为 0 时跳」→ 对应的 jcc 助记符。
+// 方向要反过来选：bJumpIfZero 表示「比较结果为假时跳」，用的是比较的反面。
+const char* AsmEmitter::CmpJumpMnemonic(int cat, bool bJumpIfZero)
+{
+    const bool z = bJumpIfZero;
+    if (cat == static_cast<int>(QuadCat::CAT_EQU))  { return z ? "jne" : "je";  }
+    if (cat == static_cast<int>(QuadCat::CAT_NEQU)) { return z ? "je"  : "jne"; }
+    if (cat == static_cast<int>(QuadCat::CAT_LS))   { return z ? "jge" : "jl";  }
+    if (cat == static_cast<int>(QuadCat::CAT_LE))   { return z ? "jg"  : "jle"; }
+    if (cat == static_cast<int>(QuadCat::CAT_MR))   { return z ? "jle" : "jg";  }
+    if (cat == static_cast<int>(QuadCat::CAT_ME))   { return z ? "jl"  : "jge"; }
+    return z ? "je" : "jne";
+}
+
+// 把整型二元运算直接做到目标变量上（原地更新）。
+// 目标可以是寄存器（%ebx/%esi）、局部栈槽或全局符号 —— x86 的 addl / subl / imull
+// 三种形态都允许目的操作数是寄存器或内存，因此都只要一条指令。
+void AsmEmitter::EmitIntoVariable(const Quad& q, const char* iOp, const Operand& dest)
+{
+    std::string dst;
+    const std::string* pReg = RegOfVar(dest);
+    if (pReg != nullptr)
+    {
+        EnsureVarLoaded(dest, *pReg);
+        dst = *pReg;
+    }
+    else if (m_sym != nullptr && dest.m_iLink >= 0 &&
+             static_cast<std::size_t>(dest.m_iLink) < m_sym->m_VarInfoTbl.size() &&
+             !IsLocalVar(dest.m_iLink))
+    {
+        dst = m_sym->m_VarInfoTbl[static_cast<std::size_t>(dest.m_iLink)].m_szName + "(%rip)";
+    }
+    else
+    {
+        dst = std::to_string(SlotOf(dest)) + "(%rbp)";
+    }
+
+    long long k = 0;
+    if (IntConstOf(q.m_Op2, k))
+    {
+        Emit(std::string(iOp) + " $" + IntToStr(k) + ", " + dst);
+    }
+    else
+    {
+        LoadInt(q.m_Op2, "%ecx");
+        Emit(std::string(iOp) + " %ecx, " + dst);
+    }
+    ClobberAcc();       // 结果落在目标变量里，%eax 的内容不再代表任何操作数
+}
+
+// ----------------------------------------------------------------------------
+// 输出 PRINT
+// ----------------------------------------------------------------------------
 void AsmEmitter::GenPrint(const Quad& q)
 {
     const bool bFloat = IsFloatType(q.m_Op1.m_type);
@@ -1114,6 +1258,11 @@ void AsmEmitter::GenReturn(const Quad& q)
 
 void AsmEmitter::GenQuad(const Quad& q)
 {
+    // 标志位只在「比较 → 紧邻分支」这一对上有效，不跨四元式存活
+    if (m_bFlagsValid && q.m_eOp != QuadOp::Q_JT && q.m_eOp != QuadOp::Q_JNT)
+    {
+        m_bFlagsValid = false;
+    }
     switch (q.m_eOp)
     {
     case QuadOp::Q_NONE:
@@ -1125,6 +1274,12 @@ void AsmEmitter::GenQuad(const Quad& q)
     case QuadOp::Q_ASSIGN_4:
     case QuadOp::Q_ASSIGN_4F:
     {
+        // 【原地更新】运算已经直接做进目标变量，这条赋值是空的
+        if (q.m_Op1.m_kind == OperandKind::OP_TEMP &&
+            m_computeIntoTemp.count(q.m_Op1.m_iLink) != 0)
+        {
+            return;
+        }
         // 目标/源类型可能不一致：IR 在 int→float 处已插 ITOF，但保险起见仍就地补转换，
         // 避免把整数的位模式直接当浮点数存。
         const bool bFloatDst = IsFloatType(q.m_Rslt.m_type);
@@ -1285,6 +1440,8 @@ void AsmEmitter::EmitFunction(const std::string& name, const CodeList& codes, bo
     EmitParams();
     AnalyzeTempReuse(codes);
     ClobberAcc();       // 形参搬运用的是裸 movl，%eax 内容不可信
+    m_bFlagsValid = false;
+    m_iFlagsTemp  = -1;
 
     for (const Quad& q : codes)
     {

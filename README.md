@@ -523,7 +523,7 @@ pwsh -File tests/run_quad_tests.ps1 -Update
 - **挑战版（Q5 顺序）：控制流(if/while) → print → 数组 → 函数 → x86 汇编 —— 五步全部落地**
   - **语法侧已全部落地**：复合语句/if/while/return/一元运算、比较与逻辑运算符、
     `bool`/`char`/`true`/`false`、`print(表达式);`、一维数组声明与下标、函数定义/形参/调用
-  - **目标代码侧已全部落地**：`src/codegen/codegen.cpp`，`tests/run_codegen_tests.ps1` 30 例
+  - **目标代码侧已全部落地**：`src/codegen/codegen.cpp`，`tests/run_codegen_tests.ps1` 31 例
     （算术/比较/if-else/while/浮点/混合类型/逻辑/函数调用/递归/数组读写/字符/嵌套分支/短路/实参转换/返回值转换/
     嵌套调用实参顺序/空函数/用户自定义 `main`/返回值语义/char 与 bool 返回/变量遮蔽/大栈帧）全部编译成汇编、经 gcc 链接、运行并比对输出，**30/30 通过**
   - **差分测试验证**（2026-10-24，未入库，脚本在 `build/_s2/`）：除固定用例，另用「同一程序 MiniC 版 vs gcc 编译的等价 C 版」逐行比对 stdout，

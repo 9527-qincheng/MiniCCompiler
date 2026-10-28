@@ -7,6 +7,11 @@
 //   - 只要涉及读内存 / 调用 / 打印 / 返回 / 传参 的一律不动（保守处理）。
 // 默认关闭，由命令行 -O / --optimize 打开（见 main.cpp），
 // 保证不加 -O 时全部既有基线（.quad.txt / .asm / 运行 stdout）逐字不变。
+//
+// 前三轮（常量条件跳转 / 删不可达 / 删空跳）是纯窥孔，不需要控制流信息；
+// 后两轮（删死临时量与死标号、基本块内的常量传播与公共子表达式与死存储）
+// 需要先把序列切成基本块 —— 块内没有跳转进入，状态才能安全地向前传播。
+// 一切跨块的状态在块边界与 CALL 处一律清空，宁可少优化也不猜。
 // ============================================================================
 #ifndef MINIC_SEMA_OPTIMIZER_H
 #define MINIC_SEMA_OPTIMIZER_H
@@ -24,10 +29,26 @@ struct OptStats
     int iRedundantJump = 0;   // 跳到紧邻下一条 LABEL 的空跳
     int iDeadTemp      = 0;   // 结果临时量无人使用的纯计算
     int iDeadLabel     = 0;   // 无人跳转到的标号定义
+    int iConstProp     = 0;   // 基本块内已知常量的变量读被替换成常量
+    int iCse           = 0;   // 基本块内重复表达式被替换成引用已有临时量
+    int iDeadStore     = 0;   // 基本块内被后一次赋值覆盖、且中间没人读的赋值
+
+    // 真正被删掉的四元式条数
+    int Removed() const
+    {
+        return iFoldedBranch + iUnreachable + iRedundantJump + iDeadTemp +
+               iDeadLabel + iDeadStore;
+    }
+
+    // 只是被改写（数量不变，但后续轮次可能因此再删掉一些）的操作数个数
+    int Rewritten() const
+    {
+        return iConstProp + iCse;
+    }
 
     int Total() const
     {
-        return iFoldedBranch + iUnreachable + iRedundantJump + iDeadTemp + iDeadLabel;
+        return Removed() + Rewritten();
     }
 };
 

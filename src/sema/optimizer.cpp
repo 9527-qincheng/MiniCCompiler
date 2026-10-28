@@ -15,10 +15,15 @@
 //      而临时量按定义只在本段内使用。
 //   5) 死标号：没有任何跳转指令指向的 LABEL 定义 → 删。必须排除 LABEL
 //      自身的 Op1（它「定义」自己，不算被使用）。
-// 不做的事（留给后续）：常量传播、公共子表达式、循环不变式、寄存器分配。
+//   6) 基本块内的常量传播 / 公共子表达式 / 死存储（见 BlockOptimize）：
+//      先把序列按「标号 / 无条件或条件转移之后」切成基本块，块内没有跳转
+//      进入，所以「某个变量此刻一定是常量」「某个表达式已经算过」这类状态
+//      可以安全地向前传播；块边界与 CALL 处一律清空全部状态。
+// 不做的事（留给后续）：循环不变式、跨块数据流、寄存器分配。
 // ============================================================================
 #include "sema/optimizer.h"
 
+#include <map>
 #include <set>
 #include <string>
 
@@ -106,17 +111,211 @@ std::string LabelKey(const Operand& op)
     return "L" + std::to_string(op.m_iLink);
 }
 
+// 操作数的身份键：种类 + 表内位序。用于「同一个变量 / 同一个临时量」判定。
+std::string OperandKey(const Operand& op)
+{
+    switch (op.m_kind)
+    {
+    case OperandKind::OP_CONST: return "C" + std::to_string(op.m_iLink);
+    case OperandKind::OP_VAR:   return "V" + std::to_string(op.m_iLink);
+    case OperandKind::OP_TEMP:  return "T" + std::to_string(op.m_iLink);
+    case OperandKind::OP_LABEL: return "L" + std::to_string(op.m_iLink);
+    default:                    return std::string();
+    }
+}
+
+// 控制流在这里断开：块内状态不能跨过去。
+bool EndsFlow(QuadOp op)
+{
+    return op == QuadOp::Q_JMP || op == QuadOp::Q_RETV ||
+           op == QuadOp::Q_JT || op == QuadOp::Q_JNT;
+}
+
+// 二元纯计算：关系（EQU…ME）与算术（SUB…AND）。这两类没有副作用，
+// 同样的操作数算两次结果必然相同，可以复用前一次的结果临时量。
+bool IsBinaryCompute(QuadOp op)
+{
+    const int cat = QuadCatOf(op);
+    return cat >= static_cast<int>(QuadCat::CAT_EQU) &&
+           cat <= static_cast<int>(QuadCat::CAT_AND);
+}
+
+bool IsAssign(QuadOp op)
+{
+    return op == QuadOp::Q_ASSIGN_1 || op == QuadOp::Q_ASSIGN_4 ||
+           op == QuadOp::Q_ASSIGN_4F;
+}
+
+// 用哪条 ASSIGN 搬运 CSE 复用的结果。
+// 关系运算的结果是 int（0/1），哪怕操作数是浮点（LS_4F 比完给的是整数），
+// 所以关系类固定用 ASSIGN_4；算术类才跟着操作数宽度与浮点标记走。
+QuadOp AssignOpOf(QuadOp op)
+{
+    const int cat = QuadCatOf(op);
+    if (cat >= static_cast<int>(QuadCat::CAT_EQU) &&
+        cat <= static_cast<int>(QuadCat::CAT_ME))
+    {
+        return QuadOp::Q_ASSIGN_4;
+    }
+    if (QuadOpIsFloat(op))
+    {
+        return QuadOp::Q_ASSIGN_4F;
+    }
+    if (QuadOpByteWidth(op) == 1)
+    {
+        return QuadOp::Q_ASSIGN_1;
+    }
+    return QuadOp::Q_ASSIGN_4;
+}
+
+struct CseEntry
+{
+    Operand val;   // 之前算出的结果临时量
+    int     e1;    // 当时 Op1 的写入代数
+    int     e2;    // 当时 Op2 的写入代数
+};
+
+// 一个基本块内的优化：常量传播 + 公共子表达式 + 死存储。
+// 三条都依赖同一个前提 —— 块内没有跳转进入，执行是严格顺序的。
+void OptimizeBlock(const CodeList& src, std::size_t beg, std::size_t end,
+                   OptStats& st, CodeList& out)
+{
+    std::map<std::string, Operand>  constOf;    // 变量 → 已知整型常量
+    std::map<std::string, int>      epoch;      // 变量/临时量 → 写入代数
+    std::map<std::string, CseEntry> cse;        // 表达式键 → 已算出的结果
+    std::map<std::string, std::size_t> pending; // 变量 → 上一次赋值在 out 里的位置
+
+    for (std::size_t k = beg; k < end; ++k)
+    {
+        Quad q = src[k];
+        const QuadOp op = q.m_eOp;
+
+        // 调用可能改任何全局量：跨语句的假设全部作废。
+        if (op == QuadOp::Q_CALL)
+        {
+            constOf.clear();
+            epoch.clear();
+            cse.clear();
+            pending.clear();
+        }
+
+        // 先按「原始操作数」登记读取：读过就不再是「被覆盖的死存储」。
+        for (const Operand* p : {&q.m_Op1, &q.m_Op2})
+        {
+            if (p->m_kind == OperandKind::OP_VAR)
+            {
+                pending.erase(OperandKey(*p));
+            }
+        }
+
+        // ---- 常量传播 ----
+        for (Operand* p : {&q.m_Op1, &q.m_Op2})
+        {
+            if (p->m_kind != OperandKind::OP_VAR)
+            {
+                continue;
+            }
+            const auto it = constOf.find(OperandKey(*p));
+            if (it != constOf.end())
+            {
+                *p = it->second;
+                st.iConstProp++;
+            }
+        }
+
+        // ---- 公共子表达式 ----
+        if (IsBinaryCompute(op))
+        {
+            const std::string key = QuadOpName(op) + "|" +
+                                    OperandKey(q.m_Op1) + "|" + OperandKey(q.m_Op2);
+            const auto it = cse.find(key);
+            if (it != cse.end() &&
+                epoch[OperandKey(q.m_Op1)] == it->second.e1 &&
+                epoch[OperandKey(q.m_Op2)] == it->second.e2)
+            {
+                // 同样的输入算过一遍，直接搬前一次的结果
+                q.m_eOp = AssignOpOf(op);
+                q.m_Op1 = it->second.val;
+                q.m_Op2 = Operand();
+                st.iCse++;
+            }
+            else
+            {
+                CseEntry e;
+                e.val = q.m_Rslt;
+                e.e1  = epoch[OperandKey(q.m_Op1)];
+                e.e2  = epoch[OperandKey(q.m_Op2)];
+                cse[key] = e;
+            }
+        }
+
+        // ---- 写入登记 ----
+        if (q.m_Rslt.m_kind == OperandKind::OP_VAR ||
+            q.m_Rslt.m_kind == OperandKind::OP_TEMP)
+        {
+            const std::string vk = OperandKey(q.m_Rslt);
+            epoch[vk] += 1;
+            constOf.erase(vk);
+
+            if (q.m_Rslt.m_kind == OperandKind::OP_VAR)
+            {
+                if (IsAssign(q.m_eOp))
+                {
+                    // 上一次赋值到这次赋值之间没人读过 → 上一次是死存储
+                    const auto it = pending.find(vk);
+                    if (it != pending.end())
+                    {
+                        out[it->second].m_eOp = QuadOp::Q_NONE;
+                        st.iDeadStore++;
+                    }
+                    pending[vk] = out.size();
+                }
+                else
+                {
+                    // 数组元素写入等：地址基址被读过，不能当死存储处理
+                    pending.erase(vk);
+                }
+            }
+
+            // 整型常量赋值才记进常量表视图（浮点不参与，理由同 ConstantIsZero）
+            if (q.m_eOp == QuadOp::Q_ASSIGN_4 && q.m_Op1.m_kind == OperandKind::OP_CONST)
+            {
+                constOf[vk] = q.m_Op1;
+            }
+        }
+
+        out.push_back(q);
+    }
+}
+
+// 把序列切成基本块，逐块优化。
+void BlockOptimize(const CodeList& codes, OptStats& st, CodeList& out)
+{
+    const std::size_t n = codes.size();
+    std::size_t i = 0;
+    while (i < n)
+    {
+        std::size_t j = i + 1;
+        while (j < n && codes[j].m_eOp != QuadOp::Q_LABEL && !EndsFlow(codes[j - 1].m_eOp))
+        {
+            ++j;
+        }
+        OptimizeBlock(codes, i, j, st, out);
+        i = j;
+    }
+}
+
 } // namespace
 
 // ----------------------------------------------------------------------------
 // Optimize
 // ----------------------------------------------------------------------------
-void Optimize(CodeList& codes, const SymbolTable& symtab, OptStats& st)
+namespace
 {
-    if (codes.empty())
-    {
-        return;
-    }
+
+// 完整跑一遍 0-4 轮。外层会反复调用直到不再有变化。
+void RunOnce(CodeList& codes, const SymbolTable& symtab, OptStats& st)
+{
 
     // ---- 第 0 轮：常量条件跳转 ----
     // 只认 Q_JT / Q_JNT；条件为整型常量 0 才折叠。
@@ -178,8 +377,14 @@ void Optimize(CodeList& codes, const SymbolTable& symtab, OptStats& st)
         {
             continue;
         }
-        if (out[i].m_Op1.m_kind == OperandKind::OP_LABEL &&
-            out[i].m_Op1.m_iLink == out[i + 1].m_Op1.m_iLink)
+        // **跳转目标在 Rslt 不在 Op1**：四元式打印成 (JMP, -, -, L2)，
+        // 前两个字段是空操作数。第一版查 Op1，于是这一轮从来没命中过
+        // （-O 的统计里 jumps 恒为 0 就是这个原因）。两处都查，兼容两种形态。
+        const Operand& tgt = (out[i].m_Rslt.m_kind == OperandKind::OP_LABEL)
+                                 ? out[i].m_Rslt
+                                 : out[i].m_Op1;
+        if (tgt.m_kind == OperandKind::OP_LABEL &&
+            tgt.m_iLink == out[i + 1].m_Op1.m_iLink)
         {
             out[i].m_eOp = QuadOp::Q_NONE;
             st.iRedundantJump++;
@@ -261,7 +466,47 @@ void Optimize(CodeList& codes, const SymbolTable& symtab, OptStats& st)
         stage3.push_back(q);
     }
 
-    codes.swap(stage3);
+    // ---- 第 4 轮：基本块内的常量传播 / 公共子表达式 / 死存储 ----
+    CodeList stage4;
+    stage4.reserve(stage3.size());
+    BlockOptimize(stage3, st, stage4);
+    CodeList stage5;
+    stage5.reserve(stage4.size());
+    for (const auto& q : stage4)
+    {
+        if (q.m_eOp != QuadOp::Q_NONE)
+        {
+            stage5.push_back(q);
+        }
+    }
+
+    codes.swap(stage5);
+}
+
+} // namespace
+
+// ----------------------------------------------------------------------------
+// Optimize
+// ----------------------------------------------------------------------------
+// 迭代到不动点：常量传播会把变量读换成常量、CSE 会把重复表达式换成搬运，
+// 这两件事本身不减少四元式条数，但会让「结果没人读的临时量」「条件恒假的
+// 跳转」在下一轮浮现出来。所以整体最多跑 3 遍，直到一轮下来什么都没变。
+// 每一轮内部的判断都是保守的，重复执行不会改变结论，因此收敛即可。
+void Optimize(CodeList& codes, const SymbolTable& symtab, OptStats& st)
+{
+    if (codes.empty())
+    {
+        return;
+    }
+    for (int iPass = 0; iPass < 3; ++iPass)
+    {
+        const int iBefore = st.Total();
+        RunOnce(codes, symtab, st);
+        if (st.Total() == iBefore)
+        {
+            break;
+        }
+    }
 }
 
 } // namespace minic_opt

@@ -268,12 +268,16 @@ int main(int argc, char* argv[])
             }
             minic_opt::Optimize(p.m_Codes, symtab, optStats);
         }
-        std::cerr << "minic: -O removed " << optStats.Total()
-                  << " redundant quad(s) [branch " << optStats.iFoldedBranch
+        std::cerr << "minic: -O removed " << optStats.Removed()
+              << " quad(s), rewrote " << optStats.Rewritten()
+                  << " operand(s) [branch " << optStats.iFoldedBranch
                   << ", unreachable " << optStats.iUnreachable
                   << ", jumps " << optStats.iRedundantJump
                   << ", temps " << optStats.iDeadTemp
-                  << ", labels " << optStats.iDeadLabel << "]\n";
+                  << ", labels " << optStats.iDeadLabel
+              << ", const-prop " << optStats.iConstProp
+              << ", cse " << optStats.iCse
+              << ", dead-store " << optStats.iDeadStore << "]\n";
     }
 
     if (dumpQuads)

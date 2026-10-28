@@ -148,24 +148,25 @@ jobs:
           # ------------------------------------------------------------------
           $d = "build\_ci_opt"
           New-Item -ItemType Directory -Force -Path $d | Out-Null
-          $src = @"
-int gi;
-int two(int n) { if (n <= 1) { return 1; } return n * two(n - 1); }
-int main() {
-    int i;
-    int arr[3];
-    gi = 5;
-    if (gi > 3) { print(1); } else { print(2); }
-    if (gi < 0) { print(9); } else { print(3); }
-    while (0) { print(7); }
-    i = 0;
-    while (i < 3) { arr[i] = i * i; i = i + 1; }
-    print(arr[2]);
-    print(two(4));
-    print('\n');
-    return 0;
-}
-"@
+           $srcLines = @(
+            'int gi;'
+            'int two(int n) { if (n <= 1) { return 1; } return n * two(n - 1); }'
+            'int main() {'
+            '    int i;'
+            '    int arr[3];'
+            '    gi = 5;'
+            '    if (gi > 3) { print(1); } else { print(2); }'
+            '    if (gi < 0) { print(9); } else { print(3); }'
+            '    while (0) { print(7); }'
+            '    i = 0;'
+            '    while (i < 3) { arr[i] = i * i; i = i + 1; }'
+            '    print(arr[2]);'
+            '    print(two(4));'
+            "    print('\n');"
+            '    return 0;'
+            '}'
+          )
+          $src = $srcLines -join "`n"
           [System.IO.File]::WriteAllText((Join-Path $d "t.mc"), $src,
               (New-Object System.Text.UTF8Encoding $false))
 

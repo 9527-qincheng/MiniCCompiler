@@ -106,7 +106,7 @@ public:
     std::vector<int> m_EnumConst;                  // 枚举常量值表
 };
 
-// 作用域类型（第 6 章 EnterScope 参数；基础版仅全局，挑战版函数作用域）
+// 作用域类型（第 6 章 EnterScope 参数；最低规格仅全局，挑战版函数作用域）
 enum class ScopeType
 {
     SCOPE_GLOBAL,   // 全局作用域

@@ -1,0 +1,203 @@
+# ============================================================================
+# MiniC 编译器 —— GitHub Actions 持续集成
+# ----------------------------------------------------------------------------
+# 六阶段流水线（词法 → 语法 → 符号表 → 语义 → 中间代码 → 目标代码）在本地
+# 一直是靠 `build.bat test` 手动跑的。这个工作流把它搬到每次 push / PR 上：
+#   1. 用 MSYS2 装一份 MinGW-w64 的 g++ / gcc（构建与目标代码用例都要它）
+#   2. 构建 build\minic.exe
+#   3. 跑全部 9 套 PowerShell 回归 + 2 个 Node GUI 冒烟（共 11 项，
+#      就是 build.bat test 那套）
+# 目标代码用例会真的把 .asm 交给 gcc 汇编链接再运行比对 stdout，
+# 所以这一步同时验证了「生成的汇编真能跑」。
+# ============================================================================
+name: CI
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+  workflow_dispatch:
+
+# 同一分支的连续推送只保留最后一次，避免排队堆积
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: 构建 + 全量回归（Windows + MinGW-w64）
+    runs-on: windows-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # ----------------------------------------------------------------------
+      # 工具链：MSYS2 提供的 mingw-w64-x86_64-gcc 里同时有 g++.exe 和 gcc.exe，
+      # build.bat 用 `where g++` 找编译器，目标代码用例用 gcc 汇编链接。
+      # ----------------------------------------------------------------------
+      - name: 安装 MSYS2 / MinGW-w64 工具链
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: mingw-w64-x86_64-gcc
+          path-type: inherit
+
+      - name: 确认工具链版本
+        shell: pwsh
+        run: |
+          Write-Host "--- g++ ---"
+          g++ --version
+          Write-Host "--- gcc ---"
+          gcc --version
+          Write-Host "--- pwsh ---"
+          $PSVersionTable.PSVersion
+          Write-Host "--- node ---"
+          node --version
+
+      # ----------------------------------------------------------------------
+      # 构建 + 全量回归。build.bat test 内部会先 build 再逐套跑 tests\*.ps1
+      # 和 gui\test\*.js；任何一套失败都会以非零退出码结束（见 :test 段末尾
+      # 的 `endlocal & exit /b %TESTRC%`），因此这一步就是总闸门。
+      # ----------------------------------------------------------------------
+      - name: 构建 + 运行全部测试套件
+        shell: pwsh
+        run: |
+          # 测试脚本会把产物写到 %TEMP%，这里指到 build 下的子目录，
+          # 让失败时的产物也落在可上传的位置
+          New-Item -ItemType Directory -Force -Path build\_citmp | Out-Null
+          $env:TEMP = (Resolve-Path build\_citmp).Path
+          $env:TMP  = $env:TEMP
+
+          cmd /c "build.bat test"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::build.bat test 失败（退出码 $LASTEXITCODE）"
+            exit $LASTEXITCODE
+          }
+
+      # ----------------------------------------------------------------------
+      # 冒烟：直接用刚构建出来的编译器产一遍四类必交产物，
+      # 确认产物文件的节标题都在（防止 dump 逻辑被改坏却没人发现）。
+      # ----------------------------------------------------------------------
+      - name: 冒烟核对四类必交产物
+        shell: pwsh
+        run: |
+          $out = "build\_ci_smoke"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          Copy-Item tests\test.mc "$out\test.mc"
+          & "build\minic.exe" "$out\test.mc" --dump-tokens --dump-ast --dump-parse --dump-symtab --dump-quads
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::编译器在 tests\test.mc 上返回非零退出码"
+            exit 1
+          }
+
+          $checks = @{
+            "test.token.txt" = "INT"
+            "test.ast.txt"   = "Program"
+            "test.parse.txt" = "产生式"
+            "test.sym.txt"   = "-- Params (challenge) --"
+            "test.quad.txt"  = "ASSIGN_4"
+            "test.asm"       = ".text"
+          }
+          $bad = 0
+          foreach ($k in $checks.Keys | Sort-Object) {
+            $f = Join-Path $out $k
+            if (-not (Test-Path -LiteralPath $f)) {
+              Write-Host "::error::缺少产物 $k"
+              $bad++
+              continue
+            }
+            $txt = [System.IO.File]::ReadAllText($f)
+            if ($txt -notmatch [regex]::Escape($checks[$k])) {
+              Write-Host "::error::$k 里没找到 '$($checks[$k])'"
+              $bad++
+            } else {
+              Write-Host "OK   $k  ($($txt.Length) chars)"
+            }
+          }
+          if ($bad -gt 0) { exit 1 }
+
+      # ----------------------------------------------------------------------
+      # 命令行与优化器冒烟：
+      #   -h / -V 必须返回 0 且不把 "--help" 当源文件打开；
+      #   -O 不能在改变语义的前提下删代码，用 tests\test.mc 的
+      #   不优化 / 优化两份汇编各自链接运行，stdout 与退出码必须一致。
+      # ----------------------------------------------------------------------
+      - name: 命令行与 -O 优化器冒烟
+        shell: pwsh
+        run: |
+          & "build\minic.exe" --help   *> $null
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::-h/--help 返回非零"; exit 1 }
+          & "build\minic.exe" -h       *> $null
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::-h 返回非零"; exit 1 }
+          & "build\minic.exe" --version *> $null
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::-V/--version 返回非零"; exit 1 }
+          $ver = & "build\minic.exe" -V
+          if ($ver -notmatch "MiniC Compiler") { Write-Host "::error::版本串异常: $ver"; exit 1 }
+
+          # ------------------------------------------------------------------
+          # 这段源程序刻意覆盖四种最容易被 -O 改坏的结构：
+          #   1. if/else 的真分支（紧跟在 JNT 之后，绝不能当死代码删）
+          #   2. 恒为假的 while（展开后是 JNT->Lend，Lend 前那段是真不可达）
+          #   3. 恒为真的 if（展开后是 JNT 到 else 标签，else 段才是不可达）
+          #   4. 递归调用（栈帧与传参不能被优化器碰）
+          # 选择内联而不是复用 tests\test.mc：后者没有 main，合成入口什么都不打，
+          # 比对 stdout 时两边都是空的，等于没验。
+          # ------------------------------------------------------------------
+          $d = "build\_ci_opt"
+          New-Item -ItemType Directory -Force -Path $d | Out-Null
+          $src = @"
+int gi;
+int two(int n) { if (n <= 1) { return 1; } return n * two(n - 1); }
+int main() {
+    int i;
+    int arr[3];
+    gi = 5;
+    if (gi > 3) { print(1); } else { print(2); }
+    if (gi < 0) { print(9); } else { print(3); }
+    while (0) { print(7); }
+    i = 0;
+    while (i < 3) { arr[i] = i * i; i = i + 1; }
+    print(arr[2]);
+    print(two(4));
+    print('\n');
+    return 0;
+}
+"@
+          [System.IO.File]::WriteAllText((Join-Path $d "t.mc"), $src,
+              (New-Object System.Text.UTF8Encoding $false))
+
+          & "build\minic.exe" "$d\t.mc" *> $null
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::无 -O 编译失败"; exit 1 }
+          Copy-Item "$d\t.asm" "$d\plain.s" -Force
+
+          & "build\minic.exe" "$d\t.mc" -O *> $null
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::-O 编译失败"; exit 1 }
+          Copy-Item "$d\t.asm" "$d\opt.s" -Force
+
+          gcc -x assembler "$d\plain.s" -o "$d\plain.exe"
+          gcc -x assembler "$d\opt.s"   -o "$d\opt.exe"
+          $pa = (& "$d\plain.exe" 2>&1 | Out-String); $pc = $LASTEXITCODE
+          $pb = (& "$d\opt.exe"   2>&1 | Out-String); $qc = $LASTEXITCODE
+          if ($pa -ne $pb -or $pc -ne $qc) {
+            Write-Host "::error::-O 改变了程序行为：plain=[$pa]/$pc  opt=[$pb]/$qc"
+            exit 1
+          }
+          Write-Host "OK   -O 与不优化的运行结果一致（stdout $($pa.Length) 字符，exit $pc）"
+
+      # ----------------------------------------------------------------------
+      # 失败时把产物与基线上传，方便在网页上直接看差异
+      # ----------------------------------------------------------------------
+      - name: 上传失败产物
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-artifacts
+          path: |
+            build/_ci_smoke/**
+            build/_ci_opt/**
+            build/_citmp/**
+          if-no-files-found: ignore
+          retention-days: 7

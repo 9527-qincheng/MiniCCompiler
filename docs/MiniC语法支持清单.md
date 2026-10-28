@@ -301,7 +301,7 @@ void say() {
 | **变量**下标越界 `b[i]`（i 运行期超界） | **不检查**（静态不可知），运行读栈垃圾 |
 | 数组名不带下标使用 `b = 1;` / `print(b)` | **报错**：`'b' is an array; a subscript is required to read an element` |
 | 实参个数与形参不符 | **报错**：`function 'f' expects 2 argument(s), but 3 given` |
-| 实参**类型**不匹配（`int` 形参传 `float`） | **不检查**，静默截断 |
+| 实参**类型**不匹配（`int` 形参传 `float`） | **告警**：`argument 1 of function 'f' expects INT, but FLOAT given`（`int`/`float`/`char` 互转放行，`bool` 与数值不兼容） |
 | `void` 函数带值返回 | **报错**：`void function 'g' cannot return a value` |
 | 非 `void` 函数裸 `return;` | **报错**：`non-void function 'f' must return a value` |
 | 非 `void` 函数**完全没有** `return` | **告警**：`non-void function 'f' has no return statement; ...`，退出码仍为 0 |
@@ -310,6 +310,8 @@ void say() {
 | 无 `main` 但有顶层语句 | **不告警**（顶层语句会被合成为入口 `main`，既有合法设计） |
 | `if` / `while` 条件是 float 或 int | **不检查**（只有 `&&` `||` 强制要 `bool`） |
 | 顶层（函数体外）的裸 `return;` | **不检查** |
+| 整型字面量超出 `int` 范围 `a = 2147483649;` | **报错**：`integer literal 2147483649 is out of range for int (-2147483648..2147483647)`（`-2147483648` 不误报） |
+| 字面量超出 `char` 范围 `c = 300;` | **告警**：`value 300 cannot be represented in char (-128..127); it will be truncated to 44` |
 
 ---
 

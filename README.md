@@ -71,7 +71,7 @@ MiniCCompiler/
 │   ├── run_parser_unit.ps1        # Parser 单元测试
 │   ├── run_symbol_tests.ps1       # 符号表作用域链断言
 │   ├── run_symtab_tests.ps1       # 符号表 DumpSymTab 回归
-│   ├── run_sema_tests.ps1         # 语义诊断回归（27 例，含警告与多错并报）
+│   ├── run_sema_tests.ps1         # 语义诊断回归（32 例，含警告与多错并报）
 │   ├── run_quad_tests.ps1         # 四元式序列回归（18 例）
 │   ├── sema/                      # 语义用例 *.mc + *.expected.diag.txt
 │   ├── quad/                      # 四元式用例 *.mc + *.expected.quad.txt
@@ -406,6 +406,8 @@ pwsh -File tests/run_sema_tests.ps1 -Update
 - 用例输入：`tests/sema/*.mc` 共 19 条；期望诊断：`tests/sema/<case>.expected.diag.txt`
 - 期望类型写在用例首行 `/* expect: ok | err | warn:<条数> */`，新增用例不必改 runner
 - 比对**诊断行的完整文本**（`minic: error: 行:列: 消息`），含行列号与错误码措辞；
+  每条诊断后面还会跟两行源码上下文（`  4 |     a = 2147483649;` 与 `    |         ^`），
+  这两行不进基线——runner 按 `minic: error:` 前缀过滤，只比对诊断行本身；
   只比条数会漏掉位置漂移，只比有无会漏掉措辞变化
 - `err_` 用例要求退出码 1 且至少一条 error；`ok_` 要求退出码 0 且零 error（warning 允许，
   `warn:N` 会额外核对条数）；尾部汇总行 `N error(s) found` 不参与比对（由条数派生）

@@ -529,6 +529,75 @@
         **零差异**，`build.bat test` 11 套全绿（默认路径不优化，产物逐字不变）。
       - 默认不优化，`.asm` 与四元式产物在无 `-O` 时与改动前完全一致。
 
+  32. **目标代码生成质量：累加器直通 + 立即数直用（2026-10-28，鲍方乐）——纯内部改动，不改任何签名**：
+       `AsmEmitter` 原先对每个四元式严格「load → 运算 → store」，临时量也落栈，最常见的
+       `b = a * 4` 会生成「存 `_T1` / 立刻读 `_T1`」这样一对纯搬运指令。
+       - **累加器直通**：新增私有成员 `std::string m_szAcc`（记录 `%eax` 当前装的是哪个操作数）、
+         `std::unordered_set<int> m_forwardedTemps`（免落栈的临时量）、`AnalyzeTempReuse()`、
+         `ConsumesEaxFirst()`。`LoadInt` 发现要读的正是 `m_szAcc` 且目标寄存器是 `%eax` 时直接返回；
+         `AnalyzeTempReuse` 只把「只被读一次 + 唯一读者就是紧邻的下一条四元式 + 该读者是 Op1」
+         的临时量放进免落栈集合。
+       - **白名单约束**：只对 `%eax` 生效；`Q_PRINT`（读 `%edx`）、`Q_INDEX`（先把基址装 `%rax`）、
+         `Q_PARA`（不发射代码、延后到 `Q_CALL` 才消费）**不在白名单**，否则会读到从未写过的栈槽。
+       - **`ClobberAcc()` 插入点**：`Q_LABEL`、`Q_JMP`、`GenIndex` 入口、`call` 之后、
+         `EmitParams()` 之后、`GenReturn` 的裸 `return` 分支。
+         **`GenReturn` 绝不能在函数入口清缓存** —— `RETV` 的操作数常是上一条刚算出、
+         因免落栈而未写回栈槽的临时量，清了会返回栈垃圾（实测 5 个用例 `output mismatch`，
+         `func_call` 输出 `1937766560` 而不是 `7`）。
+       - **立即数直用**：新增 `bool IntConstOf(const Operand&, long long&) const`（浮点常量返回
+         false，因为 `addss` 没有立即数形式）与 `void StoreImmInt(long long, const Operand&)`。
+         `imull $4, %eax` 取代「`movl $4, %ecx` + `imull %ecx, %eax`」；`cmpl $3, %eax` 同理；
+         整数常量赋值直接 `movl $7, slot(%rbp)`。`idiv` 没有立即数形式，仍走寄存器。
+       - **实测**：31 个用例的汇编指令总数 **3246 → 3010，减少 236 条（7.3%）**；
+         `demo.mc` 单文件 177 → 162。剩余空间需要寄存器分配，`-O` 与本改动无关（默认路径同样受益）。
+
+  33. **静态检查再补三项（2026-10-28，鲍方乐）——新增诊断，不改签名**：
+       - **实参类型**：新增文件内 `bool ArgCompatible(TokenType want, TokenType got)`，
+         `int` / `float` / `char` 互转放行，`bool` 与数值不兼容。`VisitCall` 收集每个实参的
+         `Visit` 结果后逐参比对，不兼容报
+         `argument 1 of function 'f' expects INT, but FLOAT given`（**警告**，退出码仍为 0）。
+       - **整型字面量越界**：`VisitNum` 的整型分支加检查，报
+         `integer literal 2147483649 is out of range for int (-2147483648..2147483647)`（**错误**）。
+         **阈值取 2147483648 而不是 2147483647**：`-2147483648` 在 AST 里是
+         `UnOp(TOKEN_MINUS, Num(2147483648))`，只看 `Num` 节点无法区分「INT_MIN 的绝对值」
+         与真溢出，宁可放过这一个值也不误报 INT_MIN。
+       - **`char` 字面量越界**：`VisitAssign` 里仅当右值是 `AST_NODE_NUM` 且非浮点/字符/布尔字面量
+         时检查，报 `value 300 cannot be represented in char (-128..127); it will be truncated to 44`（**警告**）。
+       - **两个辅助函数必须放在文件最前面的匿名命名空间** —— 第一次插在「类型工具」小节，
+         而 `VisitAssign` / `VisitCall` 在其前面，编译报 `'TruncateToChar' was not declared`。
+       - **新增 5 个用例**：`err_literal_overflow` / `ok_int_min` / `warn_char_overflow` /
+         `warn_arg_type` / `ok_arg_conv`，语义用例 **27 → 32**。
+         `-Update` 会重写全部基线，实测只有 `ok_array_char_index.expected.diag.txt`
+         从 0 字节变 1 字节（多一个换行），已回退，其余一字未改。
+
+  34. **诊断附带源码上下文（2026-10-28，鲍方乐）**：
+       原先只打印 `minic: error: 行:列: 消息`，要定位还得自己数行。现在每条诊断下面多两行：
+       ```
+       minic: error: 4:9: integer literal 2147483649 is out of range for int (-2147483648..2147483647)
+         4 |     a = 2147483649;
+           |         ^
+       ```
+       - **新增** `extern const std::string* g_pSourceText;`（`src/lexer/token.h`）。
+         `src/main.cpp` 在 `OpenSource` **成功之后、`Run()` 之前**设置 —— 词法错误就是在 `Run()`
+         里报的，放早了拿不到源码（第一次误插进 `if (!OpenSource(...))` 的失败分支，一行都没打印）。
+       - `src/lexer/token.cpp` 新增匿名命名空间里的 `SourceLineOf(int, std::string&)` /
+         `ExpandTabs` / `PrintDiagContext(const LineInfo&)`：按 `
+` 数到目标行、去掉尾部 ``、
+         制表符展开成 4 空格以保证「源码行」与「`^` 行」列对齐、空行不打印。
+       - **指针为空时自动跳过**，直接调 `EmitError` 的单元测试行为与从前一致。
+       - **影响面**：语义基线按 `minic: error:` 前缀过滤，32 例一字未改；语法基线是整段 stderr
+         逐字比对，23 个 `.err.txt` 用 `-Update` 刷新；GUI 的 `DIAG_RE` 是逐行锚定的正则，不受影响。
+
+  35. **清两处死代码（2026-10-28，鲍方乐）**：
+       - **删除** `VarEntry::m_iOffset`（`src/symbol/symbol.h`，全仓零读写，栈帧偏移实际由
+         codegen 的 `AssignOffsets` 维护）与 `SymbolTable::GetSerialId()`（零调用，
+         MiniC 无匿名类型/结构体）。
+       - **加「零调用」标注但保留** `RecConstTbl` / `BackfillConst`：Q12 遗留，已被 `RecConst`
+         取代，但在 `docs/interface.md`、设计文档 §6、数据结构设计 §4 都有签名，
+         删了会让四份正式文档与代码不一致。
+       - **保留不动** `CCodeGen::m_TemplateLib`（设计文档 §4.6.2 的模板库预留）与
+         `SymbolTable::m_EnumInfoTbl`（项目书/PPT/README 多处写到的「七张分表」之一）。
+
 > 说明：本节第 8–10 条为 2026-10-13 阶段⑤ 收尾时同步；**下面的"四、词法识别集合"仍是 v3.1 骨架版内容**，
 > 词法 v4.0 的现状（17 个挑战版终结符等）见 `README.md` 的模块状态表与
 > [词法模块待改进清单.md](词法模块待改进清单.md)，

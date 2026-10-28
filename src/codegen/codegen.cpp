@@ -11,6 +11,7 @@
 // ============================================================================
 #include "codegen/codegen.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <string>
 #include <unordered_map>
@@ -109,6 +110,14 @@ private:
     // 两者都不改四元式，也不改内存语义：被直通的临时量本来就没有第二个读者。
     std::string             m_szAcc;            // "V<idx>"/"T<idx>"，空 = %eax 内容未知
     std::unordered_set<int> m_forwardedTemps;   // 免落栈的临时量编号
+
+    // 【寄存器分配】本函数固定分配在 %rbx / %rsi 的局部整型变量：变量表下标 → 寄存器名
+    std::unordered_map<int, std::string> m_varInReg;
+    // 已经把值装进寄存器的变量下标（首次访问前需要先从栈槽装一次）
+    std::unordered_set<int> m_regLoaded;
+    void ChooseRegVars(const CodeList& codes);
+    const std::string* RegOfVar(const Operand& op) const;
+    void EnsureVarLoaded(const Operand& op, const std::string& reg);
 
     static std::string AccKeyOf(const Operand& op);
     void ClobberAcc() { m_szAcc.clear(); }
@@ -451,6 +460,13 @@ bool AsmEmitter::IntConstOf(const Operand& op, long long& v) const
 void AsmEmitter::StoreImmInt(long long v, const Operand& op)
 {
     const std::string src = "$" + IntToStr(v);
+    // 【寄存器分配】目标变量固定在 %rbx/%rsi 时直接写寄存器。
+    if (const std::string* pReg = RegOfVar(op))
+    {
+        Emit("movl " + src + ", " + *pReg);
+        m_regLoaded.insert(op.m_iLink);
+        return;
+    }
     if (op.m_kind == OperandKind::OP_VAR)
     {
         if (m_sym && op.m_iLink >= 0 &&
@@ -485,8 +501,119 @@ int AsmEmitter::SlotOf(const Operand& op) const
     return 0x7FFFFFFF;
 }
 
+// ----------------------------------------------------------------------------
+// 寄存器分配（2026-10-28 新增）
+//
+// 做法：每个函数挑出访问最频繁的至多两个局部整型标量，固定放在 %rbx 与 %rsi
+// 里，函数体内所有读写直接走寄存器，不再经过栈槽。
+//
+// 为什么只挑「局部 + 整型 + 标量」：
+//   * 全局变量不能进 —— MiniC 没有指针，被调函数唯一能改的就是全局变量，
+//     缓存在寄存器里会在 call 之后变旧；
+//   * 数组不能进 —— 数组要被取地址（LoadAddr 走 leaq），必须留在内存里；
+//   * 实型不进 —— %xmm 全是 caller-saved，跨一次 call 就被破坏，
+//     要么每次调用前后落栈，要么加保存恢复，代价大于收益。
+//
+// 为什么选 %rbx / %rsi：两者都是 callee-saved，递归调用返回后值仍在，
+// 函数体内不需要任何额外保存动作；同时也不会与既有的
+// %rax/%rcx/%rdx（整型临时）与 %xmm0/%xmm1（浮点临时）用法冲突。
+//
+// 值的一致性：变量一旦分配进寄存器，它的栈槽就只写不读（EmitParams 仍会写入，
+// 首次读取时从栈槽装一次即可）。函数出口也不需要回写 —— 没有任何路径会去读
+// 那个栈槽，回写只是多余的搬运。
+// ----------------------------------------------------------------------------
+const std::string* AsmEmitter::RegOfVar(const Operand& op) const
+{
+    if (op.m_kind != OperandKind::OP_VAR || !IsLocalVar(op.m_iLink))
+    {
+        return nullptr;
+    }
+    const auto it = m_varInReg.find(op.m_iLink);
+    return (it == m_varInReg.end()) ? nullptr : &it->second;
+}
+
+// 首次访问某个已分配变量时，把它的栈槽内容装进寄存器。
+// 这一步不能省：形参是 EmitParams 用裸 movl 写进栈槽的，
+// 局部变量也可能在被分配之前就被别处写入过。
+void AsmEmitter::EnsureVarLoaded(const Operand& op, const std::string& reg)
+{
+    if (m_regLoaded.count(op.m_iLink) != 0)
+    {
+        return;
+    }
+    Emit("movl " + std::to_string(SlotOf(op)) + "(%rbp), " + reg);
+    m_regLoaded.insert(op.m_iLink);
+}
+
+void AsmEmitter::ChooseRegVars(const CodeList& codes)
+{
+    m_varInReg.clear();
+    m_regLoaded.clear();
+    if (!m_sym)
+    {
+        return;
+    }
+
+    std::unordered_map<int, int> useCount;
+    for (const Quad& q : codes)
+    {
+        const Operand* ops[3] = { &q.m_Op1, &q.m_Op2, &q.m_Rslt };
+        for (const Operand* p : ops)
+        {
+            if (p->m_kind != OperandKind::OP_VAR || !IsLocalVar(p->m_iLink))
+            {
+                continue;
+            }
+            if (static_cast<std::size_t>(p->m_iLink) >= m_sym->m_VarInfoTbl.size())
+            {
+                continue;
+            }
+            const VarEntry& v = m_sym->m_VarInfoTbl[static_cast<std::size_t>(p->m_iLink)];
+            if (v.m_bIsArray || IsFloatType(v.m_type))
+            {
+                continue;
+            }
+            ++useCount[p->m_iLink];
+        }
+    }
+
+    std::vector<std::pair<int, int>> ranked(useCount.begin(), useCount.end());
+    std::sort(ranked.begin(), ranked.end(),
+              [](const std::pair<int, int>& a, const std::pair<int, int>& b)
+              { return a.second > b.second; });
+
+    // 注意：这里必须是 32 位寄存器名 —— movl 配 %rbx 会报
+    // "incorrect register `%rbx' used with `l' suffix"，
+    // 保存/恢复时才用 64 位的 %rbx / %rsi。
+    static const char* const kRegs[2] = { "%ebx", "%esi" };
+    int n = 0;
+    for (const std::pair<int, int>& pr : ranked)
+    {
+        // 访问少于 4 次不值当：省下的两次 movl 抵不过一次 push/pop
+        if (n >= 2 || pr.second < 4)
+        {
+            break;
+        }
+        m_varInReg[pr.first] = kRegs[n++];
+    }
+}
+
 void AsmEmitter::LoadInt(const Operand& op, const std::string& reg)
 {
+    // 【寄存器分配】局部整型变量若已固定分配在 %rbx/%rsi，直接从寄存器取值。
+    if (const std::string* pReg = RegOfVar(op))
+    {
+        EnsureVarLoaded(op, *pReg);
+        if (reg == "%eax")
+        {
+            m_szAcc = AccKeyOf(op);
+        }
+        if (reg != *pReg)
+        {
+            Emit("movl " + *pReg + ", " + reg);
+        }
+        return;
+    }
     // 【累加器直通】%eax 里已经是这个操作数了，不必再读一次。
     // 只对 %eax 生效：其它寄存器（%ecx/%edx）不参与缓存，
     // 否则 GenPrint 那种「值必须落到 %edx」的场景会读不到数。
@@ -587,6 +714,20 @@ void AsmEmitter::LoadAsFloat(const Operand& op, const std::string& xmm)
 
 void AsmEmitter::StoreInt(const std::string& reg, const Operand& op)
 {
+    // 【寄存器分配】目标变量固定在 %rbx/%rsi 时直接写寄存器，不再落栈。
+    if (const std::string* pReg = RegOfVar(op))
+    {
+        if (reg == "%eax")
+        {
+            m_szAcc = AccKeyOf(op);
+        }
+        m_regLoaded.insert(op.m_iLink);
+        if (reg != *pReg)
+        {
+            Emit("movl " + reg + ", " + *pReg);
+        }
+        return;
+    }
     // movl 不改源寄存器，所以存完之后 reg 里仍然是这个值；
     // 先记下状态，下面即使因「免落栈」提前返回，%eax 的内容也依然有效。
     if (reg == "%eax")
@@ -1102,6 +1243,7 @@ void AsmEmitter::GenQuad(const Quad& q)
 void AsmEmitter::EmitFunction(const std::string& name, const CodeList& codes, bool bIsMain)
 {
     CollectLocals(codes);
+    ChooseRegVars(codes);
     AssignOffsets();
     m_pendingArgs.clear();
     m_szRetLabel = ".Lret" + std::to_string(m_iRetSeq++);
@@ -1132,6 +1274,12 @@ void AsmEmitter::EmitFunction(const std::string& name, const CodeList& codes, bo
     if (m_iFrame > 0)
     {
         Emit("subq $" + std::to_string(m_iFrame) + ", %rsp");
+    }
+    if (!m_varInReg.empty())
+    {
+        // 两个 push 共 16 字节，正好保持调用前的 16 字节栈对齐
+        Emit("pushq %rbx");
+        Emit("pushq %rsi");
     }
 
     EmitParams();
@@ -1166,6 +1314,11 @@ void AsmEmitter::EmitFunction(const std::string& name, const CodeList& codes, bo
         Emit(m_bCurRetFloat ? "xorps %xmm0, %xmm0" : "xorl %eax, %eax");
     }
     EmitRaw(m_szRetLabel + ":");
+    if (!m_varInReg.empty())
+    {
+        Emit("popq %rsi");
+        Emit("popq %rbx");
+    }
     Emit("movq %rbp, %rsp");
     Emit("popq %rbp");
     Emit("ret");

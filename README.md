@@ -30,7 +30,8 @@ MiniCCompiler/
 ├── .gitignore
 ├── .gitattributes          # 统一换行符（LF）与二进制保护
 ├── tools/
-│   └── generate_grammar.py # 由文法规格生成 src/parser/grammar.h/.cpp（阶段③）
+│   ├── generate_grammar.py # 由文法规格生成 src/parser/grammar.h/.cpp（阶段③）
+│   └── random_diff.py      # 随机差分：同一棵程序树渲染成 MiniC 与等价 C，比对两条链路的输出
 ├── src/
 │   ├── main.cpp            # 命令行解析 + 流水线 + 六类产物落盘
 │   ├── lexer/
@@ -448,7 +449,7 @@ pwsh -File tests/run_quad_tests.ps1 -Update
 | SymbolTable（符号表） | EnterScope / ExitScope / RecVar / RecArray / RecConst / SearchVar / SearchConst / BackfillConst / CheckAssign / DumpSymTab | **已实现**：多表登记、作用域链自内向外查找（内层可遮蔽外层）、数组登记（m_bIsArray / m_iArraySize）、常量回填、float→int 告警（Q9）；类型表由 `RecBuiltinTypes()` 登记 int/float/bool/char/void 五行并带字节宽度（`TypeEntry::m_iSize`：char=1，int/float/bool=4，void=0），`--dump-symtab` 的 `-- Types --` 节不再是空节 |
 | SemanticAnalyzer（语义分析） | SemanticAnalyzer(SymbolTable&) / Analyze(const ASTNodePtr&) | **已实现**：遍历 AST 登记变量/数组/函数/形参/常量，未声明与重复声明报错，按 §8.1 类型系统做运算与赋值检查 |
 | IRGenerator（中间代码） | IRGenerator(SymbolTable&) / Generate / GetTmpVar / GetTmpLabel / EmitIR / GetCodes / OperandToString | **已实现**：遍历 AST 生成四元式（`QuadOp` 按参考书表 5-2 建 21 大类 + 宽度后缀，共 151 个成员、MiniC 实际产生 30 个），含算术/关系/逻辑、`&&`/`||` 真短路（`Q_JNT`/`Q_JT`）、`ITOF`/`FTOI` 类型转换（赋值、实参、返回值三处均插）、一维数组读写（`Q_INDEX_*` 双向）、`if/else`、`while`、`print`、函数定义（四元式存入 `ProcEntry::m_Codes`）与调用（`Q_PARA` + `Q_CALL`）、递归、`++`/`--` 前后缀（`GenIncDec`）、**常量折叠**（`FoldBinary`/`ConstFloat`，两侧皆为编译期常量时直接求值，除零与整型溢出保守不折、`&&`/`||` 不折以保短路）；`--dump-quads` 输出顶层代码与各过程 |
-| CCodeGen（目标代码，挑战版） | CCodeGen(const CodeList&) / BindSymTab / Generate / IRtoASM / AsmOutput | **已实现**：x86-64 / GNU as（AT&T 语法），栈帧 + `%rbp` 基址寻址、整型 `%eax` / 浮点 `%xmm0` 双通道、数组按 `元素宽度×下标` 的 `(%rax,%rcx,4)` 寻址、**自定义栈传参**（调用方按 `i*8(%rsp)` 落第 i 个实参、槽位 16 字节对齐，被调方从 `16+8*(pos-1)(%rbp)` 取形参；不走 System V 寄存器传参）、`printf` 输出（浮点同时放 `%xmm` 与第 2 个整型槽以适配 Windows ABI）；`QuadOp` 24 个值全部覆盖；产物可被 gcc 直接汇编链接 |
+| CCodeGen（目标代码，挑战版） | CCodeGen(const CodeList&) / BindSymTab / Generate / IRtoASM / AsmOutput | **已实现**：x86-64 / GNU as（AT&T 语法），栈帧 + `%rbp` 基址寻址、整型 `%eax` / 浮点 `%xmm0` 双通道、数组按 `元素宽度×下标` 的 `(%rax,%rcx,4)` 寻址、**自定义栈传参**（调用方按 `i*8(%rsp)` 落第 i 个实参、槽位 16 字节对齐，被调方从 `16+8*(pos-1)(%rbp)` 取形参；不走 System V 寄存器传参）、`printf` 输出（浮点同时放 `%xmm` 与第 2 个整型槽以适配 Windows ABI）；**累加器直通**（`%eax` 里已是所需值时不重复 load）与**立即数直用**（`imull $4, %eax`）；**热点局部整型标量固定寄存器**（每函数至多两个，放 callee-saved 的 `%ebx` / `%esi`，序言 `pushq` / 尾声 `popq`）；`QuadOp` 24 个值全部覆盖；产物可被 gcc 直接汇编链接 |
 
 > **词法现状说明**：17 个挑战版终结符（`bool` `char` `print` `true` `false` `[` `]` `==` `!=` `<` `<=` `>` `>=` `&&` `||` `!` 字符常量）**词法层已全部支持**；
 > **语法层现状**：挑战版文法（105 条产生式）已由 LL(1) 预测分析驱动器全部覆盖，
@@ -552,6 +553,22 @@ pwsh -File tests/run_quad_tests.ps1 -Update
   - 阶段⑦ 语义动作与 IR **已完成**（2026-10-24 修复短路求值与三处类型转换缺陷，见 `docs/interface.md` 第 15 条）
   - 阶段⑧ 目标代码 **已完成**（2026-10-24，x86-64 / GNU as）
 
+## 随机差分
+
+除固定用例外，还有一组端到端差分：同一棵随机程序树渲染两次——一次成 MiniC 源、
+一次成等价 C 源；前者经 `minic` 出汇编再由 `gcc -x assembler` 链接，后者直接 `gcc -O0` 编译，
+两个可执行文件的 **stdout 与退出码必须逐字节一致**。
+
+```
+python tools/random_diff.py -n 1000 -s 20261028
+```
+
+退出码 0 表示全一致，可直接接 CI。基线：`seed 20261028`、1 000 例、`identical = 1000 / mismatch = 0`。
+
+三条语义等价约束写在脚本头注释里：整型 32 位有符号、除法向零截断；实型 32 位单精度，
+**C 侧字面量必须带 `f` 后缀**；**所有变量必须显式初始化**（MiniC 不清零局部变量，
+不初始化就是在比较两份二进制的栈残留）。
+
 ## 已知限制
 
 MiniC 是教学子集语言，下列写法**不在文法/语义支持范围内**，属预期行为而非缺陷：
@@ -564,11 +581,16 @@ MiniC 是教学子集语言，下列写法**不在文法/语义支持范围内**
 - 逻辑运算符 `&&` `||` 要求 `bool` 操作数（`int` 直接参与会报 `logical operators require bool operands`）。
 - `char` **可以**参与算术与关系运算（按整型提升，C 语义）：`c + 1` 得 `int`、`c == 'x'` 得 `bool`、`c++` 合法；`bool` 参与**比较**也合法（`a == b`、`a < b == b < c` 都能写），但仍不参与算术（报 `arithmetic operands must be numeric`）。
 - 关系运算符**已按 C++ 分层**：`<` `<=` `>` `>=` 高于 `==` `!=`，所以 `a == b < c` 是 `a == (b < c)`、`a < b == c` 是 `(a < b) == c`；`<` 与 `<=` 之间仍同级左结合（`a < b <= c` = `(a < b) <= c`）。
-- 语义阶段**检查**：函数实参个数、`return` 类型（void 带值、非 void 裸 return 都报错）、
-  数组名不带下标使用、**常量**下标越界（`int a[3]; a[5]=1;` 报 `array subscript 5 is out of bounds`）、
-  非 void 函数缺 `return`（**警告**）、无 `main` 且无顶层语句（**警告**）。
-  **不检查**：变量下标越界（静态不可知）、实参类型不匹配（静默截断）、
-  `if`/`while` 条件为 float、不可达代码与未使用变量、整型溢出字面量。
+- 语义阶段**检查**：函数实参个数与**实参类型**（不兼容报 `argument 1 of function 'f' expects INT, but FLOAT given`，**警告**）、
+  `return` 类型（void 带值、非 void 裸 return 都报错）、数组名不带下标使用、
+  **常量**下标越界（`int a[3]; a[5]=1;` 报 `array subscript 5 is out of bounds`）、
+  整型字面量越界（`a = 2147483648;` 报 `integer literal ... is out of range for int`，**错误**）、
+  非 void 函数缺 `return`（**警告**）、无 `main` 且无顶层语句（**警告**）、
+  `char` 字面量越界（`c = 300;` 报截断后的值，**警告**）。
+  **不检查**：变量下标越界（静态不可知）、`if`/`while` 条件为 float、
+  不可达代码与未使用变量、栈深度与递归深度。
+- 代码生成**不做**寄存器分配以外的优化：热点局部整型标量固定放 `%ebx` / `%esi`（每函数至多两个），
+  临时量仍全部落栈；没有循环优化，也没有图着色全局分配。
 - `print` **不自动换行**：连续两条 `print` 接在同一行，要换行写 `print('\n');`。
 - 浮点字面量：`1.` 合法、`.5` 不合法；不支持 `0x1F` 十六进制与 `1e5` 指数形式。
 

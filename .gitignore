@@ -26,6 +26,7 @@ compile_commands.json
 
 # 目标代码产物（编译时按源文件同名生成，不入库）
 *.asm
+*.s
 *.quad.txt
 # ...但回归基线要入库：它们叫 *.expected.quad.txt，minic 永远不会写这个文件名
 !tests/quad/*.expected.quad.txt

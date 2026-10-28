@@ -198,6 +198,9 @@ int main(int argc, char* argv[])
         // 打开失败：错误已进 g_ErrorList，直接以非零退出
         return 1;
     }
+    // 诊断上下文：让 EmitError/EmitWarning 能打印出错的源码行与 ^ 定位符。
+    // 必须在 OpenSource 成功之后、Run 之前设置 —— 词法错误就是在 Run 里报的。
+    g_pSourceText = &lexer.GetSource();
     lexer.Run();
 
     if (dumpTokens)

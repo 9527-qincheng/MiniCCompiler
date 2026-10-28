@@ -1,2 +1,4 @@
 minic: error: 3:8: expected ';', but found ')' (RPAREN)
+  3 | a = (b));
+    |        ^
 minic: 1 error(s) found, compilation failed

@@ -1,2 +1,4 @@
 minic: error: 1:1: array size must be a positive integer
+  1 | int a[0];
+    | ^
 minic: 1 error(s) found, compilation failed

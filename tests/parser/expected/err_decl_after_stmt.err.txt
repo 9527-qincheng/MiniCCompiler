@@ -1,2 +1,4 @@
 minic: error: 3:1: unexpected 'int' (INT); expected one of: if while print return { ; ++ -- 标识符 (in 语句部分)
+  3 | int b;
+    | ^
 minic: 1 error(s) found, compilation failed

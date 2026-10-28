@@ -1,2 +1,4 @@
 minic: error: 1:7: expected '整型常量', but found ']' (RBRACKET)
+  1 | int a[];
+    |       ^
 minic: 1 error(s) found, compilation failed

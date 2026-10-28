@@ -1,3 +1,7 @@
 minic: error: 2:1: unexpected '100' (NUM_INT); expected one of: int float bool char void (in 声明部分)
+  2 | 100 = a;
+    | ^
 minic: error: 2:8: unexpected ';' (SEMI); expected one of: ( [ = ++ -- (in 标识符后续)
+  2 | 100 = a;
+    |        ^
 minic: 2 error(s) found, compilation failed

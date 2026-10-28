@@ -1,2 +1,4 @@
 minic: error: 4:5: function definition is only allowed at the outermost level: f
+  4 |     int f(){
+    |     ^
 minic: 1 error(s) found, compilation failed

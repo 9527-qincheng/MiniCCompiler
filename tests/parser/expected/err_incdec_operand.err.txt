@@ -1,3 +1,7 @@
 minic: error: 7:9: '++' requires a modifiable lvalue
+  7 |     b = ++5;
+    |         ^
 minic: error: 10:5: '++' requires a numeric operand
+  10 |     f++;
+     |     ^
 minic: 2 error(s) found, compilation failed

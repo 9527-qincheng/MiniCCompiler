@@ -1,3 +1,7 @@
 minic: error: 2:7: expected '(', but found 'a' (IDENT)
+  2 | print a;
+    |       ^
 minic: error: 2:8: expected ')', but found ';' (SEMI)
+  2 | print a;
+    |        ^
 minic: 2 error(s) found, compilation failed

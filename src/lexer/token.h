@@ -138,6 +138,11 @@ extern int g_iSuppressedErrors;
 // 输出格式与 EmitError 对称，便于回归 runner 用同一条正则收集。
 void EmitWarning(const std::string& msg, const LineInfo& loc);
 
+// 诊断上下文（2026-10-28 新增）：指向源文件全文，用于在每条诊断下面打印
+// 出错的源码行与一个 ^ 定位符。由 main.cpp 在 OpenSource 之后设置；
+// 为空时（例如单元测试直接调 EmitError）自动跳过上下文，行为与从前一致。
+extern const std::string* g_pSourceText;
+
 // 语义阶段的诊断是不是在「语法已经出错」之后才产生的。
 // 语法错会让 AST 残缺（例如漏一个分号，后面的声明整段没建成节点），此时硬跑
 // 语义会额外报出 "undefined identifier" 之类的次生错误。main 在调用

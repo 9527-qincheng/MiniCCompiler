@@ -1,2 +1,4 @@
 minic: error: 3:9: unexpected ';' (SEMI); expected one of: true false ( - ! ++ -- 标识符 整型常量 实型常量 字符常量 (in 乘法表达式)
+  3 | a = b + ;
+    |         ^
 minic: 1 error(s) found, compilation failed

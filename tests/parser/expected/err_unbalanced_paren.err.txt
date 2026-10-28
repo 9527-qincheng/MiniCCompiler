@@ -1,2 +1,4 @@
 minic: error: 3:11: expected ')', but found ';' (SEMI)
+  3 | a = (b + 1;
+    |           ^
 minic: 1 error(s) found, compilation failed

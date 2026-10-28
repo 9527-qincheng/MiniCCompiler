@@ -1,2 +1,4 @@
 minic: error: 1:5: expected '标识符', but found ';' (SEMI)
+  1 | int ;
+    |     ^
 minic: 1 error(s) found, compilation failed

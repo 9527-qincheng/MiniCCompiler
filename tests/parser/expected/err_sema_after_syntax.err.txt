@@ -1,5 +1,13 @@
 minic: error: 2:1: unexpected 'int' (INT); expected one of: ( [ ; , (in 声明后续)
+  2 | int main() {
+    | ^
 minic: error: 3:3: undefined identifier x (possibly caused by earlier lexical/syntax errors)
+  3 |   x = 1;
+    |   ^
 minic: error: 4:3: undefined identifier y (possibly caused by earlier lexical/syntax errors)
+  4 |   y = 2;
+    |   ^
 minic: error: 5:3: undefined identifier z (possibly caused by earlier lexical/syntax errors)
+  5 |   z = 3;
+    |   ^
 minic: 4 error(s) found, compilation failed

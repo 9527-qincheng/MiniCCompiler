@@ -1,2 +1,4 @@
 minic: error: 3:4: expected '(', but found 'a' (IDENT)
+  3 | if a) b = 1;
+    |    ^
 minic: 1 error(s) found, compilation failed

@@ -193,6 +193,88 @@ TokenType CodeToTokenType(int code)
     }
 }
 
+const std::string* g_pSourceText = nullptr;
+
+namespace {
+
+// 取源文件的第 row 行（1-based）；取不到返回 false。
+bool SourceLineOf(int row, std::string& out)
+{
+    if (g_pSourceText == nullptr || row <= 0)
+    {
+        return false;
+    }
+    const std::string& s = *g_pSourceText;
+    std::size_t pos = 0;
+    for (int r = 1; r < row; ++r)
+    {
+        pos = s.find('\n', pos);
+        if (pos == std::string::npos)
+        {
+            return false;
+        }
+        ++pos;
+    }
+    std::size_t end = s.find('\n', pos);
+    if (end == std::string::npos)
+    {
+        end = s.size();
+    }
+    out = s.substr(pos, end - pos);
+    if (!out.empty() && out.back() == '\r')
+    {
+        out.pop_back();
+    }
+    return true;
+}
+
+// 把制表符展开成 4 个空格，保证「源码行」与「^ 定位行」的列能对齐。
+std::string ExpandTabs(const std::string& s)
+{
+    std::string r;
+    r.reserve(s.size() + 8);
+    for (char c : s)
+    {
+        if (c == '\t')
+        {
+            r.append(4, ' ');
+        }
+        else
+        {
+            r.push_back(c);
+        }
+    }
+    return r;
+}
+
+// 打印「行号 | 源码」+「   |    ^」。格式刻意和常见编译器（gcc/clang）一致，
+// 便于肉眼看；测试脚本按 `minic: error:` 前缀过滤，这些行不会进基线。
+void PrintDiagContext(const LineInfo& loc)
+{
+    std::string raw;
+    if (!SourceLineOf(loc.m_iRow, raw))
+    {
+        return;
+    }
+    const std::string line = ExpandTabs(raw);
+    if (line.find_first_not_of(" \t") == std::string::npos)
+    {
+        return;   // 空行不打印，否则 ^ 指在空白处毫无意义
+    }
+    const std::string num = std::to_string(loc.m_iRow);
+    const std::string pad(num.size(), ' ');
+    std::cerr << "  " << num << " | " << line << "\n";
+    std::cerr << "  " << pad << " | ";
+    int col = (loc.m_iCol > 0) ? loc.m_iCol : 1;
+    for (int i = 1; i < col && static_cast<std::size_t>(i - 1) < line.size(); ++i)
+    {
+        std::cerr << ' ';
+    }
+    std::cerr << '^' << std::endl;
+}
+
+}  // namespace
+
 void EmitError(const std::string& msg, const LineInfo& loc)
 {
     CompileError err;
@@ -217,6 +299,7 @@ void EmitError(const std::string& msg, const LineInfo& loc)
         std::cerr << " (possibly caused by earlier lexical/syntax errors)";
     }
     std::cerr << std::endl;
+    PrintDiagContext(loc);
 }
 
 void EmitWarning(const std::string& msg, const LineInfo& loc)
@@ -226,4 +309,5 @@ void EmitWarning(const std::string& msg, const LineInfo& loc)
     // `warn:N` 用例正是靠这个前提要求 exit=0）。
     std::cerr << "minic: warning: " << loc.m_iRow << ":" << loc.m_iCol
               << ": " << msg << std::endl;
+    PrintDiagContext(loc);
 }

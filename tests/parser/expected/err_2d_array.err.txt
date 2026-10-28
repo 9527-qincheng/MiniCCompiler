@@ -1,2 +1,4 @@
 minic: error: 1:9: unexpected '[' (LBRACKET); expected one of: , (in 变量声明尾1)
+  1 | int b[2][3];
+    |         ^
 minic: 1 error(s) found, compilation failed

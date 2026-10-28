@@ -1,2 +1,4 @@
 minic: error: 1:5: expected '标识符', but found '5' (NUM_INT)
+  1 | int 5;
+    |     ^
 minic: 1 error(s) found, compilation failed

@@ -55,7 +55,7 @@ if (-not (Test-Path -LiteralPath $srcPath)) {
 #        数组类型 `INT[5] : INT  array 5  size 20`、
 #        形参 `add.x : INT  #1  @line 5 scope 2`、标号 `L1  @line 14`）
 # ----------------------------------------------------------------------------
-$cases = @("test", "symtab_full")
+$cases = @("test", "symtab_full", "symtab_types")
 
 function Read-Text([string]$path) {
     if (-not (Test-Path -LiteralPath $path)) { return $null }

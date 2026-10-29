@@ -24,12 +24,10 @@
   0 : INT = 0  @line 21
 -- Types --
   int : INT  size 4
-  float : FLOAT  size 4
-  bool : BOOL  size 4
-  char : CHAR  size 1
-  void : VOID  size 0
   INT[5] : INT  array 5  size 20
+  char : CHAR  size 1
   CHAR[3] : CHAR  array 3  size 3
+  float : FLOAT  size 4
   INT[4] : INT  array 4  size 16
 -- Procedures (challenge) --
   add : INT  @line 6

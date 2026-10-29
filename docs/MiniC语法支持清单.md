@@ -36,7 +36,8 @@
 
 `int`　`float`　`bool`　`char`　`void`　`if`　`else`　`while`　`print`　`return`　`true`　`false`
 
-> `print` 是关键字，不是库函数；`void` 可用作返回类型与形参类型。
+> `print` 是关键字，不是库函数。`void` **只能**用作函数返回类型（`void f(...)`）；
+> `void v;`、`void a[3];`、`void f(void x)` 三种写法都会报错。
 
 ### 2.2 标识符
 
@@ -310,6 +311,9 @@ void say() {
 | 无 `main` 但有顶层语句 | **不告警**（顶层语句会被合成为入口 `main`，既有合法设计） |
 | `if` / `while` 条件是 float 或 int | **不检查**（只有 `&&` `||` 强制要 `bool`） |
 | 顶层（函数体外）的裸 `return;` | **不检查** |
+| `void` 变量 `void v;` | **报错**：`variable 'v' cannot have type void` |
+| `void` 数组 `void a[3];` | **报错**：`array 'a' cannot have type void` |
+| `void` 形参 `void f(void x)` | **报错**：`parameter 'x' of function 'f' cannot have type void` |
 | 整型字面量超出 `int` 范围 `a = 2147483649;` | **报错**：`integer literal 2147483649 is out of range for int (-2147483648..2147483647)`（`-2147483648` 不误报） |
 | 字面量超出 `char` 范围 `c = 300;` | **告警**：`value 300 cannot be represented in char (-128..127); it will be truncated to 44` |
 
@@ -490,5 +494,7 @@ build\minic.exe tests\test.mc --dump-tokens --dump-parse --dump-ast --dump-symta
 | 指数写法 | `1e5` | 1 | 不支持 |
 | `float→int` | `a = x;`（x 是 float） | 0 | 仅告警（Q9） |
 | 关系混合优先级 | `a == b < c` | — | AST 为 `(a==b) < c` |
+| `void` 变量 | `void v;` | 1 | **报错** `variable 'v' cannot have type void` |
+| `void` 形参 | `void f(void x) {}` | 1 | **报错** `parameter 'x' of function 'f' cannot have type void` |
 
 > 退出码 0 = 通过；1 = 报错。告警不影响退出码。

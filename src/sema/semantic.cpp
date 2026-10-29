@@ -48,11 +48,10 @@ void SemanticAnalyzer::Analyze(const ASTNodePtr& root)
     // 全局作用域已由 SymbolTable 构造函数建立，这里不能再 EnterScope，
     // 否则全局变量会被记成 scope 2，与表头显示的 scope 1 不符。
     //
-    // 先把内建类型登记进类型表：TypeEntry 里存的是「这个类型占几个字节」，
-    // 与 codegen 的访问指令（char 用 movb、int/float/bool 用 movl/movss）对齐。
-    // 这件事原本挂在 semantic001 上，但语义动作统一由本类实现后一直没落地，
-    // 导致 RecType 成了零调用的死接口、--dump-symtab 的 Types 节恒为空。
-    m_symtab.RecBuiltinTypes();
+    // 类型表按需登记（2026-10-29 调整）：不再在这里一次性登记全部内建类型，
+    // 而是由各处遇到具体类型时调用 NoteType()。这样 --dump-symtab 的 Types 节
+    // 只列出本编译单元真正用到的类型 —— 就像变量表只列本程序声明的变量。
+    // TypeEntry 里存的仍是「这个类型占几个字节」，与 codegen 的 movb/movl/movss 对齐。
     // 再把全部函数签名扫一遍再遍历：MiniC 允许「函数体里调用后面才定义的函数」，
     // 若边遍历边登记签名，前面的调用就查不到形参个数，实参个数检查会漏。
     CollectSignatures(root);
@@ -112,7 +111,13 @@ void SemanticAnalyzer::CollectSignatures(const ASTNodePtr& root)
         for (const auto& p : fn->m_children)
         {
             if (p && p->m_kind == ASTNodeKind::AST_NODE_PARAM)
-                types.push_back(static_cast<const ParamNode*>(p.get())->m_type);
+            {
+                // void 形参在 VisitFuncDef 里已单独报错，这里也不再计入签名，
+                // 否则同一条错误会连带出一条「实参个数不符」的次生诊断。
+                const TokenType pt = static_cast<const ParamNode*>(p.get())->m_type;
+                if (pt == TokenType::TOKEN_VOID) continue;
+                types.push_back(pt);
+            }
         }
         // 重名函数取第一次出现的签名（同名函数重复定义由 RecVar 报错，这里不重复报）
         if (fn->m_szName == "main") m_bHasMain = true;
@@ -218,6 +223,15 @@ TokenType SemanticAnalyzer::Visit(const ASTNodePtr& node)
 void SemanticAnalyzer::VisitDecl(DeclNode* decl)
 {
     if (!decl) return;
+    // void 只能作函数返回类型，不能声明变量（C 语义）。
+    // 拦在这里而不是 RecVar：RecVar 还要承载函数名（void 函数的函数名
+    // 就是用 TOKEN_VOID 登记进变量表的），不能一刀切。
+    if (decl->m_type == TokenType::TOKEN_VOID)
+    {
+        EmitError("variable '" + decl->m_szName + "' cannot have type void", decl->m_loc);
+        return;
+    }
+    NoteType(decl->m_type);
     // RecVar 内部已在当前作用域完成查重并报错，无需重复查
     VarEntry* entry = m_symtab.RecVar(decl->m_szName, decl->m_type,
                                       decl->m_loc.m_iRow, decl->m_loc.m_iCol);
@@ -228,6 +242,12 @@ void SemanticAnalyzer::VisitDecl(DeclNode* decl)
 void SemanticAnalyzer::VisitArrayDecl(ArrayDeclNode* ad)
 {
     if (!ad) return;
+    if (ad->m_type == TokenType::TOKEN_VOID)
+    {
+        EmitError("array '" + ad->m_szName + "' cannot have type void", ad->m_loc);
+        return;
+    }
+    NoteType(ad->m_type);
     if (ad->m_iArraySize <= 0)
     {
         EmitError("array size must be a positive integer", ad->m_loc);
@@ -266,6 +286,9 @@ void SemanticAnalyzer::VisitFuncDef(FuncDefNode* fn)
     }
     ++m_iFuncDepth;
 
+    // 返回类型登记（void 函数在这里登记 void —— 这是 void 唯一合法的用途）
+    NoteType(fn->m_retType);
+
     // 函数名：进变量表（保证 Call 能解析）+ 进过程表
     // 接口缺口：symbol.h 无 RecProc，暂用 RecVar 承载名字
     VarEntry* fv = m_symtab.RecVar(fn->m_szName, fn->m_retType,
@@ -294,6 +317,14 @@ void SemanticAnalyzer::VisitFuncDef(FuncDefNode* fn)
     {
         if (!c || c->m_kind != ASTNodeKind::AST_NODE_PARAM) continue;
         auto* p = static_cast<ParamNode*>(c.get());
+
+        if (p->m_type == TokenType::TOKEN_VOID)
+        {
+            EmitError("parameter '" + p->m_szName + "' of function '" + fn->m_szName +
+                      "' cannot have type void", p->m_loc);
+            continue;
+        }
+        NoteType(p->m_type);
 
         VarEntry* pv = m_symtab.RecVar(p->m_szName, p->m_type,
                                        p->m_loc.m_iRow, p->m_loc.m_iCol);
@@ -696,9 +727,21 @@ void SemanticAnalyzer::VisitNum(NumNode* num)
         nm = buf;
     }
 
+    // 字面量也代表一种类型：3.5 说明 float 出现在了这个程序里，
+    // 'c' 说明 char 出现、true 说明 bool 出现。
+    NoteType(t);
+
     ConstEntry* ce = m_symtab.RecConst(nm, t, num->m_fValue,
                                        num->m_loc.m_iRow, num->m_loc.m_iCol);
     if (ce) num->m_iConstIdx = static_cast<int>(ce - m_symtab.m_ConstInfoTbl.data());
+}
+
+// ---------------------------------------------------------------- 类型表
+
+void SemanticAnalyzer::NoteType(TokenType t)
+{
+    // 幂等：RecTypeIfAbsent 内部去重，同一类型出现多次只占一行。
+    m_symtab.RecTypeIfAbsent(t);
 }
 
 // ---------------------------------------------------------------- 类型工具

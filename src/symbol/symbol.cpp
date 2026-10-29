@@ -364,6 +364,29 @@ int SymbolTable::SizeOfType(TokenType baseType)
     }
 }
 
+TypeEntry* SymbolTable::RecTypeIfAbsent(TokenType baseType)
+{
+    // 只认 5 个内建类型；其他（NONE 等）不登记。
+    // 名字用源码里的写法（小写），与 RecBuiltinTypes 保持同一套命名，
+    // 这样「按需」与「全集」两种口径下同一种类型的显示完全一致。
+    const char* szName = nullptr;
+    switch (baseType)
+    {
+    case TokenType::TOKEN_INT:   szName = "int";   break;
+    case TokenType::TOKEN_FLOAT: szName = "float"; break;
+    case TokenType::TOKEN_BOOL:  szName = "bool";  break;
+    case TokenType::TOKEN_CHAR:  szName = "char";  break;
+    case TokenType::TOKEN_VOID:  szName = "void";  break;
+    default:                     return nullptr;
+    }
+    if (TypeEntry* exist = SearchTypeInfoTbl(szName))
+    {
+        return exist;
+    }
+    // RecType 内部会按 SizeOfType 填宽度，并再次做一次去重
+    return RecType(szName, baseType);
+}
+
 void SymbolTable::RecBuiltinTypes()
 {
     // 五个内建类型只登记一次。重复调用（例如同一编译单元里多次 Analyze）

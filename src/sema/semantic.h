@@ -60,6 +60,12 @@ private:
     TokenType VisitCall(CallNode* call);
     void      VisitNum(NumNode* num);
 
+    // —— 类型表按需登记（2026-10-29）——
+    // 类型表原来在 Analyze 入口一次性登记 5 个内建类型，导致「只用 int 的程序」
+    // 也会显示 float/bool/char/void —— 那是「语言支持的类型全集」，不是
+    // 「本程序用到的类型」。改成各处遇到具体类型时调这个函数登记。
+    void      NoteType(TokenType t);
+
     // —— 类型工具 ——
     bool      IsNumeric(TokenType t) const;
     TokenType Promote(TokenType a, TokenType b) const;

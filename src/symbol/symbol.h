@@ -150,6 +150,11 @@ public:
     // （类型只内嵌在 VarEntry::m_type 里）。现在由 SemanticAnalyzer::Analyze
     // 入口调用一次，重复调用不会重复登记。
     void        RecBuiltinTypes();
+    // 【2026-10-29】按需登记：只有当源码里真的出现了某个类型时才登记。
+    // 与 RecBuiltinTypes() 的区别是后者一次登记全部 5 个内建类型（类型全集），
+    // 本函数只登记调用那一刻用到的那个 —— 这样 --dump-symtab 的 Types 节
+    // 与变量表口径一致：只列本编译单元真正用到的东西。
+    TypeEntry*  RecTypeIfAbsent(TokenType baseType);
     // 【2026-10-27 补全】登记一个数组类型（name 形如 "int[5]"）。
     // 填上 TypeEntry 的 m_bIsArray / m_iArraySize —— 这两个字段此前全仓零写入，
     // 类型表里看不出数组形状。m_iSize 是整体字节数（元素宽度 × 元素个数），

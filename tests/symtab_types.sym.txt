@@ -1,0 +1,13 @@
+=== Symbol Table (scope 1) ===
+-- Variables --
+  main : INT  @line 3 scope 1
+  a : INT  @line 4 scope 2
+-- Constants --
+  1 : INT = 1  @line 5
+  0 : INT = 0  @line 6
+-- Types --
+  int : INT  size 4
+-- Procedures (challenge) --
+  main : INT  @line 3
+-- Params (challenge) --
+-- Labels (challenge) --

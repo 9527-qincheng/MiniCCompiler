@@ -1672,7 +1672,7 @@ minic <源文件> [--dump-tokens] [--dump-ast] [--dump-symtab] [--dump-quads] [-
 | 编号 | 语义动作说明 |
 |---|---|
 | `semantic000` | 初始化：清空操作数栈/操作符栈/类型位置栈，SerialId=0，建立空 IR 指令集 |
-| `semantic001` | 登记基本类型到类型信息表（int/float/bool/char）<br>**实现口径（2026-10-27）**：由 `SemanticAnalyzer::Analyze()` 入口调 `SymbolTable::RecBuiltinTypes()` 完成，登记 int/float/bool/char/void 五行并写入字节宽度（`TypeEntry::m_iSize`：char=1，int/float/bool=4，void=0） |
+| `semantic001` | 登记基本类型到类型信息表（int/float/bool/char）<br>**实现口径（2026-10-29）**：由语义遍历的五个登记点调 `SymbolTable::RecTypeIfAbsent(baseType)`，**用到哪种才登记哪种**，并写入字节宽度（`TypeEntry::m_iSize`：char=1，int/float/bool=4）；`void` 不作变量/数组/形参类型，故不入表。`RecBuiltinTypes()` 保留为兼容接口。原口径（2026-10-27）是 `Analyze()` 入口一次登记 int/float/bool/char/void 五行 |
 | `semantic002` | 登记变量：查类型表/常量表/变量表查重，无重名则 AddVar（写当前作用域） |
 | `semantic003` | 登记常量到常量信息表（整型/实型/字符/布尔） |
 | `semantic004` | 数组声明：登记维度上界，计算元素个数与目标码字节大小 |

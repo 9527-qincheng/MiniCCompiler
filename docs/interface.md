@@ -9,7 +9,7 @@
 |---|---|---|
 | CLex | `bool OpenSource(const string&)` / `bool Run()` / `const TokenList& GetTokenList() const` | TokenList → CParser |
 | CParser | `CParser(const TokenList&)` / `ASTNodePtr Parse()` / `bool HasError() const` / `const vector<CompileError>& GetErrors() const` / `const vector<ParseStep>& GetTrace() const`（阶段④ 新增，供 `--dump-parse`） / `void SetTraceEnabled(bool)`（2026-10-27 新增，默认关；不开时 `RecordStep` 直接返回） | ASTNodePtr → 语义/IR |
-| SymbolTable | `EnterScope(ScopeType)` / `ExitScope()` / `RecVar(name,type,line,col)→VarEntry*` / `RecArray(name,type,size,line,col)→VarEntry*`（阶段⑥ 新增） / `RecConst(name,type,value,line,col)→ConstEntry*` / `SearchVar/SearchConst` / `BackfillConst(iConstIdx,name,type)` / `CheckAssign(lhs,rhs,line,col)` / `DumpSymTab(os)` / `RecBuiltinTypes()`（2026-10-27 新增，登记 int/float/bool/char/void 五行） / `RecArrayType(name,baseType,size)→TypeEntry*`（2026-10-27 新增，登记 `INT[5]` 这类数组类型行） | 符号信息 → IRGenerator |
+| SymbolTable | `EnterScope(ScopeType)` / `ExitScope()` / `RecVar(name,type,line,col)→VarEntry*` / `RecArray(name,type,size,line,col)→VarEntry*`（阶段⑥ 新增） / `RecConst(name,type,value,line,col)→ConstEntry*` / `SearchVar/SearchConst` / `BackfillConst(iConstIdx,name,type)` / `CheckAssign(lhs,rhs,line,col)` / `DumpSymTab(os)` / `RecBuiltinTypes()`（2026-10-27 新增，登记 int/float/bool/char/void 五行；2026-10-29 起不再由 Analyze 调用，保留为兼容接口） / `RecTypeIfAbsent(baseType)→TypeEntry*`（2026-10-29 新增，按需登记单个内建类型） / `RecArrayType(name,baseType,size)→TypeEntry*`（2026-10-27 新增，登记 `INT[5]` 这类数组类型行） | 符号信息 → IRGenerator |
 | SemanticAnalyzer | `explicit SemanticAnalyzer(SymbolTable&)` / `void Analyze(const ASTNodePtr&)`（阶段⑥ 新增，遍历 AST 填充符号表；不新增独立产物） | ASTNodePtr → 符号表 |
 | IRGenerator | `explicit IRGenerator(SymbolTable&)` / `Generate(const ASTNodePtr&)` / `GetTmpVar(TokenType)` / `GetTmpLabel()` / `EmitIR(op,op1,op2,rslt)` / `GetCodes() const` / `GetCodesMutable()`（2026-10-27 新增，供 `-O` 原地改写） / `OperandToString(op)` | CodeList → CCodeGen / --dump-quads |
 | CCodeGen | `explicit CCodeGen(const CodeList&)` / `void BindSymTab(const SymbolTable&)` / `bool Generate(AsmOutput&)` | 汇编输出（挑战版） |
@@ -588,7 +588,7 @@
 `、
          制表符展开成 4 空格以保证「源码行」与「`^` 行」列对齐、空行不打印。
        - **指针为空时自动跳过**，直接调 `EmitError` 的单元测试行为与从前一致。
-       - **影响面**：语义基线按 `minic: error:` 前缀过滤，32 例一字未改；语法基线是整段 stderr
+       - **影响面**：语义基线按 `minic: error:` 前缀过滤，36 例一字未改；语法基线是整段 stderr
          逐字比对，23 个 `.err.txt` 用 `-Update` 刷新；GUI 的 `DIAG_RE` 是逐行锚定的正则，不受影响。
 
   35. **清两处死代码（2026-10-28，鲍方乐）**：
@@ -717,6 +717,24 @@
        - **新增 `tests/run_opt_tests.ps1` 与 `tests/opt/`**：与 `run_quad_tests.ps1` 的唯一区别是
          编译时多带 `-O`，正例 `licm_hoist` 固定「该提的提了」，反例 `licm_not_hoist` 固定
          「除法 / 依赖循环变量 / 有 CALL 三种情况一个都不许提」。
+
+42. **类型表改为按需登记 + `void` 用法收紧（2026-10-29，鲍方乐）**：
+   - **类型表口径变了**：原来 `Analyze()` 入口调一次 `RecBuiltinTypes()`，把 5 个内建类型全部登记 ——
+     那是「语言支持的类型全集」，所以只用 `int` 的程序也会显示 `float/bool/char/void`，
+     容易让人误以为程序里真有这些类型。现在改为 `RecTypeIfAbsent(baseType)`，由各处遇到具体类型时
+     按需调用：变量声明、数组声明（`RecArrayType` 同时登记基类型）、函数返回类型、形参类型、
+     字面量类型各登记一次，内部幂等。`RecBuiltinTypes()` 保留为兼容接口，不再由 `Analyze()` 调用。
+     实测 `int main() { int a; a = 1; return 0; }` 的 Types 节只剩 `int : INT  size 4` 一行。
+   - **`void` 只能作函数返回类型**：`void v;`、`void a[3];`、`void f(void x)` 现在全部报错
+     （`variable 'a' cannot have type void` / `array 'a' cannot have type void` /
+     `parameter 'x' of function 'f' cannot have type void`）。拦在 `VisitDecl` / `VisitArrayDecl` /
+     `VisitFuncDef` 而不是 `RecVar`，因为 `RecVar` 还要承载函数名 —— void 函数的函数名
+     就是用 `TOKEN_VOID` 登记进变量表的。
+   - **次生诊断**：`CollectSignatures()` 跳过 `void` 形参，否则同一条错误会连带出一条
+     「实参个数不符」。
+   - **基线影响**：`tests/test.sym.txt` 343 → 277 B（Types 节从 5 行变 2 行）；
+     新增 `tests/symtab_types.mc`（只用 int，固定「没用到的不出现」）与 4 个语义用例
+     （`err_void_var` / `err_void_array` / `err_void_param` / `ok_void_func`），语义用例 32 → 36。
 
 > 说明：本节第 8–10 条为 2026-10-13 阶段⑤ 收尾时同步；**下面的"四、词法识别集合"仍是 v3.1 骨架版内容**，
 > 词法 v4.0 的现状（17 个挑战版终结符等）见 `README.md` 的模块状态表与

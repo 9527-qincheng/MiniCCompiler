@@ -72,7 +72,7 @@ MiniCCompiler/
 │   ├── run_parser_unit.ps1        # Parser 单元测试
 │   ├── run_symbol_tests.ps1       # 符号表作用域链断言
 │   ├── run_symtab_tests.ps1       # 符号表 DumpSymTab 回归
-│   ├── run_sema_tests.ps1         # 语义诊断回归（32 例，含警告与多错并报）
+│   ├── run_sema_tests.ps1         # 语义诊断回归（36 例，含警告与多错并报）
 │   ├── run_quad_tests.ps1         # 四元式序列回归（18 例）
 │   ├── run_opt_tests.ps1          # 优化后四元式回归（-O，2 例）
 │   ├── sema/                      # 语义用例 *.mc + *.expected.diag.txt
@@ -121,7 +121,7 @@ build.bat
 | 命令 | 作用 |
 |---|---|
 | `build.bat` | 编译，产出 `build\minic.exe` |
-| `build.bat test` | 编译后跑全部 12 套测试（9 套编译阶段回归 + 2 套 GUI 冒烟），任一失败即返回 1 |
+| `build.bat test` | 编译后跑全部 12 套测试（10 套编译阶段回归 + 2 套 GUI 冒烟），任一失败即返回 1 |
 | `build.bat run tests\test.mc` | 编译后运行指定源文件 |
 | `build.bat list` | 列出参与编译的源文件 |
 | `build.bat clean` | 清理 `build` 目录 |
@@ -463,7 +463,7 @@ pwsh -File tests/run_opt_tests.ps1 -Update
 |---|---|---|
 | CLex（词法） | OpenSource / Run / GetTokenList | **已实现（v4.0 挑战版）**：关键字(int/float/bool/char/void/if/else/while/print/return/true/false)、标识符、整型/实型/字符常量、运算符(+ - * / = == != < <= > >= && \|\| !)、界符((){}[];,)；注释与字符串；常量登记 m_ConstTexts；错误含行列号。**已补 TokenTypeToCode / CodeToTokenType 编码映射** |
 | CParser（语法） | CParser(TokenList&) / Parse / HasError / GetErrors / GetTrace | **已实现（v4.0 挑战版 LL(1) 预测分析表驱动）**：105 条产生式驱动的非递归分析栈（`StackItem{TERM/NTERM/ACTION}` + 内部规约标记），语义动作 semantic000–027 按设计文档 §8 位置调度（符号表/IR 类动作登记占位，待阶段⑥⑦）；支持声明（含 `int a, b;` 多声明符与一维数组）、赋值/下标赋值/调用语句、表达式优先级与结合性、一元 `- !`、比较与逻辑运算符、`bool`/`char`/`true`/`false`、`print`、`if/else`（就近配对）、`while`、`return`、复合语句、函数定义与调用；恐慌式错误恢复可连续报错不崩溃；`GetTrace()` 输出分析轨迹供 `--dump-parse` 使用。公开签名与 §7.2 一致，`GetTrace()` 为新增 |
-| SymbolTable（符号表） | EnterScope / ExitScope / RecVar / RecArray / RecConst / SearchVar / SearchConst / BackfillConst / CheckAssign / DumpSymTab | **已实现**：多表登记、作用域链自内向外查找（内层可遮蔽外层）、数组登记（m_bIsArray / m_iArraySize）、常量回填、float→int 告警（Q9）；类型表由 `RecBuiltinTypes()` 登记 int/float/bool/char/void 五行并带字节宽度（`TypeEntry::m_iSize`：char=1，int/float/bool=4，void=0），`--dump-symtab` 的 `-- Types --` 节不再是空节 |
+| SymbolTable（符号表） | EnterScope / ExitScope / RecVar / RecArray / RecConst / SearchVar / SearchConst / BackfillConst / CheckAssign / DumpSymTab | **已实现**：多表登记、作用域链自内向外查找（内层可遮蔽外层）、数组登记（m_bIsArray / m_iArraySize）、常量回填、float→int 告警（Q9）；类型表**按需**登记（`RecTypeIfAbsent()`：源码里用到哪种类型才登记哪种，`TypeEntry::m_iSize` 给出字节宽度 char=1、int/float/bool=4），`--dump-symtab` 的 `-- Types --` 节不再是空节 |
 | SemanticAnalyzer（语义分析） | SemanticAnalyzer(SymbolTable&) / Analyze(const ASTNodePtr&) | **已实现**：遍历 AST 登记变量/数组/函数/形参/常量，未声明与重复声明报错，按 §8.1 类型系统做运算与赋值检查 |
 | IRGenerator（中间代码） | IRGenerator(SymbolTable&) / Generate / GetTmpVar / GetTmpLabel / EmitIR / GetCodes / OperandToString | **已实现**：遍历 AST 生成四元式（`QuadOp` 按参考书表 5-2 建 21 大类 + 宽度后缀，共 151 个成员、MiniC 实际产生 30 个），含算术/关系/逻辑、`&&`/`||` 真短路（`Q_JNT`/`Q_JT`）、`ITOF`/`FTOI` 类型转换（赋值、实参、返回值三处均插）、一维数组读写（`Q_INDEX_*` 双向）、`if/else`、`while`、`print`、函数定义（四元式存入 `ProcEntry::m_Codes`）与调用（`Q_PARA` + `Q_CALL`）、递归、`++`/`--` 前后缀（`GenIncDec`）、**常量折叠**（`FoldBinary`/`ConstFloat`，两侧皆为编译期常量时直接求值，除零与整型溢出保守不折、`&&`/`||` 不折以保短路）；`--dump-quads` 输出顶层代码与各过程 |
 | CCodeGen（目标代码，挑战版） | CCodeGen(const CodeList&) / BindSymTab / Generate / IRtoASM / AsmOutput | **已实现**：x86-64 / GNU as（AT&T 语法），栈帧 + `%rbp` 基址寻址、整型 `%eax` / 浮点 `%xmm0` 双通道、数组按 `元素宽度×下标` 的 `(%rax,%rcx,4)` 寻址、**自定义栈传参**（调用方按 `i*8(%rsp)` 落第 i 个实参、槽位 16 字节对齐，被调方从 `16+8*(pos-1)(%rbp)` 取形参；不走 System V 寄存器传参）、`printf` 输出（浮点同时放 `%xmm` 与第 2 个整型槽以适配 Windows ABI）；**累加器直通**（`%eax` 里已是所需值时不重复 load）与**立即数直用**（`imull $4, %eax`）；**热点局部整型标量固定寄存器**（每函数至多两个，放 callee-saved 的 `%ebx` / `%esi`，序言 `pushq` / 尾声 `popq`）；`QuadOp` 24 个值全部覆盖；产物可被 gcc 直接汇编链接 |
@@ -483,7 +483,7 @@ pwsh -File tests/run_opt_tests.ps1 -Update
 |---|---|---|
 | ① 编译器源码 | `src/`（六段流水线） | ✅ 完成 |
 | ② 技术文档 | [docs/MiniC编译器设计文档_v4.0_挑战版LL1.md](docs/MiniC编译器设计文档_v4.0_挑战版LL1.md)（系统架构设计）、[docs/MiniC编译器数据结构设计.md](docs/MiniC编译器数据结构设计.md)、[docs/interface.md](docs/interface.md)（模块接口定义）、[docs/MiniC语法支持清单.md](docs/MiniC语法支持清单.md)（语言规格） | ✅ 完成 |
-| ③ 测试用例集 | `tests/`，12 套回归（9 套编译阶段 + 2 套 GUI 冒烟，见「构建」一节的 `build.bat test`） | ✅ 完成 |
+| ③ 测试用例集 | `tests/`，12 套回归（10 套编译阶段 + 2 套 GUI 冒烟，见「构建」一节的 `build.bat test`） | ✅ 完成 |
 | ④ 验收报告 | [docs/验收报告.md](docs/验收报告.md)（交付物核对 / 五模块十字段记录 / 12 套回归 / 偏差与遗留） | ✅ 完成 |
 | ⑤ 答辩材料 | 答辩 PPT：[docs/MiniC编译器_答辩演示.pptx](docs/MiniC编译器_答辩演示.pptx)（18 页）<br>项目总结：[docs/项目总结.md](docs/项目总结.md) | ✅ 完成 |
 | 个人任务计划（附录 A） | [docs/plans/](docs/plans/README.md)，12 人各一份 | ✅ 完成 |
@@ -603,7 +603,9 @@ MiniC 是教学子集语言，下列写法**不在文法/语义支持范围内**
   **常量**下标越界（`int a[3]; a[5]=1;` 报 `array subscript 5 is out of bounds`）、
   整型字面量越界（`a = 2147483648;` 报 `integer literal ... is out of range for int`，**错误**）、
   非 void 函数缺 `return`（**警告**）、无 `main` 且无顶层语句（**警告**）、
-  `char` 字面量越界（`c = 300;` 报截断后的值，**警告**）。
+  `char` 字面量越界（`c = 300;` 报截断后的值，**警告**）、
+  `void` 用在变量/数组/形参上（`void v;`、`void a[3];`、`void f(void x)` 都报错——
+  `void` 只能作函数返回类型）。
   **不检查**：变量下标越界（静态不可知）、`if`/`while` 条件为 float、
   不可达代码与未使用变量、栈深度与递归深度。
 - 代码生成**不做**寄存器分配以外的优化：热点局部整型标量固定放 `%ebx` / `%esi`（每函数至多两个），

@@ -531,9 +531,12 @@ public:
 > 类型链字段（`m_iLink` / `m_iTypePos` / `m_iTypeFlag`）全部停用：MiniC 只有 5 个内建
 > 类型，没有结构体、指针、用户自定义类型，链式类型表无从发挥。
 >
-> **类型表现在是活的**：`SymbolTable::RecBuiltinTypes()` 在 `SemanticAnalyzer::Analyze()`
-> 入口登记 5 个内建类型，`--dump-symtab` 的 `-- Types --` 节输出
-> `int : INT  size 4` 等 5 行。在此之前 `RecType` 是零调用的死接口，该节恒为空。
+> **类型表现在是活的**：`SymbolTable::RecTypeIfAbsent(baseType)` 由语义遍历的五个登记点
+> （变量声明 / 数组声明 / 函数返回类型 / 形参类型 / 字面量类型）按需调用，**用到哪种才登记哪种**，
+> `--dump-symtab` 的 `-- Types --` 节因此只列本程序真正用到的类型，形如 `int : INT  size 4`。
+> 【2026-10-29 变更】此前是在 `Analyze()` 入口一次登记 5 个内建类型，会让只用 `int` 的程序
+> 也显示 `float/bool/char/void`；`RecBuiltinTypes()` 现保留为兼容接口，不再由 `Analyze()` 调用。
+> 在此之前 `RecType` 是零调用的死接口，该节恒为空。
 
 // 过程/函数表项：参考书 ProcInfo（挑战版）
 class ProcEntry : public SymbolEntry
@@ -574,7 +577,9 @@ public:
 // 符号表：参考书 CSymbolTbl 多表组织
 // 【v3.0 决议】对外接口以第 6 章契约（EnterScope/ExitScope/RecVar/RecConst/SearchVar/SearchConst/BackfillConst/CheckAssign/DumpSymTab）为准；
 // 本段（SearchVarInfoTbl/RecVar/RecConstTbl/RecType/Print 等）为参考书风格扩展接口，保留作兼容层，不参与接口冻结。
-// 【2026-10-27 补充】RecType 已不再是死接口：Analyze() 入口调 RecBuiltinTypes() 登记 5 个内建类型后
+// 【2026-10-27 补充】RecType 已不再是死接口。
+// 【2026-10-29 再改】登记改为按需：语义遍历各点调 RecTypeIfAbsent(baseType)，用到哪种才登记哪种；
+// RecBuiltinTypes() 仍在，但只作兼容接口，不再由 Analyze() 调用。
 // 它才真正被调用，DumpSymTab 的 Types 节随之有内容。
 class SymbolTable
 {
@@ -603,7 +608,8 @@ public:
     int RecVar(const string& szName, TokenType baseType, int line);       // 登记变量
     int RecConstTbl(const string& szVal, TokenType constType);            // 登记常量（词法/语义共用）
     int RecType(const string& szName);                                    // 登记类型表项（匿名类型传入 "_noname"+序号）
-    void RecBuiltinTypes();          // 【2026-10-27 新增】登记 int/float/bool/char/void 五行，幂等
+    void RecBuiltinTypes();          // 【2026-10-27 新增】登记 int/float/bool/char/void 五行，幂等（2026-10-29 起仅作兼容接口）
+    TypeEntry* RecTypeIfAbsent(TokenType baseType); // 【2026-10-29 新增】按需登记单个内建类型，幂等
     static int SizeOfType(TokenType baseType);  // 【2026-10-27 新增】char=1 / int,float,bool=4 / void=0
 
     /* ---- 类型链/引用检查 ---- */
@@ -626,8 +632,9 @@ extern SymbolTable g_SymbolTbl;   // 全局符号表单例（参考书全局 Sym
 | 类型 | 最低规格类型为内建 int/float（TypeEntry 预置 T_INTEGER/T_REAL）；挑战版类型声明用 `m_iTypePos` 栈 + `m_iTypeFlag` 栈构造类型链 | semantic006/015/010 |
 
 > **⚠ 2026-10-27 实现变更**：挑战版**没有**做类型链（不设 `m_iTypePos`/`m_iTypeFlag` 栈）。
-> 实际做法是 `SemanticAnalyzer::Analyze()` 开头调 `SymbolTable::RecBuiltinTypes()`，
-> 把 `int/float/bool/char/void` 五个内建类型各登记一行（含 `m_iSize` 字节宽度），
+> 实际做法是在语义遍历的五个登记点调 `SymbolTable::RecTypeIfAbsent()`，
+> 遇到哪种类型就登记哪一行（含 `m_iSize` 字节宽度），**没用到的不出现**；
+> 【2026-10-29 更新】此前是在 `Analyze()` 开头一次登记 `int/float/bool/char/void` 五行，
 > 变量/数组/形参的类型仍直接内嵌在 `VarEntry::m_type`。类型链、`PtrCheck()`、
 > `GetSerialId()` 均未实现——MiniC 无结构体/指针/用户自定义类型，链式类型表无从发挥。
 | 语句 | 遇 `IdentNode`：查变量表，未声明报错；标记 `m_bUsed = true` | 变量引用的语义检查 |
@@ -944,7 +951,7 @@ struct AsmOutput
 |---|---|
 | 词法 → 语法 | `TokenList` 一次性生成后整体传递（参考书独立一遍模型）；`m_iListPos` 游标消费；`m_iConstIdx` 沟通常量表 |
 | 语法 → 语义 | 语义子程序在推导过程中同步执行（参考书语法制导翻译）；AST 由 `CParser` 显式构建（PPT 交付物） |
-| 语义 → 符号表 | 语义子程序登记 `g_SymbolTbl` 各表（`RecVar/RecConstTbl/RecType`），查重与类型链构造均走 `SearchXxxTbl` 系列。**实现现状（2026-10-27）**：`RecVar`/`RecArray`/`RecConst`/`BackfillConst` 在遍历 AST 时调用，`RecType` 只在 `Analyze()` 入口被 `RecBuiltinTypes()` 调 5 次；类型链与 `PtrCheck()` 未实现（MiniC 无结构体/指针） |
+| 语义 → 符号表 | 语义子程序登记 `g_SymbolTbl` 各表（`RecVar/RecConstTbl/RecType`），查重与类型链构造均走 `SearchXxxTbl` 系列。**实现现状（2026-10-29）**：`RecVar`/`RecArray`/`RecConst`/`RecBuiltinTypes` 在遍历 AST 时调用，类型表由 `RecTypeIfAbsent()` 在五个登记点按需建行（用到哪种才登记哪种）；类型链与 `PtrCheck()` 未实现（MiniC 无结构体/指针） |
 | 语义 → 中间代码 | 遍历 AST 时查符号表确定操作数类型；临时变量 `GetTmpVar`；类型转换查 `g_TypeSysTable` |
 | 中间代码 → 目标代码 | `Quad[]` 逐条匹配 `InstPattern`；`Operand.m_type` 决定寄存器字节宽度与数据段声明 |
 

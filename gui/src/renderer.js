@@ -8,7 +8,7 @@ const $ = (id) => document.getElementById(id);
 const app = $('app');
 
 /* ------------------------- 示例源码 ------------------------- */
-/* 示例库本体在 src/samples.js（15 条，逐条在真实工具链上实测过）。
+/* 示例库本体在 src/samples.js（20 条，逐条在真实工具链上实测过）。
    这里只负责取值，以及保留几个旧名字给截图/回归钩子用。 */
 const SAMPLE_LIST =
   typeof SAMPLES !== 'undefined' && Array.isArray(SAMPLES) ? SAMPLES : [];

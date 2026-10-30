@@ -116,6 +116,23 @@ function measureLineHeight() {
   state.lineHeight = parseFloat(getComputedStyle(el.source).lineHeight) || state.fontSize * 1.5;
 }
 
+/**
+ * 字体真正加载完成、窗口缩放、系统 DPI 变化，都会改变「一行到底多高」。
+ * 所有行标记（错误行底色、警告行底色、当前行高亮）的 top 都是
+ * `padTop + (行号 - 1) * state.lineHeight`，一旦实测行高变了却没重绘，
+ * 整列标记就会按「行号 × 差值」累积漂移——行号越大偏得越多，
+ * 表现就是「明明点的是第 17 行，高亮却落在第 19 行」。
+ * 所以在度量真正稳定之后重新测量并重绘一次。
+ */
+function refreshMetrics() {
+  const before = state.lineHeight;
+  measureLineHeight();
+  if (Math.abs(before - state.lineHeight) < 0.01) return;
+  renderMarks();
+  updateCurrentLine();
+  syncScroll();
+}
+
 /* ------------------------- 语法高亮 ------------------------- */
 const KEYWORDS = new Set(['int', 'float', 'bool', 'char', 'void', 'if', 'else', 'while', 'print', 'return', 'true', 'false']);
 
@@ -427,19 +444,30 @@ function updateCurrentLine() {
   const before = el.source.value.slice(0, pos);
   const line = before.split('\n').length;
   cl.style.display = 'block';
-  cl.style.height = state.lineHeight + 'px';
-  cl.style.top = `${padTop + (line - 1) * state.lineHeight - el.source.scrollTop}px`;
+  cl.style.height = markHeight() + 'px';
+  cl.style.top = `${Math.round(padTop + (line - 1) * state.lineHeight - el.source.scrollTop)}px`;
+}
+
+/**
+ * 行标记的高度必须比行高「至少多 1px」。
+ * 行高 19.5px 是半像素，浏览器把 height:19.5px 渲染成 19px，而 top 按 19.5 递增，
+ * 于是相邻两行的标记之间会漏出 0.5px 的底色细缝——连续几行都有错误时，
+ * 看上去就是一道道横线，容易被当成「高亮错位」。
+ */
+function markHeight() {
+  return Math.ceil(state.lineHeight) + 1;
 }
 
 function renderMarks() {
   const lh = state.lineHeight;
+  const h = markHeight();
   const padTop = parseFloat(getComputedStyle(el.source).paddingTop) || 0;
   let html = '';
   for (const line of state.errorLines) {
-    html += `<div class="line-mark" style="top:${padTop + (line - 1) * lh}px;height:${lh}px"></div>`;
+    html += `<div class="line-mark" style="top:${Math.round(padTop + (line - 1) * lh)}px;height:${h}px"></div>`;
   }
   for (const line of state.warnLines) {
-    html += `<div class="line-mark warn" style="top:${padTop + (line - 1) * lh}px;height:${lh}px"></div>`;
+    html += `<div class="line-mark warn" style="top:${Math.round(padTop + (line - 1) * lh)}px;height:${h}px"></div>`;
   }
   el.marks.innerHTML = html;
   // 容器高度必须跟内容总高一致：行标记的 top 是内容绝对坐标，容器若只有一屏高，
@@ -2070,6 +2098,13 @@ async function init() {
   measureLineHeight();
   renderMarks();
 
+  // 字体异步加载完成后行高可能变化（首屏用的是回退字体的度量），
+  // 窗口缩放/系统 DPI 变化同理。度量变了必须重绘，否则标记整体漂移。
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(refreshMetrics).catch(() => {});
+  }
+  window.addEventListener('resize', refreshMetrics);
+
   // 环境信息
   try {
     const info = await window.minicAPI.info();
@@ -2107,6 +2142,8 @@ window.__minicTest = async ({ theme, break: breakIt, tab, menu, twice, multifile
       scrollTop: Math.round(ta.scrollTop),
       scrollMax: Math.round(ta.scrollHeight - ta.clientHeight),
       lineHeight: lh,
+      markHeight: el.marks.firstElementChild ? el.marks.firstElementChild.offsetHeight : null,
+      markTops: [...el.marks.children].map((d) => Math.round(d.offsetTop)),
       padTop,
       errorLines: state.errorLines.slice(),
       expectedViewTop: Math.round(viewTopOf(line)),

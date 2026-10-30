@@ -442,6 +442,9 @@ function renderMarks() {
     html += `<div class="line-mark warn" style="top:${padTop + (line - 1) * lh}px;height:${lh}px"></div>`;
   }
   el.marks.innerHTML = html;
+  // 容器高度必须跟内容总高一致：行标记的 top 是内容绝对坐标，容器若只有一屏高，
+  // 超出部分会被裁掉（长文件滚到下半部分时错误行高亮整片消失）。见 styles.css 注释。
+  el.marks.style.height = Math.max(el.source.scrollHeight, el.source.clientHeight) + 'px';
 }
 
 function updateCursor() {
@@ -968,8 +971,13 @@ function jumpToLine(line, col) {
   el.source.setSelectionRange(pos, pos);
   // 滚动到可见（考虑内边距）
   const padTop = parseFloat(getComputedStyle(el.source).paddingTop) || 0;
-  const top = padTop + (line - 2) * state.lineHeight;
-  el.source.scrollTop = Math.max(0, top);
+  // 目标行放在视口偏上处（上方留 3 行上下文），并夹在 [0, scrollMax] 之间。
+  // 原来写的是 (line - 2)：相当于让「上一行」贴顶，短文件里还会被 clamp 掉，
+  // 跳转后目标行总不在预期位置。
+  const lh = state.lineHeight;
+  const maxTop = Math.max(0, el.source.scrollHeight - el.source.clientHeight);
+  const top = Math.max(0, Math.min(maxTop, padTop + (line - 1) * lh - lh * 3));
+  el.source.scrollTop = top;
   syncScroll();
   updateCursor();
 }
@@ -2076,8 +2084,59 @@ async function init() {
 }
 
 /* 截图/回归钩子：--compile / --break / --tab=xx / --menu=xx / --twice 模式使用 */
-window.__minicTest = async ({ theme, break: breakIt, tab, menu, twice, multifile, fmt, editTest, dupTest, demo } = {}) => {
+window.__minicTest = async ({ theme, break: breakIt, tab, menu, twice, multifile, fmt, editTest, dupTest, demo, diagJump } = {}) => {
   if (theme) applyTheme(theme);
+  if (diagJump) {
+    // 回归：点诊断跳转后，目标行必须落在视口内的预期位置（高亮块、光标行、滚动量三者一致）
+    const pick = SAMPLES.find((s) => s.id === diagJump.sample) || SAMPLES.find((s) => s.id === 'err-mixed-all');
+    loadSample(pick.text, pick.name);
+    await doCompile();
+    const items = [...el.diagList.querySelectorAll('.diag-item.clickable')];
+    const item = items[diagJump.index || 0] || items[0];
+    if (item) item.click();
+    await new Promise((r) => setTimeout(r, 260));
+    const ta = el.source;
+    const lh = state.lineHeight;
+    const padTop = parseFloat(getComputedStyle(ta).paddingTop) || 0;
+    const line = item ? +item.dataset.line : 0;
+    const viewTopOf = (n) => padTop + (n - 1) * lh - ta.scrollTop;
+    return {
+      clickedLine: line,
+      clickedCol: item ? +item.dataset.col : 0,
+      diagCount: items.length,
+      scrollTop: Math.round(ta.scrollTop),
+      scrollMax: Math.round(ta.scrollHeight - ta.clientHeight),
+      lineHeight: lh,
+      padTop,
+      errorLines: state.errorLines.slice(),
+      expectedViewTop: Math.round(viewTopOf(line)),
+      currentLineTop: Math.round(parseFloat(el.currentLine.style.top)),
+      currentLineDisplay: getComputedStyle(el.currentLine).display,
+      marks: [...el.marks.children].map((m) => ({
+        viewTop: Math.round(parseFloat(m.style.top) - ta.scrollTop),
+        height: Math.round(parseFloat(m.style.height)),
+      })),
+      cursorStatus: el.statusCursor.textContent,
+      visibleFrom: Math.floor((ta.scrollTop - padTop) / lh) + 1,
+      visibleTo: Math.floor((ta.scrollTop - padTop + ta.clientHeight) / lh) + 1,
+      /* 诊断用：三层（textarea / 高亮层 / 行号列）的真实几何 */
+      lineCount: ta.value.split('\n').length,
+      srcScrollH: ta.scrollHeight,
+      srcClientH: ta.clientHeight,
+      hlScrollH: el.highlight.scrollHeight,
+      hlClientH: el.highlight.clientHeight,
+      gutScrollH: el.gutter.scrollHeight,
+      srcLH: getComputedStyle(ta).lineHeight,
+      hlLH: getComputedStyle(el.highlight).lineHeight,
+      gutLH: getComputedStyle(el.gutter).lineHeight,
+      srcFont: getComputedStyle(ta).fontFamily,
+      hlFont: getComputedStyle(el.highlight).fontFamily,
+      gutFont: getComputedStyle(el.gutter).fontFamily,
+      srcFontSize: getComputedStyle(ta).fontSize,
+      hlFontSize: getComputedStyle(el.highlight).fontSize,
+      derivedLH: Math.round(((ta.scrollHeight - 2 * padTop) / Math.max(1, ta.value.split('\n').length)) * 100) / 100,
+    };
+  }
   if (demo) {
     // 效果图/演示：载入成功示例并编译，焦点停在指定产物标签
     loadSample(SAMPLE_GCD, 'gcd-demo.mc');

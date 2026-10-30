@@ -454,7 +454,11 @@ body {
 }
 #source::selection { background: var(--selection); color: transparent; }
 
-.line-marks { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+/* 行标记层：子元素的 top 是「内容绝对坐标」，整层靠 translateY(-scrollTop) 跟随滚动。
+   容器高度必须等于内容总高（renderMarks 按 scrollHeight 写入），否则超出第一屏的
+   行标记会被自身 overflow 裁掉——长文件滚到下半部分时，错误行高亮会整片消失。
+   真正的裁剪交给外层 .code-wrap。 */
+.line-marks { position: absolute; top: 0; left: 0; right: 0; pointer-events: none; }
 
 .current-line {
   position: absolute;
@@ -715,9 +719,16 @@ pre.raw .ast-pos { color: var(--text-muted); user-select: none; }
 .diag-item.err .sev { color: var(--err); }
 .diag-item.warn .sev { color: var(--warn); }
 .diag-item.info .sev { color: var(--ok); }
-.diag-item .loc { color: var(--text-muted); font-family: "Sarasa Gothic SC", Consolas, monospace; }
-.diag-item .stage { color: var(--text-muted); }
-.diag-item .msg { color: var(--text); }
+.diag-item .loc {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-family: "Sarasa Gothic SC", Consolas, monospace;
+}
+.diag-item .stage { flex: 0 0 auto; white-space: nowrap; color: var(--text-muted); }
+/* msg 是唯一可伸缩的列：允许收缩并换行，其余列不参与收缩，否则
+   「行 18 · 列 13」会被挤成两行、和下一行的列号粘连 */
+.diag-item .msg { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; color: var(--text); }
 
 .diag-foot { flex: 0 0 auto; padding: 8px 12px; font-size: 11px; color: var(--text-muted); border-top: 1px solid var(--border); }
 

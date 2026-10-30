@@ -171,4 +171,11 @@ node test\sample-smoke.js
 
 可选：`--break`（错误示例）、`--tab=asm|sym|diag|...`、`--menu=file|build|view|...`。
 回归钩子：`--twice`（连编）、`--multifile`（多文件）、`--fmt`（格式化幂等）、
-`--edittest`（编辑增强）、`--wheeltest`（缩放）、`--duptest`（同一文件重复打开去重）。
+`--edittest`（编辑增强）、`--wheeltest`（缩放）、`--duptest`（同一文件重复打开去重）、
+`--diagjump`（点诊断跳转定位）。
+
+`--diagjump` 会载入 `--sample=<id>`（默认 `err-mixed-all`）、编译、点击第 `--diagidx=N` 条诊断
+（默认 0），然后打印 `DIAGJUMP {...}` 的几何自检结果：`scrollTop / scrollMax / expectedViewTop`
+（目标行应在的视口 y）、`currentLineTop`（当前行高亮的实际 y）、`marks[].viewTop`（各错误行标记的
+实际 y）。三者对不上就说明编辑器三层（textarea / 高亮层 / 行号列）坐标串了。
+例：`electron . --shot=out.png --diagjump --sample=err-mixed-all --diagidx=5`

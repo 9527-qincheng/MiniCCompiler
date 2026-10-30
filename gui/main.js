@@ -65,6 +65,7 @@ function createWindow() {
       const editTest = process.argv.includes('--edittest');
       const dupTest = process.argv.includes('--duptest');
       const demo = process.argv.includes('--demo');
+      const diagJump = process.argv.includes('--diagjump');
       await new Promise((r) => setTimeout(r, 900));
 
       // Ctrl+滚轮缩放回归测试
@@ -82,10 +83,10 @@ function createWindow() {
         console.log('WHEELTEST ' + JSON.stringify(r));
       }
 
-      if (autoCompile || breakIt || tab || menu || twice || multifile || fmt || editTest || dupTest || demo) {
+      if (autoCompile || breakIt || tab || menu || twice || multifile || fmt || editTest || dupTest || demo || diagJump) {
         try {
           const r = await win.webContents.executeJavaScript(
-            `window.__minicTest && window.__minicTest(${JSON.stringify({ theme, break: breakIt, tab, menu, twice, multifile, fmt, editTest, dupTest, demo })})`,
+            `window.__minicTest && window.__minicTest(${JSON.stringify({ theme, break: breakIt, tab, menu, twice, multifile, fmt, editTest, dupTest, demo, diagJump: diagJump ? { sample: arg('sample', 'err-mixed-all'), index: +arg('diagidx', 0) } : null })})`,
           );
           if (twice && r) console.log('TWICETEST ' + JSON.stringify(r));
           if (multifile && r) console.log('MULTITEST ' + JSON.stringify(r));
@@ -93,6 +94,7 @@ function createWindow() {
           if (editTest && r) console.log('EDITTEST ' + JSON.stringify(r));
           if (dupTest && r) console.log('DUPTEST ' + JSON.stringify(r));
           if (demo && r) console.log('DEMO ' + JSON.stringify(r));
+          if (diagJump && r) console.log('DIAGJUMP ' + JSON.stringify(r));
         } catch (e) {
           console.error('auto test failed:', e);
         }

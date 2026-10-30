@@ -445,7 +445,11 @@ function updateCurrentLine() {
   const line = before.split('\n').length;
   cl.style.display = 'block';
   cl.style.height = markHeight() + 'px';
-  cl.style.top = `${Math.round(padTop + (line - 1) * state.lineHeight - el.source.scrollTop)}px`;
+  // 这里绝对不能再减 el.source.scrollTop。
+  // .current-line 和所有行标记同属 .line-marks 层，而该层已经由 syncScroll()
+  // 整体 translateY(-scrollTop) 平移过一次；这里再减一次就等于把滚动量扣了两遍，
+  // 只要编辑器滚动过，当前行高亮就会整体上移「scrollTop / 行高」行。
+  cl.style.top = `${Math.round(padTop + (line - 1) * state.lineHeight)}px`;
 }
 
 /**
@@ -2147,7 +2151,8 @@ window.__minicTest = async ({ theme, break: breakIt, tab, menu, twice, multifile
       padTop,
       errorLines: state.errorLines.slice(),
       expectedViewTop: Math.round(viewTopOf(line)),
-      currentLineTop: Math.round(parseFloat(el.currentLine.style.top)),
+      currentLineTop: Math.round(parseFloat(el.currentLine.style.top) - ta.scrollTop),
+      currentLineRawTop: Math.round(parseFloat(el.currentLine.style.top)),
       currentLineDisplay: getComputedStyle(el.currentLine).display,
       marks: [...el.marks.children].map((m) => ({
         viewTop: Math.round(parseFloat(m.style.top) - ta.scrollTop),

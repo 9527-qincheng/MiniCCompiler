@@ -134,7 +134,7 @@ const ConstEntry* SymbolTable::SearchConst(const std::string& name) const
 
 // 【零调用，2026-10-28 标注】Q12 遗留接口：词法阶段登记文本，语义阶段按位序回填
 // 名字与类型。现在由 SemanticAnalyzer::VisitNum 直接调 RecConst 一次登记完，
-// 本函数不再被调用；保留是为对齐参考书契约（docs/interface.md）。
+// 本函数不再被调用；保留是为对齐参考书契约（历史接口备忘）。
 void SymbolTable::BackfillConst(int iConstIdx, const std::string& name, TokenType type)
 {
     if (iConstIdx < 0 || static_cast<size_t>(iConstIdx) >= m_ConstInfoTbl.size())

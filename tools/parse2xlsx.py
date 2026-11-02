@@ -11,7 +11,7 @@
 
 用法:
     python tools/parse2xlsx.py tests/parser/ll1_411.mc
-    python tools/parse2xlsx.py examples/example.mc --out docs/语法分析过程_示例.xlsx
+    python tools/parse2xlsx.py examples/example.mc --out 语法分析过程_示例.xlsx
 
 依赖 openpyxl（pip install openpyxl）。
 """

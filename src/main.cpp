@@ -23,7 +23,7 @@
 namespace
 {
 
-// 版本信息：--version / -V 输出。语义版本号手工维护，与 docs/ 里的
+// 版本信息：--version / -V 输出。语义版本号手工维护，与项目文档里的
 // 「挑战版 v4.0」对齐；BUILD 日期不写死，避免每次改代码都要动这里。
 const char* const kVersion = "MiniC Compiler 4.0 (challenge, x86-64)";
 

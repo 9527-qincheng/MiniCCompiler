@@ -132,7 +132,7 @@ public:
     const ConstEntry* SearchConst(const std::string& name) const;
     // 【零调用】Q12 方案（词法先登记文本、语义回填名字与类型）的遗留接口。
     // 现在常量的名字/类型/值由 RecConst 一次性登记，本函数不再被调用，
-    // 保留仅为对齐参考书契约（docs/interface.md 与设计文档 §6 有签名）。
+    // 保留仅为对齐参考书契约（历史接口备忘与设计文档 §6 有签名）。
     void        BackfillConst(int iConstIdx, const std::string& name, TokenType type);
     bool        CheckAssign(TokenType lhs, TokenType rhs, int line, int col);
     void        DumpSymTab(std::ostream& os) const;

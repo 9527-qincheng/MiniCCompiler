@@ -1341,7 +1341,7 @@ void AsmEmitter::GenQuad(const Quad& q)
         return;
 
     // 2026-10-27：按表 5-2 的「大类」分派，宽度后缀由 GenXXX 从操作数类型取
-    // （操作码自带宽度，这里仍按操作数类型选指令，两者一致；见 docs/interface.md 第 25 条）
+    // （操作码自带宽度，这里仍按操作数类型选指令，两者一致）
     case QuadOp::Q_ASSIGN_1:
     case QuadOp::Q_ASSIGN_4:
     case QuadOp::Q_ASSIGN_4F:

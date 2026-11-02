@@ -10,7 +10,7 @@
 //  操作符（涉及字长与物理存储），一个 QuadOp 同时承载两层语义：
 //      QuadCat(op)     → 大类（MIR），如 CAT_ADD
 //      QuadOpName(op)  → 带宽度后缀的完整助记符（LIR），如 "ADD_4" / "ADD_4F"
-//  改动理由与取舍见 docs/interface.md 第 25 条。
+//  改动理由与取舍见历史接口备忘第 25 条。
 // ============================================================================
 #ifndef MINIC_SEMA_IR_H
 #define MINIC_SEMA_IR_H

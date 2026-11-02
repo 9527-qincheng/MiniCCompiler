@@ -3,7 +3,7 @@
 
 **当前进度**：六个阶段全部打通，**编译器已可端到端运行**。词法模块已按 v4.0 挑战版完成（17 个新终结符、编码映射、双字符运算符、字符常量）；语法模块已按 v4.0 挑战版落地为 **LL(1) 预测分析表驱动**（105 条产生式，非递归分析栈 + `src/parser/grammar.cpp` 预测表，`--dump-parse` 输出分析过程）；符号表模块已实现多表登记、作用域链查找与数组登记；语义分析模块已实现并接入主流程（`src/sema/semantic.cpp`，遍历 AST 登记变量/数组/函数/常量并做类型检查）；**中间代码模块已实现**（`src/sema/ir.cpp`，四元式含 ITOF/FTOI 类型转换、`&&`/`||` 真短路、数组读写、函数调用与递归，`--dump-quads` 输出）；**目标代码模块已实现**（`src/codegen/codegen.cpp`，x86-64 / GNU as 汇编，产物可直接用 gcc 汇编链接成 exe 运行）。
 
-依据：[docs/MiniC编译器数据结构设计.md](docs/MiniC编译器数据结构设计.md) 第 4 章（数据结构）与第 6 章（接口契约，Q1~Q12 定稿）；挑战版文法见 [docs/MiniC编译器设计文档_v4.0_挑战版LL1.md](docs/MiniC编译器设计文档_v4.0_挑战版LL1.md)。
+文法定义见 `src/parser/grammar.h` / `src/parser/grammar.cpp`（105 条产生式 + LL(1) 预测分析表）；各模块的数据结构与接口契约见对应的头文件 `src/*/*.h`。
 
 ## 快速开始
 
@@ -17,7 +17,7 @@ build.bat run tests\test.mc                # 编译并运行
 ## Git 仓库
 
 - 远程仓库：`https://github.com/9527-qincheng/MiniCCompiler.git`
-- 分支说明：`main`（稳定分支，始终可运行、可演示，只接收 dev 合并）；`dev`（集成分支，组员从 `origin/dev` 切 feature 分支开发，完成后合并回 dev）
+- 分支说明：`main`（稳定分支，始终可运行、可演示，只接收 dev 合并）；`dev`（集成分支，从 `origin/dev` 切 feature 分支开发，完成后合并回 dev）
 - 克隆命令：`git clone https://github.com/9527-qincheng/MiniCCompiler.git`
 
 ## 项目结构
@@ -81,26 +81,6 @@ MiniCCompiler/
 │   └── run_codegen_tests.ps1      # 目标代码端到端（编译→gcc 链接→运行→比对输出）
 ├── examples/
 │   └── example.mc          # 挑战版关键字示例
-├── docs/
-│   ├── interface.md                            # 接口备忘 + 冲突记录（模块接口定义）
-│   ├── MiniC编译器设计文档_v4.0_挑战版LL1.md     # 系统架构设计文档：文法/LL(1) 表/接口/语义动作
-│   ├── MiniC编译器数据结构设计.md               # 数据结构设计：多表符号表/四元式/AST/指令模板
-│   ├── MiniC语法支持清单.md                     # 语言规格：105 条产生式实测支持矩阵、与 C 的 19 条差异
-│   ├── 词法模块待改进清单.md                    # 词法模块实测复审记录（4 项问题的修复依据）
-│   ├── stage5_ast_review.md                     # 阶段⑤ AST 形状评审
-│   ├── 验收报告.md                              # 测试验收报告：交付物核对/五模块记录/12 套回归/偏差与遗留
-│   ├── 小组分工表.md                            # 第 5 组 12 人任务分工表（对应项目书表 3）
-│   ├── 项目总结.md                              # 项目总结：架构/成果/困难与解决/经验/不足
-│   ├── MiniC编译器_答辩演示.pptx                # 答辩 PPT（18 页）
-│   ├── 语法分析过程_示例.xlsx                   # 分析过程示例（LL(1) 逐步推导）
-│   ├── 语法分析过程_ll1_411.xlsx                # §4.11 的 82 步分析轨迹
-│   ├── gui-implementation/                      # GUI 实现截图（01~11）
-│   ├── gui-acceptance/                          # GUI 验收截图（S1~S5）
-│   ├── archive/                                 # 过程文档存档：协作说明/审查报告/整改说明/模块任务书
-│   │   ├── guides/                              #   组员使用指南、Git 协作须知、build.bat 说明
-│   │   ├── reviews/                             #   7 轮提交审查报告 + 分支检查记录
-│   │   └── taskbriefs/                          #   整改说明 8 份 + modules/ 各模块任务书 8 份
-│   └── plans/                                   # 个人任务计划（12 人各一份，见 docs/plans/README.md）
 └── build/                  # 构建产物目录（已被 .gitignore 排除）
 ```
 
@@ -284,7 +264,6 @@ npm install        :: 首次安装 Electron（.npmrc 已配置 npmmirror 镜像�
 `build\minic.exe` 上实测过编译退出码与运行输出。
 
 - 用法、快捷键、目录结构与启动器原理见 [gui/README.md](gui/README.md)。
-- 界面规范板（S1~S5）与验收截图见 [`docs/gui-acceptance/`](docs/gui-acceptance/)。
 - 冒烟测试：`cd gui && node test\compile-smoke.js`（校验各类产物齐全、Token 格式与错误诊断格式）；
   `node test\run-smoke.js`（校验编译→链接→执行链路、编译失败、除零崩溃与死循环超时）；
   `node test\book-smoke.js`（语法手册数据层 + 渲染层）；`node test\sample-smoke.js`（示例库数据层与实跑）。
@@ -397,7 +376,6 @@ pwsh -File tests/run_parser_unit.ps1
    一元运算 `UnaryOp(...)` 改名 `UnOp(...)`；新增 `FuncDef`/`Param`/`ArrayDecl`/`Print`/`Index`/`Call`/`Empty` 等正式节点。
    本次**只改 AST 的文本形状**：37 条 `expected/*.ast.txt` 与 `tests/test.ast.txt` 重定，
    **无任何 `*.err.txt` 变化**（错误定位与错误恢复未动），`ll1_411.parse.txt`（§4.11 的 82 步轨迹）**逐字未变**。
-   节点清单与子节点语义见 `docs/stage5_ast_review.md`。
 
 ## 语义分析诊断回归测试
 
@@ -474,26 +452,20 @@ pwsh -File tests/run_opt_tests.ps1 -Update
 > 原先"`print`/数组/函数等尚未实现"的表述已过时；仍属**预期报错**的是文法本身不允许的写法：
 > `print` 必须带括号（`print a;` 非法）、数组仅一维（`int b[2][3];` 非法）、
 > 声明必须全部位于语句之前（`程序 → 声明部分 语句部分`）。
-> 详见 [docs/词法模块待改进清单.md](docs/词法模块待改进清单.md)（词法侧 4 个问题的实测与修复记录）。
 
-## 交付文档
+## 源码结构
 
-项目书表 6 列了 5 项交付物，对应到仓库里的位置如下：
-
-| 交付物 | 位置 | 状态 |
-|---|---|---|
-| ① 编译器源码 | `src/`（六段流水线） | ✅ 完成 |
-| ② 技术文档 | [docs/MiniC编译器设计文档_v4.0_挑战版LL1.md](docs/MiniC编译器设计文档_v4.0_挑战版LL1.md)（系统架构设计）、[docs/MiniC编译器数据结构设计.md](docs/MiniC编译器数据结构设计.md)、[docs/interface.md](docs/interface.md)（模块接口定义）、[docs/MiniC语法支持清单.md](docs/MiniC语法支持清单.md)（语言规格） | ✅ 完成 |
-| ③ 测试用例集 | `tests/`，12 套回归（10 套编译阶段 + 2 套 GUI 冒烟，见「构建」一节的 `build.bat test`） | ✅ 完成 |
-| ④ 验收报告 | [docs/验收报告.md](docs/验收报告.md)（交付物核对 / 五模块十字段记录 / 12 套回归 / 偏差与遗留） | ✅ 完成 |
-| ⑤ 答辩材料 | 答辩 PPT：[docs/MiniC编译器_答辩演示.pptx](docs/MiniC编译器_答辩演示.pptx)（18 页）<br>项目总结：[docs/项目总结.md](docs/项目总结.md) | ✅ 完成 |
-| 个人任务计划（附录 A） | [docs/plans/](docs/plans/README.md)，12 人各一份 | ✅ 完成 |
-| 小组分工表（项目书表 3） | [docs/小组分工表.md](docs/小组分工表.md)，12 人 + 模块人数 + 署名差异说明 | ✅ 完成 |
-| 过程文档存档 | [docs/archive/](docs/archive/README.md)，协作说明 4 + 审查报告 9 + 整改说明 8 + 模块任务书 8 | ✅ 完成 |
-
-个人计划的模板字段为**姓名 / 负责模块 / 任务目标 / 关键交付物 / 验收标准 / 时间节点 / 完成情况**；
-每份文末附「可核验的 Git 记录」，可用 `git log --author=<账号>` 或 `git log -- <路径>` 直接核对，
-不是只看文档自述。12 人清单与模块对应关系见 [docs/plans/README.md](docs/plans/README.md)。
+| 目录 | 内容 |
+|---|---|
+| `src/lexer/` | 词法分析（`CLex`） |
+| `src/parser/` | LL(1) 语法分析（`CParser`）、文法表（`grammar.cpp`）、AST |
+| `src/symbol/` | 符号表（七张分表 + 作用域链） |
+| `src/sema/` | 语义分析（`SemanticAnalyzer`）、四元式生成（`IRGenerator`）、窥孔优化（`minic_opt`） |
+| `src/codegen/` | x86-64 目标代码生成（`CCodeGen` / `AsmEmitter`） |
+| `src/main.cpp` | 六阶段流水线驱动 |
+| `gui/` | Electron 桌面端 |
+| `tests/` | 12 套回归：149 个 `.mc` 用例 + 期望产物基线 |
+| `tools/` | 文法表生成、分析过程导出、随机差分 |
 
 ## 冲突记录与待决策项（不擅自变更接口）
 
@@ -547,7 +519,7 @@ pwsh -File tests/run_opt_tests.ps1 -Update
   - **差分测试验证**（2026-10-24，未入库，脚本在 `build/_s2/`）：除固定用例，另用「同一程序 MiniC 版 vs gcc 编译的等价 C 版」逐行比对 stdout，
     整数随机 240 例 + 浮点随机 240 例 **全部一致**，另覆盖 Ackermann(3,3)=61、深递归 20000 层、100 个函数、50 层括号嵌套、5000 元素局部数组（栈帧 20032 字节）。
     注意 C 参考版的浮点字面量必须加 `f` 后缀，否则 `3.1/12.8` 按 double 算成 `0.242188` 而 MiniC 按 float 算成 `0.242187` —— 属语义差异不是缺陷。
-  - **收尾修复的两批缺陷**（2026-10-24，详见 `docs/interface.md` 第 16、18 条）：
+  - **收尾修复的两批缺陷**（2026-10-24）：
     - 第一批：嵌套调用实参错序（根因在 IR 边求值边发 `Q_PARA`，≥3 实参且有嵌套才暴露）、
       空函数 `void f(){}` 不产出函数体导致链接期 `undefined reference`、
       语法/语义报错时仍落下一份只有空 `main` 的误导性 `.asm`
@@ -555,7 +527,7 @@ pwsh -File tests/run_opt_tests.ps1 -Update
       `as` 报 `symbol 'main' is already defined`）、显式 `return 5;` 被出口标号后的
       `xorl %eax,%eax` 清零（`int main(){return 5;}` 退出码实测为 0）、
       裸 `return;` 带出 `%eax` 残值、无 `return` 的 `int` 函数返回垃圾值（实测 2043900272）
-- **挑战版语法**：文法已定稿（105 条产生式、LL(1) 预测分析表，见 [docs/MiniC编译器设计文档_v4.0_挑战版LL1.md](docs/MiniC编译器设计文档_v4.0_挑战版LL1.md)）。
+- **挑战版语法**：文法已定稿（105 条产生式、LL(1) 预测分析表，见 `src/parser/grammar.cpp`）。
   - 阶段③ 编码层 + 文法表（`src/parser/grammar.h/.cpp`）**已完成**：产生式/FIRST/FOLLOW/SELECT/预测分析表，
     由 `tools/generate_grammar.py` 从 xlsx 生成（**禁止手工编辑 grammar.cpp**），
     自检 `pwsh -File tests/run_grammar_selfcheck.ps1` 全绿
@@ -568,7 +540,7 @@ pwsh -File tests/run_opt_tests.ps1 -Update
     Print 由基类统一实现（各节点只提供 `Label()`）；37 条 `expected/*.ast.txt` 与 `tests/test.ast.txt` 重定，
     **`*.err.txt` 与 §4.11 的 82 步轨迹逐字未变**；单元测试新增新 AST 不变量断言（17/17 通过）。
   - 阶段⑥ 符号表扩展 **已完成**（多表 + 作用域链 + 数组/常量/过程/形参/标号登记）
-  - 阶段⑦ 语义动作与 IR **已完成**（2026-10-24 修复短路求值与三处类型转换缺陷，见 `docs/interface.md` 第 15 条）
+  - 阶段⑦ 语义动作与 IR **已完成**（2026-10-24 修复短路求值与三处类型转换缺陷）
   - 阶段⑧ 目标代码 **已完成**（2026-10-24，x86-64 / GNU as）
 
 ## 随机差分
@@ -614,5 +586,5 @@ MiniC 是教学子集语言，下列写法**不在文法/语义支持范围内**
 - `print` **不自动换行**：连续两条 `print` 接在同一行，要换行写 `print('\n');`。
 - 浮点字面量：`1.` 合法、`.5` 不合法；不支持 `0x1F` 十六进制与 `1e5` 指数形式。
 
-完整语法支持清单（105 条产生式、类型规则、与 C 的 19 条差异、报错速查、实测记录）见
-[docs/MiniC语法支持清单.md](docs/MiniC语法支持清单.md)。
+完整语法支持见 `src/parser/grammar.cpp`（105 条产生式）与 `tests/` 下的用例基线；
+类型规则与报错文案在 `src/sema/semantic.cpp` 中实现。

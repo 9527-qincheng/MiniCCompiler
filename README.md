@@ -7,12 +7,31 @@
 
 ## 快速开始
 
+### 方式一：一键配置并启动 GUI（推荐，不用命令行）
+
+```
+git clone https://github.com/9527-qincheng/MiniCCompiler.git
+```
+
+然后在资源管理器里双击 `MiniCCompiler\一键配置并启动.bat`。
+
+脚本按顺序检查四样东西：**g++ → Node.js/npm → Electron → minic.exe**。缺哪一样就先问你，
+同意后才自动安装或编译（Electron 走 `npm install`，`minic.exe` 走 `build.bat build`）；
+拒绝则提示「无法运行」并停住等你按键，不会一闪而过。四项齐了自动打开 GUI。
+
+> 需要事先装好 g++ 与 Node.js：前者用来编译编译器，后者用来跑 Electron。
+> Electron 本体由脚本自动 `npm install`（约 100 MB），`gui/.npmrc` 已配好国内镜像。
+
+### 方式二：命令行
+
 ```bash
 git clone https://github.com/9527-qincheng/MiniCCompiler.git
 cd MiniCCompiler
 build.bat                                  # 一键编译（Windows）
 build.bat run tests\test.mc                # 编译并运行
 ```
+
+GUI 也可以单独启动：`gui\启动GUI.bat`（前提是已执行过 `npm install` 与 `build.bat build`）。
 
 ## Git 仓库
 
@@ -25,6 +44,7 @@ build.bat run tests\test.mc                # 编译并运行
 ```
 MiniCCompiler/
 ├── build.bat               # 一键构建脚本（Windows，自动收集 src 下所有 .cpp）
+├── 一键配置并启动.bat      # 检查 g++/Node/Electron/minic.exe，缺什么问什么，齐了就启动 GUI
 ├── CMakeLists.txt          # C++17 + GLOB_RECURSE，产出 minic
 ├── README.md
 ├── .gitignore

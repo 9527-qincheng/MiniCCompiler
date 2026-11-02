@@ -1,4 +1,5 @@
-@echo off
+﻿@echo off
+chcp 65001 >nul
 rem ============================================================
 rem  MiniC Compiler GUI launcher
 rem ------------------------------------------------------------
@@ -21,7 +22,13 @@ set "NODE_OPTIONS="
 
 if not exist "%APP_DIR%\node_modules\electron\dist\electron.exe" (
     echo [ERROR] Electron runtime not found.
-    echo         Run:  cd /d "%APP_DIR%"  ^&^&  npm install
+    echo.
+    echo   最简单的办法：关掉本窗口，到项目根目录双击
+    echo     "一键配置并启动.bat"
+    echo   它会自动检查并装好所有缺失的组件，然后启动 GUI。
+    echo.
+    echo   或者手动执行：
+    echo     cd /d "%APP_DIR%"  ^&^&  npm install
     pause
     exit /b 1
 )

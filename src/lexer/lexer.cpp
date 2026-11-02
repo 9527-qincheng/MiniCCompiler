@@ -11,6 +11,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
+#include "common/pathutil.h"
 #include <sstream>
 
 // 转换表（Q11 手写简化版）：
@@ -76,15 +77,13 @@ int CLex::LookupKeyword(const std::string& word) const
 bool CLex::OpenSource(const std::string& szFileName)
 {
     m_szFileName = szFileName;
-    std::ifstream ifs(szFileName, std::ios::binary);
-    if (!ifs)
+    // 走宽字符路径：Windows 下 std::ifstream 会把 std::string 当 ANSI 代码页解释，
+    // 路径含该代码页表示不了的字（生僻字 / emoji）时打不开。见 common/pathutil.h。
+    if (!minic_path::ReadFileUtf8(szFileName, m_szSource))
     {
         EmitError("cannot open source file: " + szFileName, LineInfo(0, 0));
         return false;
     }
-    std::ostringstream oss;
-    oss << ifs.rdbuf();
-    m_szSource = oss.str();
 
     // 跳过 UTF-8 BOM（EF BB BF）：Windows 记事本/PS 保存的文件常带 BOM
     if (m_szSource.size() >= 3 &&

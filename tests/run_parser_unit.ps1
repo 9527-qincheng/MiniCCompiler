@@ -33,6 +33,7 @@ $exe = Join-Path $scratch "parser_unit_test.exe"
 
 $sources = @(
     (Join-Path $scriptDir "parser_unit_test.cpp"),
+    (Join-Path $srcDir "common\pathutil.cpp"),
     (Join-Path $srcDir "lexer\token.cpp"),
     (Join-Path $srcDir "lexer\lexer.cpp"),
     (Join-Path $srcDir "parser\ast.cpp"),

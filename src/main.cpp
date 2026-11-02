@@ -13,6 +13,7 @@
 #include "sema/semantic.h"
 #include "codegen/codegen.h"
 #include "sema/optimizer.h"
+#include "common/pathutil.h"
 
 #include <fstream>
 #include <iostream>
@@ -86,13 +87,13 @@ std::string DumpQuadsText(const IRGenerator& ir, const CodeList& codes)
 
 bool WriteTextFile(const std::string& path, const std::string& content)
 {
-    std::ofstream ofs(path, std::ios::binary);
-    if (!ofs)
+    // 走宽字符路径：Windows 下 std::ofstream 会把 std::string 当 ANSI 代码页解释，
+    // 路径含该代码页表示不了的字（生僻字 / emoji）时打不开。见 common/pathutil.h。
+    if (!minic_path::WriteFileUtf8(path, content))
     {
         EmitError("cannot write output file: " + path, LineInfo(0, 0));
         return false;
     }
-    ofs << content;
     return true;
 }
 
@@ -164,7 +165,16 @@ int main(int argc, char* argv[])
         }
     }
 
-    const std::string srcFile = argv[1];
+    // 源文件路径优先取宽字符版本：CRT 在进入 main 之前已经把 argv 按 ANSI 代码页
+    // 转换过一次，路径里只要有不被该代码页覆盖的字符，argv 里就已经是 "??"，
+    // 事后再转也救不回来，只能从 GetCommandLineW() 重新取。
+    std::string srcFile = argv[1];
+#ifdef _WIN32
+    {
+        const std::string wideArg = minic_path::WideArgv(1);
+        if (!wideArg.empty()) srcFile = wideArg;
+    }
+#endif
     bool dumpTokens = false;
     bool dumpAst = false;
     bool dumpParse = false;

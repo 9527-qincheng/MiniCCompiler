@@ -20,11 +20,17 @@ namespace LexState {
     constexpr int STRING_DONE = 6;
     constexpr int CHAR        = 7;
     constexpr int CHAR_ESC    = 8;
-    constexpr int CHAR_DONE  = 9;
+    constexpr int CHAR_DONE   = 9;
     constexpr int OP          = 10;
     constexpr int OP2         = 11;
     constexpr int ACCEPT      = 90;
     constexpr int ERROR       = 99;
+}
+
+static bool IsDoubleOp(const std::string& t)
+{
+    return t == "==" || t == "!=" || t == "<=" || t == ">=" ||
+           t == "&&" || t == "||" || t == "++" || t == "--";
 }
 
 int CLex::m_szLexTbl[50][256] = {{0}};
@@ -75,12 +81,14 @@ static void InitLexTable(int tbl[50][256])
     SetAll(tbl, STRING, STRING);
     tbl[STRING]['"'] = STRING_DONE;
     tbl[STRING]['\\'] = STRING_ESC;
+    tbl[STRING]['\n'] = ERROR;
     SetAll(tbl, STRING_ESC, STRING);
 
     // --- S_CHAR (7) / S_CHAR_ESC (8) / S_CHAR_DONE (9) ---
     SetAll(tbl, CHAR, CHAR);
     tbl[CHAR]['\''] = CHAR_DONE;
     tbl[CHAR]['\\'] = CHAR_ESC;
+    tbl[CHAR]['\n'] = ERROR;
     SetAll(tbl, CHAR_ESC, CHAR);
 
     // --- S_OP (10) / S_OP2 (11) ---
@@ -220,25 +228,30 @@ void CLex::ReduceToken(int state, size_t start, size_t end, int row, int col)
         break;
     }
     case CHAR_DONE: {
-        Token tok(TokenType::TOKEN_CHAR_CONST, text, row, col);
-        if (text.size() >= 3) {
-            char c = text[1];
-            if (c == '\\' && text.size() >= 4) {
-                char e = text[2];
-                switch (e) {
-                case 'n': c = '\n'; break;
-                case 't': c = '\t'; break;
-                case 'r': c = '\r'; break;
-                case '0': c = '\0'; break;
-                case '\\': c = '\\'; break;
-                case '\'': c = '\''; break;
-                case '"': c = '"'; break;
-                default: c = e; break;
-                }
+        std::string inner = text.substr(1, text.size() - 2);
+        bool valid = false;
+        char c = 0;
+        if (inner.size() == 1) {
+            c = inner[0];
+            valid = true;
+        } else if (inner.size() == 2 && inner[0] == '\\') {
+            char e = inner[1];
+            switch (e) {
+            case 'n': case 't': case 'r': case '0':
+            case '\\': case '\'': case '"':
+                c = (e == 'n') ? '\n' : (e == 't') ? '\t' :
+                    (e == 'r') ? '\r' : (e == '0') ? '\0' : e;
+                valid = true;
+                break;
             }
-            tok.m_cVal = c;
-            tok.m_iVal = static_cast<long long>(static_cast<unsigned char>(c));
         }
+        if (!valid) {
+            EmitError("invalid char constant: " + text, LineInfo(row, col));
+            break;
+        }
+        Token tok(TokenType::TOKEN_CHAR_CONST, text, row, col);
+        tok.m_cVal = c;
+        tok.m_iVal = static_cast<long long>(static_cast<unsigned char>(c));
         m_TokenList.push_back(tok);
         break;
     }
@@ -325,7 +338,7 @@ bool CLex::Run()
 
             int next = m_szLexTbl[state][c];
             if (next == ERROR) break;
-            if (next == ACCEPT) break;  // 这个字符不属于当前词，停止
+            if (next == ACCEPT) break;
 
             state = next;
             if (c == '\n') { ++m_iRow; m_iCol = 1; } else { ++m_iCol; }
@@ -341,9 +354,17 @@ bool CLex::Run()
         if (lastAccept == std::string::npos) {
             EmitError(std::string("unexpected character '") + m_szSource[startPos] + "'",
                       LineInfo(startRow, startCol));
-            if (m_szSource[startPos] == '\n') { ++m_iRow; m_iCol = 1; } else { ++m_iCol; }
+            char badch = m_szSource[m_iPos];
+            if (badch == '\n') { ++m_iRow; m_iCol = 1; } else { ++m_iCol; }
             ++m_iPos;
             continue;
+        }
+
+        // OP2 不是真双字符运算符就回退一个字符，按单字符 OP 归约
+        if (acceptState == LexState::OP2 && !IsDoubleOp(m_szSource.substr(startPos, lastAccept - startPos))) {
+            lastAccept--;
+            acceptState = LexState::OP;
+            lastCol--;
         }
 
         m_iPos = lastAccept; m_iRow = lastRow; m_iCol = lastCol;

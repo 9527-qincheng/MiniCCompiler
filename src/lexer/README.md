@@ -83,4 +83,4 @@ struct Token
 
 - **不要靠调整 `TokenType` 的枚举顺序来改编码**：编码由 `TokenTypeToCode()` 显式映射，枚举顺序与编码无关。
 - 新增终结符要同步三处：`token.h` 的枚举、`token.cpp` 的 `TokenTypeToString` / `TokenTypeToCode`、`parser/grammar.cpp` 的预测分析表（用 `tools/generate_grammar.py` 重新生成，不要手改）。
-- 扫描器是手写的（`ScanIdent` / `ScanNumber` / `ScanCharConst` / `ScanString` / `ScanOperator`），**不要改成正则**——精确的行列号与错误定位依赖逐字符推进。
+- 扫描器是 **DFA 状态表驱动**的（`m_szLexTbl[状态][字符值]`），逐字符推进；**不要改成正则**——精确的行列号与错误定位依赖逐字符推进。词法出错时的恢复策略见 `Run()` 的错误分支。

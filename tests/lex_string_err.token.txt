@@ -1,0 +1,7 @@
+2:1  IDENT  string
+2:8  IDENT  s
+2:10  ASSIGN  =
+3:1  INT  int
+3:5  IDENT  x
+3:6  SEMI  ;
+4:1  EOF  <eof>

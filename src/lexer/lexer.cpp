@@ -33,19 +33,19 @@ static bool IsDoubleOp(const std::string& t)
            t == "&&" || t == "||" || t == "++" || t == "--";
 }
 
-int CLex::m_szLexTbl[50][256] = {{0}};
-bool CLex::m_bAccept[50] = {false};
+int CLex::m_szLexTbl[13][256] = {{0}};
+bool CLex::m_bAccept[13] = {false};
 
 static void SetAll(int tbl[][256], int state, int val)
 {
     for (int c = 0; c < 256; ++c) tbl[state][c] = val;
 }
 
-static void InitLexTable(int tbl[50][256])
+static void InitLexTable(int tbl[13][256])
 {
     using namespace LexState;
     // 先全部填成错误态
-    for (int s = 0; s < 50; ++s)
+    for (int s = 0; s < 13; ++s)
         for (int c = 0; c < 256; ++c)
             tbl[s][c] = ERROR;
 
@@ -81,14 +81,12 @@ static void InitLexTable(int tbl[50][256])
     SetAll(tbl, STRING, STRING);
     tbl[STRING]['"'] = STRING_DONE;
     tbl[STRING]['\\'] = STRING_ESC;
-    tbl[STRING]['\n'] = ERROR;
     SetAll(tbl, STRING_ESC, STRING);
 
     // --- S_CHAR (7) / S_CHAR_ESC (8) / S_CHAR_DONE (9) ---
     SetAll(tbl, CHAR, CHAR);
     tbl[CHAR]['\''] = CHAR_DONE;
     tbl[CHAR]['\\'] = CHAR_ESC;
-    tbl[CHAR]['\n'] = ERROR;
     SetAll(tbl, CHAR_ESC, CHAR);
 
     // --- S_OP (10) / S_OP2 (11) ---
@@ -324,16 +322,14 @@ bool CLex::Run()
         {
             unsigned char c = static_cast<unsigned char>(m_szSource[m_iPos]);
 
-            // 转义处理：吞掉反斜杠和后面一个字符
-            if (c == '\\' && (state == STRING || state == CHAR)) {
-                if (c == '\n') { ++m_iRow; m_iCol = 1; } else { ++m_iCol; }
-                ++m_iPos;
-                if (m_iPos < m_szSource.size()) {
-                    unsigned char c2 = static_cast<unsigned char>(m_szSource[m_iPos]);
-                    if (c2 == '\n') { ++m_iRow; m_iCol = 1; } else { ++m_iCol; }
-                    ++m_iPos;
-                }
-                continue;
+            // 字符串/字符里遇到换行：报错但结束当前token，下一行继续扫描
+            if (c == '\n' && (state == STRING || state == STRING_ESC)) {
+                EmitError("newline in string literal", LineInfo(m_iRow, m_iCol));
+                break;
+            }
+            if (c == '\n' && (state == CHAR || state == CHAR_ESC)) {
+                EmitError("newline in char literal", LineInfo(m_iRow, m_iCol));
+                break;
             }
 
             int next = m_szLexTbl[state][c];
@@ -351,7 +347,30 @@ bool CLex::Run()
             if (state == STRING_DONE || state == CHAR_DONE) break;
         }
 
+        // 数字里出现第二个小数点（1.2.3）：报错并跳过多余的 . 和数字
+        size_t skipTo = 0;
+        if (state == NUMBER_DOT && m_iPos < m_szSource.size() && m_szSource[m_iPos] == '.') {
+            EmitError("malformed number: extra decimal point", LineInfo(m_iRow, m_iCol));
+            size_t p = m_iPos + 1;
+            while (p < m_szSource.size() &&
+                   std::isdigit(static_cast<unsigned char>(m_szSource[p]))) {
+                ++p;
+            }
+            skipTo = p;
+        }
+
         if (lastAccept == std::string::npos) {
+            // 未闭合字符串 / 字符常量：报出真正的错误类型，停在错误位置继续扫描
+            if (state == STRING || state == STRING_ESC) {
+                EmitError("unterminated string literal", LineInfo(startRow, startCol));
+                // m_iPos 停在换行处，外层 SkipSpace 会吃掉换行，下一行继续
+                continue;
+            }
+            if (state == CHAR || state == CHAR_ESC) {
+                EmitError("unterminated char literal", LineInfo(startRow, startCol));
+                continue;
+            }
+
             EmitError(std::string("unexpected character '") + m_szSource[startPos] + "'",
                       LineInfo(startRow, startCol));
             char badch = m_szSource[m_iPos];
@@ -368,6 +387,7 @@ bool CLex::Run()
         }
 
         m_iPos = lastAccept; m_iRow = lastRow; m_iCol = lastCol;
+        if (skipTo > m_iPos) { m_iPos = skipTo; }
         ReduceToken(acceptState, startPos, lastAccept, startRow, startCol);
     }
 

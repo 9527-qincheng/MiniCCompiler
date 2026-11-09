@@ -51,8 +51,11 @@ $cases = @(
     @{ name = "lex_char";      },
     @{ name = "lex_challenge"; },
     @{ name = "lex_op_edge";   },
+    @{ name = "lex_string";    },
     @{ name = "bad_char";      lexError = $true },
-    @{ name = "bad_op";        lexError = $true }
+    @{ name = "bad_op";        lexError = $true },
+    @{ name = "bad_lex";       lexError = $true },
+    @{ name = "lex_string_err"; lexError = $true }
 )
 
 function Read-Text([string]$path) {

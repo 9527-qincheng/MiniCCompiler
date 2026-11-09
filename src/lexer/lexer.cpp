@@ -25,9 +25,9 @@
 // 字符类别（列=ASCII，值=类别）：
 //   0=空白  1=字母  2=数字  3=运算符  4=界符  5=双引号  6=单引号  其余=非法
 // m_szLexTbl[状态][字符类别] = 下一状态
-int CLex::m_szLexTbl[50][130] = {{0}};
+int CLex::m_szLexTbl[50][256] = {{0}};
 
-static void InitLexTable(int tbl[50][130])
+static void InitLexTable(int tbl[50][256])
 {
     // === DFA 状态编号 ===
     // 0 = S_START      初始状态
@@ -41,7 +41,7 @@ static void InitLexTable(int tbl[50][130])
 
     // --- 先全部填成错误态 ---
     for (int s = 0; s < 50; ++s)
-        for (int c = 0; c < 130; ++c)
+        for (int c = 0; c < 256; ++c)
             tbl[s][c] = 99;
 
     // --- S_START (状态0) 的转移 ---
@@ -530,8 +530,9 @@ bool CLex::Run()
         if (m_iPos >= m_szSource.size()) break;
 
         char ch = m_szSource[m_iPos];
-        // 查转换表：当前状态 + 当前字符 -> 下一状态
-        int next = m_szLexTbl[state][static_cast<unsigned char>(ch)];
+        // 查转换表：当前状态 + 当前字符 -> 下一状态（边界保护：非ASCII走错误态）
+        int code = static_cast<unsigned char>(ch);
+        int next = (code < 256) ? m_szLexTbl[state][code] : S_ERROR;
 
         switch (next)
         {
@@ -565,7 +566,9 @@ bool CLex::Run()
             state = S_START;
             break;
 
-        case S_START:      // 空白，SkipSpace已处理，继续循环
+        case S_START:      // 空白，SkipSpace已处理，兜底推进指针
+            ++m_iPos;
+            ++m_iCol;
             break;
 
         default:           // S_ERROR 或未定义转移

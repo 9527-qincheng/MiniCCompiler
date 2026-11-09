@@ -32,7 +32,7 @@ public:
 
 private:
     // 转换表：m_szLexTbl[状态][字符类别] -> 下一状态 / 动作（Q11 手写简化版）
-    static int m_szLexTbl[50][130];
+    static int m_szLexTbl[50][256];
     // 关键字表：map<string, TokenType>（参考书声明 2-3）
     std::map<std::string, TokenType> m_KeywordTbl;
 

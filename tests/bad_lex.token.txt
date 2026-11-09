@@ -1,0 +1,13 @@
+2:1  INT  int
+2:5  IDENT  a
+2:10  SEMI  ;
+3:1  FLOAT  float
+3:7  IDENT  b
+3:9  ASSIGN  =
+3:11  NUM_FLOAT  1.2
+3:16  SEMI  ;
+4:1  IDENT  string
+4:8  IDENT  s
+4:10  ASSIGN  =
+4:12  STRING  "unterminated;
+5:1  EOF  <eof>

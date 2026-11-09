@@ -14,35 +14,71 @@
 #include "common/pathutil.h"
 #include <sstream>
 
-// 转换表（Q11 手写简化版）：
-// 行=DFA状态，列=字符ASCII。字符分类映射（列=ASCII，值=类别）：
-//   0=空白  1=字母  2=数字  3=运算符  4=界符  5=引号  其余=99非法
-// 在构造函数 InitLexTable() 中填充，兼容 C++11。
+// DFA 状态定义（s0~s6）
+//   s0 = S_START      初始状态，读入一个字符后决定走向
+//   s1 = S_IDENT      正在识别标识符/关键字
+//   s2 = S_NUMBER     正在识别整数
+//   s3 = S_NUMBER_DOT 正在识别浮点数（已遇小数点）
+//   s4 = S_STRING     正在识别字符串 "..."
+//   s5 = S_CHAR       正在识别字符常量 'c'
+//   s6 = S_OP         正在识别运算符/界符
+// 字符类别（列=ASCII，值=类别）：
+//   0=空白  1=字母  2=数字  3=运算符  4=界符  5=双引号  6=单引号  其余=非法
+// m_szLexTbl[状态][字符类别] = 下一状态
 int CLex::m_szLexTbl[50][130] = {{0}};
 
 static void InitLexTable(int tbl[50][130])
 {
-    // 空白类
+    // === DFA 状态编号 ===
+    // 0 = S_START      初始状态
+    // 1 = S_IDENT      标识符/关键字
+    // 2 = S_NUMBER     数字
+    // 3 = S_NUMBER_DOT 浮点数小数部分
+    // 4 = S_STRING     字符串
+    // 5 = S_CHAR       字符常量
+    // 6 = S_OP         运算符/界符
+    // 99 = S_ERROR     非法
+
+    // --- 先全部填成错误态 ---
+    for (int s = 0; s < 50; ++s)
+        for (int c = 0; c < 130; ++c)
+            tbl[s][c] = 99;
+
+    // --- S_START (状态0) 的转移 ---
+    // 空白留在初始态（SkipSpace会吃掉）
     tbl[0][' '] = 0; tbl[0]['\t'] = 0; tbl[0]['\r'] = 0; tbl[0]['\n'] = 0;
-    // 字母类
+    // 字母/下划线 -> S_IDENT
     for (int c = 'A'; c <= 'Z'; ++c) tbl[0][c] = 1;
     for (int c = 'a'; c <= 'z'; ++c) tbl[0][c] = 1;
     tbl[0]['_'] = 1;
-    // 数字类
+    // 数字 -> S_NUMBER
     for (int c = '0'; c <= '9'; ++c) tbl[0][c] = 2;
-    // 运算符类（含 v4.0 新增 < > ! & |）
-    tbl[0]['+'] = 3; tbl[0]['-'] = 3; tbl[0]['*'] = 3;
-    tbl[0]['/'] = 3; tbl[0]['='] = 3;
-    tbl[0]['<'] = 3; tbl[0]['>'] = 3; tbl[0]['!'] = 3;
-    tbl[0]['&'] = 3; tbl[0]['|'] = 3;
-    // 界符类（含 v4.0 新增 [ ]）
-    tbl[0]['('] = 4; tbl[0][')'] = 4; tbl[0]['{'] = 4; tbl[0]['}'] = 4;
-    tbl[0][';'] = 4; tbl[0][','] = 4;
-    tbl[0]['['] = 4; tbl[0][']'] = 4;
-    // 引号类：双引号字符串
-    tbl[0]['"'] = 5;
-    // 字符常量类（v4.0 新增）
-    tbl[0]['\''] = 6;
+    // 双引号 -> S_STRING
+    tbl[0]['"'] = 4;
+    // 单引号 -> S_CHAR
+    tbl[0]['\''] = 5;
+    // 运算符 -> S_OP
+    tbl[0]['+'] = 6; tbl[0]['-'] = 6; tbl[0]['*'] = 6;
+    tbl[0]['/'] = 6; tbl[0]['='] = 6;
+    tbl[0]['<'] = 6; tbl[0]['>'] = 6; tbl[0]['!'] = 6;
+    tbl[0]['&'] = 6; tbl[0]['|'] = 6;
+    // 界符 -> S_OP
+    tbl[0]['('] = 6; tbl[0][')'] = 6; tbl[0]['{'] = 6; tbl[0]['}'] = 6;
+    tbl[0][';'] = 6; tbl[0][','] = 6;
+    tbl[0]['['] = 6; tbl[0][']'] = 6;
+
+    // --- S_IDENT (状态1) 的转移：后续字母数字下划线留在标识符状态 ---
+    for (int c = 'A'; c <= 'Z'; ++c) tbl[1][c] = 1;
+    for (int c = 'a'; c <= 'z'; ++c) tbl[1][c] = 1;
+    for (int c = '0'; c <= '9'; ++c) tbl[1][c] = 1;
+    tbl[1]['_'] = 1;
+
+    // --- S_NUMBER (状态2) 的转移 ---
+    for (int c = '0'; c <= '9'; ++c) tbl[2][c] = 2;
+    tbl[2]['.'] = 3;  // 遇小数点转 S_NUMBER_DOT
+
+    // --- S_NUMBER_DOT (状态3) 的转移 ---
+    for (int c = '0'; c <= '9'; ++c) tbl[3][c] = 3;
 }
 
 CLex::CLex()
@@ -483,52 +519,64 @@ bool CLex::Run()
     m_TokenList.clear();
     m_ConstTexts.clear();
 
+    // DFA 状态机：s0 初始状态，查 m_szLexTbl[state][ch] 得下一状态
+    enum State { S_START = 0, S_IDENT = 1, S_NUMBER = 2, S_NUMBER_DOT = 3,
+                 S_STRING = 4, S_CHAR = 5, S_OP = 6, S_ERROR = 99 };
+    int state = S_START;
+
     while (m_iPos < m_szSource.size())
     {
         SkipSpace();
-        if (m_iPos >= m_szSource.size())
-        {
-            break;
-        }
+        if (m_iPos >= m_szSource.size()) break;
+
         char ch = m_szSource[m_iPos];
+        // 查转换表：当前状态 + 当前字符 -> 下一状态
+        int next = m_szLexTbl[state][static_cast<unsigned char>(ch)];
 
-        // 注释：// 或 /* ... */
-        if (ch == '/' && m_iPos + 1 < m_szSource.size() &&
-            (m_szSource[m_iPos + 1] == '/' || m_szSource[m_iPos + 1] == '*'))
+        switch (next)
         {
-            SkipComment();
-            continue;
-        }
-
-        // 字符串常量
-        if (ch == '"')
-        {
-            ScanString();
-            continue;
-        }
-
-        // 字符常量 'c'
-        if (ch == '\'')
-        {
-            ScanCharConst();
-            continue;
-        }
-
-        if (std::isalpha(static_cast<unsigned char>(ch)) || ch == '_')
-        {
+        case S_IDENT:      // s0 遇字母/_ -> 扫标识符
             ScanIdent();
-        }
-        else if (std::isdigit(static_cast<unsigned char>(ch)))
-        {
+            state = S_START;
+            break;
+
+        case S_NUMBER:     // s0 遇数字 -> 扫数字（含小数点）
+        case S_NUMBER_DOT:
             ScanNumber();
-        }
-        else
-        {
-            ScanOperator();
+            state = S_START;
+            break;
+
+        case S_STRING:     // s0 遇双引号 -> 扫字符串
+            ScanString();
+            state = S_START;
+            break;
+
+        case S_CHAR:       // s0 遇单引号 -> 扫字符常量
+            ScanCharConst();
+            state = S_START;
+            break;
+
+        case S_OP:         // s0 遇运算符/界符
+            if (ch == '/' && m_iPos + 1 < m_szSource.size() &&
+                (m_szSource[m_iPos + 1] == '/' || m_szSource[m_iPos + 1] == '*'))
+                SkipComment();
+            else
+                ScanOperator();
+            state = S_START;
+            break;
+
+        case S_START:      // 空白，SkipSpace已处理，继续循环
+            break;
+
+        default:           // S_ERROR 或未定义转移
+            EmitError(std::string("unexpected character '") + ch + "'",
+                      LineInfo(m_iRow, m_iCol));
+            ++m_iPos;
+            ++m_iCol;
+            break;
         }
     }
 
-    // 追加 EOF 标记
     m_TokenList.emplace_back(TokenType::TOKEN_EOF, "<eof>", m_iRow, m_iCol);
     return true;
 }

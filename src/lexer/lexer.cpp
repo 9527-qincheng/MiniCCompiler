@@ -322,13 +322,13 @@ bool CLex::Run()
         {
             unsigned char c = static_cast<unsigned char>(m_szSource[m_iPos]);
 
-            // 字符串/字符里遇到换行：报错但结束当前token，下一行继续扫描
+            // 字符串里遇到换行：报错但结束当前token，下一行继续扫描
             if (c == '\n' && (state == STRING || state == STRING_ESC)) {
                 EmitError("newline in string literal", LineInfo(m_iRow, m_iCol));
                 break;
             }
+            // 字符常量里遇到换行：交给后面的 unterminated 统一报错，不重复报
             if (c == '\n' && (state == CHAR || state == CHAR_ESC)) {
-                EmitError("newline in char literal", LineInfo(m_iRow, m_iCol));
                 break;
             }
 
@@ -360,10 +360,15 @@ bool CLex::Run()
         }
 
         if (lastAccept == std::string::npos) {
-            // 未闭合字符串 / 字符常量：报出真正的错误类型，停在错误位置继续扫描
+            // 未闭合字符串：报专属错误，仍产出 STRING token 给 parser
             if (state == STRING || state == STRING_ESC) {
                 EmitError("unterminated string literal", LineInfo(startRow, startCol));
-                // m_iPos 停在换行处，外层 SkipSpace 会吃掉换行，下一行继续
+                std::string text = m_szSource.substr(startPos, m_iPos - startPos);
+                Token tok(TokenType::TOKEN_STRING, text, startRow, startCol);
+                tok.m_iConstIdx = static_cast<int>(m_ConstTexts.size());
+                m_ConstTexts.push_back(text.size() >= 1 ? text.substr(1) : text);
+                m_TokenList.push_back(tok);
+                // 停在换行处，外层 SkipSpace 吃掉换行，下一行继续
                 continue;
             }
             if (state == CHAR || state == CHAR_ESC) {
@@ -387,7 +392,10 @@ bool CLex::Run()
         }
 
         m_iPos = lastAccept; m_iRow = lastRow; m_iCol = lastCol;
-        if (skipTo > m_iPos) { m_iPos = skipTo; }
+        if (skipTo > m_iPos) {
+            m_iCol += static_cast<int>(skipTo - m_iPos);
+            m_iPos = skipTo;
+        }
         ReduceToken(acceptState, startPos, lastAccept, startRow, startCol);
     }
 

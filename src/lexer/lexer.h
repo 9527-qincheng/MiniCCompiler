@@ -51,8 +51,6 @@ private:
     void InitKeywordTable();                            // 初始化关键字表
     void SkipSpace();                                   // 跳过空白/换行
     void SkipComment();                                  // 跳过注释（// 单行, /* */ 多行）
-    void ScanIdent();                                   // 扫描标识符/关键字
-    void ScanNumber();                                  // 扫描整数/浮点常量
     void ScanString();                                  // 扫描字符串常量 "..."
     void ScanCharConst();                               // 扫描字符常量 'c'（含转义）
     void ScanOperator();                                // 扫描运算符/界符（双字符优先）

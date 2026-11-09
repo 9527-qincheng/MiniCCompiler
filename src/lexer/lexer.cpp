@@ -519,64 +519,84 @@ bool CLex::Run()
     m_TokenList.clear();
     m_ConstTexts.clear();
 
-    // DFA 状态机：s0 初始状态，查 m_szLexTbl[state][ch] 得下一状态
-    enum State { S_START = 0, S_IDENT = 1, S_NUMBER = 2, S_NUMBER_DOT = 3,
-                 S_STRING = 4, S_CHAR = 5, S_OP = 6, S_ERROR = 99 };
-    int state = S_START;
-
-    while (m_iPos < m_szSource.size())
+    // === 教科书式 DFA：逐字符查表 + 接受态回退 ===
+    // 状态：0=初始 1=标识符 2=整数 3=浮点数 99=错误
+    // 接受态：1(标识符) 2(整数) 3(浮点数)
+    while (true)
     {
         SkipSpace();
         if (m_iPos >= m_szSource.size()) break;
 
-        char ch = m_szSource[m_iPos];
-        // 查转换表：当前状态 + 当前字符 -> 下一状态（边界保护：非ASCII走错误态）
-        int code = static_cast<unsigned char>(ch);
-        int next = (code < 256) ? m_szLexTbl[state][code] : S_ERROR;
+        unsigned char ch = static_cast<unsigned char>(m_szSource[m_iPos]);
 
-        switch (next)
-        {
-        case S_IDENT:      // s0 遇字母/_ -> 扫标识符
-            ScanIdent();
-            state = S_START;
-            break;
+        // 非标识符/数字开头的，直接交给原Scan函数（字符串/字符/运算符/注释）
+        if (ch == '"')  { ScanString();   continue; }
+        if (ch == '\'') { ScanCharConst(); continue; }
+        if (ch == '/' && m_iPos + 1 < m_szSource.size() &&
+            (m_szSource[m_iPos+1]=='/' || m_szSource[m_iPos+1]=='*'))
+        { SkipComment(); continue; }
 
-        case S_NUMBER:     // s0 遇数字 -> 扫数字（含小数点）
-        case S_NUMBER_DOT:
-            ScanNumber();
-            state = S_START;
-            break;
-
-        case S_STRING:     // s0 遇双引号 -> 扫字符串
-            ScanString();
-            state = S_START;
-            break;
-
-        case S_CHAR:       // s0 遇单引号 -> 扫字符常量
-            ScanCharConst();
-            state = S_START;
-            break;
-
-        case S_OP:         // s0 遇运算符/界符
-            if (ch == '/' && m_iPos + 1 < m_szSource.size() &&
-                (m_szSource[m_iPos + 1] == '/' || m_szSource[m_iPos + 1] == '*'))
-                SkipComment();
-            else
-                ScanOperator();
-            state = S_START;
-            break;
-
-        case S_START:      // 空白，SkipSpace已处理，兜底推进指针
-            ++m_iPos;
-            ++m_iCol;
-            break;
-
-        default:           // S_ERROR 或未定义转移
-            EmitError(std::string("unexpected character '") + ch + "'",
+        // 查s0表：决定是标识符还是数字
+        int first = m_szLexTbl[0][ch];
+        if (first != 1 && first != 2) {  // 运算符/界符/非法
+            if (first == 6) { ScanOperator(); continue; }
+            // 非法字符
+            EmitError(std::string("unexpected character '") + (char)ch + "'",
                       LineInfo(m_iRow, m_iCol));
+            ++m_iPos; ++m_iCol;
+            continue;
+        }
+
+        // 真DFA：逐字符查表转移
+        size_t startPos = m_iPos;
+        int startRow = m_iRow, startCol = m_iCol;
+        int state = first;
+        size_t lastAccept = m_iPos;
+        int lastRow = m_iRow, lastCol = m_iCol;
+
+        while (m_iPos < m_szSource.size())
+        {
+            unsigned char c = static_cast<unsigned char>(m_szSource[m_iPos]);
+            int next = m_szLexTbl[state][c];
+
+            if (next == 99) break;  // 非法转移，停止
+
+            state = next;
+            // 前进
+            if (c == '\n') { ++m_iRow; m_iCol = 1; } else { ++m_iCol; }
             ++m_iPos;
-            ++m_iCol;
-            break;
+
+            // 接受态：记录位置
+            if (state == 1 || state == 2 || state == 3) {
+                lastAccept = m_iPos;
+                lastRow = m_iRow; lastCol = m_iCol;
+            }
+        }
+
+        // 回退到最后一个接受位置
+        m_iPos = lastAccept; m_iRow = lastRow; m_iCol = lastCol;
+
+        // 归约输出token
+        std::string text = m_szSource.substr(startPos, m_iPos - startPos);
+        if (state == 1) {
+            int kw = LookupKeyword(text);
+            TokenType type = (kw >= 0) ? static_cast<TokenType>(kw) : TokenType::TOKEN_IDENT;
+            m_TokenList.emplace_back(type, text, startRow, startCol);
+        } else {
+            bool isFloat = (state == 3);
+            TokenType type = isFloat ? TokenType::TOKEN_NUM_FLOAT : TokenType::TOKEN_NUM_INT;
+            Token tok(type, text, startRow, startCol);
+            tok.m_bIsFloat = isFloat;
+            if (isFloat) {
+                tok.m_fVal = std::strtod(text.c_str(), nullptr);
+                tok.m_iVal = static_cast<long long>(tok.m_fVal);
+            } else {
+                tok.m_iVal = std::strtoll(text.c_str(), nullptr, 10);
+                tok.m_fVal = static_cast<double>(tok.m_iVal);
+            }
+            tok.m_iConstIdx = static_cast<int>(m_ConstTexts.size());
+            m_ConstTexts.push_back(text);
+            m_TokenList.push_back(tok);
         }
     }
 

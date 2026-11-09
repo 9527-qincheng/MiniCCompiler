@@ -26,6 +26,7 @@
 //   0=空白  1=字母  2=数字  3=运算符  4=界符  5=双引号  6=单引号  其余=非法
 // m_szLexTbl[状态][字符类别] = 下一状态
 int CLex::m_szLexTbl[50][256] = {{0}};
+bool CLex::m_bAccept[50] = {false};
 
 static void InitLexTable(int tbl[50][256])
 {
@@ -85,6 +86,10 @@ CLex::CLex()
 {
     InitKeywordTable();
     InitLexTable(m_szLexTbl);
+    // 接受态标记
+    m_bAccept[1] = true;   // S_IDENT
+    m_bAccept[2] = true;   // S_NUMBER
+    m_bAccept[3] = true;   // S_NUMBER_DOT
 }
 
 void CLex::InitKeywordTable()
@@ -487,7 +492,7 @@ bool CLex::Run()
             ++m_iPos;
 
             // 接受态：记录位置
-            if (state == 1 || state == 2 || state == 3) {
+            if (m_bAccept[state]) {
                 lastAccept = m_iPos;
                 lastRow = m_iRow; lastCol = m_iCol;
             }

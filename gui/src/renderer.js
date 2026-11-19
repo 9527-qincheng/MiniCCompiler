@@ -114,7 +114,30 @@ function escapeHtml(s) {
 }
 
 function measureLineHeight() {
-  state.lineHeight = parseFloat(getComputedStyle(el.source).lineHeight) || state.fontSize * 1.5;
+  // 行高必须实测，不能直接读 getComputedStyle().lineHeight。
+  // line-height:1.5 只声明了「行框至少 19.5px」，实际行框高度取
+  // max(19.5px, 字体自身的 ascent+descent)。换一台机器、换一个 fallback 字体
+  // （比如未安装 Sarasa Gothic SC 时退回 Consolas），实际行高可能是 20.5 或 21px，
+  // 而这里若仍返回 19.5，所有行标记的 top 按 19.5 递增，第 N 行就偏 (N-1)×差值——
+  // 表现就是「越往下滚，错误高亮和代码偏得越远」。
+  const cs = getComputedStyle(el.source);
+  const probe = document.createElement('div');
+  probe.style.position = 'absolute';
+  probe.style.visibility = 'hidden';
+  probe.style.left = '-9999px';
+  probe.style.top = '0';
+  probe.style.margin = '0';
+  probe.style.padding = '0';
+  probe.style.border = '0';
+  probe.style.whiteSpace = 'pre';
+  probe.style.fontFamily = cs.fontFamily;
+  probe.style.fontSize = cs.fontSize;
+  probe.style.lineHeight = cs.lineHeight;
+  probe.textContent = new Array(21).join('X\n') + 'X';   // 共 20 行
+  document.body.appendChild(probe);
+  const measured = probe.getBoundingClientRect().height / 20;
+  document.body.removeChild(probe);
+  state.lineHeight = measured > 0 ? Math.round(measured * 1000) / 1000 : (parseFloat(cs.lineHeight) || state.fontSize * 1.5);
 }
 
 /**
@@ -418,7 +441,6 @@ function formatDocument({ silent = false } = {}) {
 /* ------------------------- 编辑器渲染 ------------------------- */
 function renderEditor() {
   const text = el.source.value;
-  el.highlight.innerHTML = highlightMiniC(text) + '\n';
   if (el.placeholder) el.placeholder.classList.toggle('hidden', text.length > 0);
   const lineCount = text.split('\n').length;
   let g = '';
@@ -429,8 +451,10 @@ function renderEditor() {
 }
 
 function syncScroll() {
-  el.highlight.scrollTop = el.source.scrollTop;
-  el.highlight.scrollLeft = el.source.scrollLeft;
+  if (el.highlight) {
+    el.highlight.scrollTop = el.source.scrollTop;
+    el.highlight.scrollLeft = el.source.scrollLeft;
+  }
   el.gutter.scrollTop = el.source.scrollTop;
   el.marks.style.transform = `translateY(${-el.source.scrollTop}px)`;
   updateCurrentLine();
@@ -738,7 +762,7 @@ function applyFontSize(size) {
   state.fontSize = Math.max(11, Math.min(20, size));
   const px = state.fontSize + 'px';
   el.source.style.fontSize = px;
-  el.highlight.style.fontSize = px;
+  if (el.highlight) el.highlight.style.fontSize = px;
   el.gutter.style.fontSize = px;
   if (el.placeholder) el.placeholder.style.fontSize = px;
   measureLineHeight();
@@ -2186,17 +2210,17 @@ window.__minicTest = async ({ theme, break: breakIt, tab, menu, twice, multifile
       lineCount: ta.value.split('\n').length,
       srcScrollH: ta.scrollHeight,
       srcClientH: ta.clientHeight,
-      hlScrollH: el.highlight.scrollHeight,
-      hlClientH: el.highlight.clientHeight,
+      hlScrollH: el.highlight ? el.highlight.scrollHeight : null,
+      hlClientH: el.highlight ? el.highlight.clientHeight : null,
       gutScrollH: el.gutter.scrollHeight,
       srcLH: getComputedStyle(ta).lineHeight,
-      hlLH: getComputedStyle(el.highlight).lineHeight,
+      hlLH: el.highlight ? getComputedStyle(el.highlight).lineHeight : null,
       gutLH: getComputedStyle(el.gutter).lineHeight,
       srcFont: getComputedStyle(ta).fontFamily,
-      hlFont: getComputedStyle(el.highlight).fontFamily,
+      hlFont: el.highlight ? getComputedStyle(el.highlight).fontFamily : null,
       gutFont: getComputedStyle(el.gutter).fontFamily,
       srcFontSize: getComputedStyle(ta).fontSize,
-      hlFontSize: getComputedStyle(el.highlight).fontSize,
+      hlFontSize: el.highlight ? getComputedStyle(el.highlight).fontSize : null,
       derivedLH: Math.round(((ta.scrollHeight - 2 * padTop) / Math.max(1, ta.value.split('\n').length)) * 100) / 100,
     };
   }

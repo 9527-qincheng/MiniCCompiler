@@ -39,6 +39,7 @@ return t ;
 
 /* ------------------------- 状态 ------------------------- */
 const state = {
+  compileSeq: 0,     // 编译代次：用于丢弃已被后续编译取代的延迟渲染
   docs: [],          // 打开的文件列表
   activeId: null,
   fileName: '未命名.mc',
@@ -1081,11 +1082,20 @@ async function doCompile() {
   state.errorLines = [...new Set(errs.map((d) => d.line).filter((l) => l > 0))];
   state.warnLines = [...new Set(warns.map((d) => d.line).filter((l) => l > 0))];
 
-  // 先让出一帧：把「编译中…」的状态画出来、把排队中的点击先处理掉，
-  // 再重建产物面板。大文件下 renderArtifactsView() 要做上千次 DOM 操作，
-  // 若与上面的 IPC 返回在同一帧里同步执行，窗口会短暂失去响应。
-  await new Promise((r) => setTimeout(r, 0));
-  renderArtifactsView();
+  // 产物面板的重建推迟到下一轮任务：让 doCompile 先返回、finally 先复位 busy，
+  // 编辑器立刻恢复输入与点选，面板随后补齐。
+  // 大文件或错误很多时 renderArtifactsView() 要做上千次 DOM 操作（innerHTML 解析 +
+  // 行标记重排），若在这里同步执行，主线程会被占住数百毫秒到数秒，用户看到的就是
+  // 「点编辑器没反应、过一会才好」。用代次号丢弃已被后续编译取代的旧渲染。
+  const compileSeq = ++state.compileSeq;
+  setTimeout(() => {
+    if (compileSeq !== state.compileSeq) return;
+    try {
+      renderArtifactsView();
+    } catch (e) {
+      console.error('renderArtifactsView failed', e);
+    }
+  }, 0);
 
   const elapsed = res && res.durationMs != null ? res.durationMs : Math.round(performance.now() - t0);
 

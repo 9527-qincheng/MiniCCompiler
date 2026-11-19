@@ -452,7 +452,10 @@ body {
   overflow: auto;
   user-select: text;
 }
-#source::selection { background: var(--selection); color: transparent; }
+/* 选中文字必须保持可读：这条规则原本是配合「透明 textarea + 下层彩色 pre」写的
+   （选中时让下层的彩色文字透出来）。那个叠层已经删掉，若还保留 color: transparent，
+   选中区域就只剩一块蓝色、字全看不见——全选时整屏变成一片蓝。 */
+#source::selection { background: var(--selection); color: var(--text); }
 
 /* 行标记层：子元素的 top 是「内容绝对坐标」，整层靠 translateY(-scrollTop) 跟随滚动。
    容器高度必须等于内容总高（renderMarks 按 scrollHeight 写入），否则超出第一屏的

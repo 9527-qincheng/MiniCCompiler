@@ -69,7 +69,8 @@ function check(cond, label) {
   check(r1.stage === 'run', '正常程序走到 run 阶段');
   check(r1.ok === true, '正常程序 ok = true');
   check(r1.exitCode === 0, '正常程序退出码 0');
-  check(String(r1.stdout || '').replace(/\s+$/, '') === '3\n30', 'print 输出为 "3" 与 "30"');
+  // print 不自动换行（要换行须显式 print('\n')），所以两次 print 会连成 "330"
+  check(String(r1.stdout || '').replace(/\s+$/, '') === '330', 'print 输出为 "330"（print 不自动换行）');
   check(Boolean(r1.asm), '返回了 .asm 文本');
   check(typeof r1.compileMs === 'number' && typeof r1.linkMs === 'number' && typeof r1.runMs === 'number',
     '返回了编译/链接/运行三段耗时');

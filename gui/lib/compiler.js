@@ -78,12 +78,16 @@ function runProcess(exe, args, cwd, opts = {}) {
     let settled = false;
     let child = null;
 
+    // Windows 上子进程被异常终止时，Node 的 close 事件给出的是 32 位无符号数
+    // （例如整数除零 0xC0000094 会变成 3221225620），不转换就无法用 code < 0 判断崩溃。
+    const toSignedCode = (v) => (typeof v === 'number' && v > 0x7fffffff ? v - 0x100000000 : v);
+
     const finish = (code, spawnError) => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
       resolve({
-        code,
+        code: toSignedCode(code),
         out: Buffer.concat(out),
         err: Buffer.concat(err),
         spawnError: spawnError || null,

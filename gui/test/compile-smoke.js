@@ -43,7 +43,10 @@ int main() {
   console.log('\n[good] exitCode =', r1.exitCode, '| duration =', r1.durationMs + 'ms');
   check(r1.exitCode === 0, 'good source exits 0');
   check(Boolean(r1.artifacts['.token.txt']), 'token artifact written');
-  check(Boolean(r1.artifacts['.parse.txt']), 'parse artifact written');
+  // .parse.txt 记录每一步的完整分析栈与剩余全部 Token，文本量随源码规模平方增长
+  // （实测 1500 行源码会产生 1.2 GB、编译耗时 30 秒），界面编译已不再生成它。
+  // 这里反向断言，防止有人误把 --dump-parse 加回去。
+  check(!r1.artifacts['.parse.txt'], 'parse artifact not generated (by design)');
   check(Boolean(r1.artifacts['.ast.txt']), 'ast artifact written');
   check(Boolean(r1.artifacts['.sym.txt']), 'symtab artifact written');
   check(Boolean(r1.artifacts['.quad.txt']), 'quad artifact written');

@@ -12,6 +12,11 @@ const { spawn } = require('child_process');
 
 const ARTIFACT_EXTS = ['.token.txt', '.parse.txt', '.ast.txt', '.sym.txt', '.quad.txt', '.asm'];
 
+// 分析轨迹（.parse.txt）记录的是「每一步的完整分析栈 + 剩余全部 Token」，
+// 2 KB 的源码就能产生 2 MB 文本。整个文件通过 IPC 传回渲染进程会把界面卡住，
+// 因此只回传前 512 KB，并在末尾注明完整文件的位置。
+const PARSE_PREVIEW_BYTES = 512 * 1024;
+
 function findMinic(guiDir) {
   const root = guiDir || path.join(__dirname, '..');
   const candidates = [
@@ -136,18 +141,42 @@ async function compileSource({ text, name, guiDir }) {
     try { fs.unlinkSync(base + ext); } catch { /* 旧产物不存在 */ }
   }
 
+  // 分析轨迹（.parse.txt）在界面上没有展示页签，只被用来判定「LL(1) 语法分析通过」，
+  // 但它的文本量随源码规模平方增长：实测 500 条语句（约 1500 行）会产生 1.2 GB、
+  // 编译耗时 30 秒；100 条语句也要 53 MB / 1.3 秒；2 KB 的小文件就有 2.1 MB。
+  // 因此界面编译一律不生成它——这一项改由 .ast.txt 是否存在来判断。
+  // 需要完整分析过程时，直接在命令行执行 minic <file.mc> --dump-parse。
+  const PARSE_ENABLED = false;
+  const lineCount = String(text == null ? '' : text).split('\n').length;
+  const args = [srcPath, '--dump-tokens', '--dump-ast', '--dump-symtab', '--dump-quads'];
+  if (PARSE_ENABLED) args.splice(1, 0, '--dump-parse');
+
   const t0 = Date.now();
-  const res = await runProcess(
-    exe,
-    [srcPath, '--dump-tokens', '--dump-parse', '--dump-ast', '--dump-symtab', '--dump-quads'],
-    workDir,
-  );
+  const res = await runProcess(exe, args, workDir);
   const durationMs = Date.now() - t0;
 
   const artifacts = {};
   for (const ext of ARTIFACT_EXTS) {
+    const file = base + ext;
     try {
-      artifacts[ext] = decodeBuffer(fs.readFileSync(base + ext));
+      if (ext === '.parse.txt') {
+        const st = fs.statSync(file);
+        if (st.size > PARSE_PREVIEW_BYTES) {
+          const fd = fs.openSync(file, 'r');
+          const buf = Buffer.alloc(PARSE_PREVIEW_BYTES + 4);
+          const n = fs.readSync(fd, buf, 0, PARSE_PREVIEW_BYTES + 4, 0);
+          fs.closeSync(fd);
+          const head = decodeBuffer(buf.subarray(0, n));
+          const cut = head.lastIndexOf('\n');
+          artifacts[ext] =
+            (cut > 0 ? head.slice(0, cut) : head) +
+            `\n\n# （分析轨迹共 ${(st.size / 1048576).toFixed(1)} MB / ${st.size.toLocaleString()} 字节，` +
+            `为保持界面流畅此处只显示前 ${(PARSE_PREVIEW_BYTES / 1024).toFixed(0)} KB；` +
+            `完整文件：${file}）\n`;
+          continue;
+        }
+      }
+      artifacts[ext] = decodeBuffer(fs.readFileSync(file));
     } catch {
       artifacts[ext] = null;
     }
@@ -181,6 +210,8 @@ async function compileSource({ text, name, guiDir }) {
     durationMs,
     exe,
     workDir,
+    parseGenerated: PARSE_ENABLED,
+    sourceLines: lineCount,
   };
 }
 

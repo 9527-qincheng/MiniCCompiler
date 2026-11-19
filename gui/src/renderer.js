@@ -795,13 +795,17 @@ function renderTokens() {
 }
 
 /* ------------------------- 纯文本产物 ------------------------- */
+const RAW_LINE_LIMIT = 5000;
+
 function renderRaw(target, text, kind) {
   if (!text) {
     target.innerHTML = `<span class="raw-comment">暂无内容 — 点击「编译」生成</span>`;
     return;
   }
-  const lines = text.replace(/\s+$/, '').split(/\r?\n/);
-  target.innerHTML = lines
+  const all = text.replace(/\s+$/, '').split(/\r?\n/);
+  const truncated = all.length > RAW_LINE_LIMIT;
+  const lines = truncated ? all.slice(0, RAW_LINE_LIMIT) : all;
+  const body = lines
     .map((line) => {
       const esc = escapeHtml(line);
       if (/^\s*(#|\/\/)/.test(line)) return `<span class="raw-comment">${esc}</span>`;
@@ -811,6 +815,9 @@ function renderRaw(target, text, kind) {
       return esc;
     })
     .join('\n');
+  target.innerHTML = body + (truncated
+    ? `\n<span class="raw-comment">…… 共 ${all.length} 行，为保持界面流畅只显示前 ${RAW_LINE_LIMIT} 行；完整文件见 %TEMP%\\minic-gui\\</span>`
+    : '');
 }
 
 /* ------------------------- 语法树（框线树） ------------------------- */
@@ -980,7 +987,7 @@ function renderDiagnostics(result) {
   const passed = [];
   const tokenCount = parseTokens(state.artifacts.tokens).length;
   if (state.artifacts.tokens) passed.push(`词法 ${tokenCount} 记号`);
-  if (state.artifacts.parse) passed.push('LL(1) 语法分析');
+  if (state.artifacts.ast) passed.push('LL(1) 语法分析');
   if (state.artifacts.ast) passed.push('AST 构建');
 
   el.diagList.innerHTML =
@@ -1074,6 +1081,10 @@ async function doCompile() {
   state.errorLines = [...new Set(errs.map((d) => d.line).filter((l) => l > 0))];
   state.warnLines = [...new Set(warns.map((d) => d.line).filter((l) => l > 0))];
 
+  // 先让出一帧：把「编译中…」的状态画出来、把排队中的点击先处理掉，
+  // 再重建产物面板。大文件下 renderArtifactsView() 要做上千次 DOM 操作，
+  // 若与上面的 IPC 返回在同一帧里同步执行，窗口会短暂失去响应。
+  await new Promise((r) => setTimeout(r, 0));
   renderArtifactsView();
 
   const elapsed = res && res.durationMs != null ? res.durationMs : Math.round(performance.now() - t0);

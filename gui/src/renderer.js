@@ -2172,9 +2172,9 @@ window.__minicTest = async ({ theme, break: breakIt, tab, menu, twice, multifile
       padTop,
       errorLines: state.errorLines.slice(),
       expectedViewTop: Math.round(viewTopOf(line)),
-      currentLineTop: Math.round(parseFloat(el.currentLine.style.top) - ta.scrollTop),
-      currentLineRawTop: Math.round(parseFloat(el.currentLine.style.top)),
-      currentLineDisplay: getComputedStyle(el.currentLine).display,
+      currentLineTop: el.currentLine ? Math.round(parseFloat(el.currentLine.style.top) - ta.scrollTop) : null,
+      currentLineRawTop: el.currentLine ? Math.round(parseFloat(el.currentLine.style.top)) : null,
+      currentLineDisplay: el.currentLine ? getComputedStyle(el.currentLine).display : 'removed',
       marks: [...el.marks.children].map((m) => ({
         viewTop: Math.round(parseFloat(m.style.top) - ta.scrollTop),
         height: Math.round(parseFloat(m.style.height)),
@@ -2259,7 +2259,7 @@ window.__minicTest = async ({ theme, break: breakIt, tab, menu, twice, multifile
 
     // 6) 当前行高亮
     set('int a;\nint b;', 8);
-    r.currentLine = getComputedStyle(el.currentLine).display;
+    r.currentLine = el.currentLine ? getComputedStyle(el.currentLine).display : 'removed';
 
     // 7) 回车时自动排版当前行：a=10; → a = 10;
     set('a=10;', 5); press('Enter');

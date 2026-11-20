@@ -105,7 +105,7 @@ if not "!NPM_RC!"=="0" (
     if errorlevel 2 goto cannot_run
     goto check_elec
 )
-if not exist "%ELEC%" (
+if not exist "!ELEC!" (
     echo     [失败] 安装完成但找不到 electron.exe。
     echo.
     choice /c YN /n /m "    重试一次? [Y=重试 / N=退出] "
@@ -138,7 +138,7 @@ if errorlevel 1 (
     if errorlevel 2 goto cannot_run
     goto check_exe
 )
-if not exist "%EXE%" (
+if not exist "!EXE!" (
     echo     [失败] 编译完成但找不到 minic.exe。
     echo.
     choice /c YN /n /m "    重试一次? [Y=重试 / N=退出] "

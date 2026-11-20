@@ -43,8 +43,8 @@ if errorlevel 1 (
     echo [ERROR] g++ not found. Please install MinGW and add it to PATH.
     exit /b 1
 )
-if not exist "%SRCDIR%" (
-    echo [ERROR] src directory not found: %SRCDIR%
+if not exist "!SRCDIR!" (
+    echo [ERROR] src directory not found: !SRCDIR!
     echo         Run this script from the project root ^(same level as src^).
     exit /b 1
 )
@@ -73,7 +73,7 @@ for /r "%SRCDIR%" %%f in (*.cpp) do echo   - %%f
 echo ------------------------------------------------------------
 echo.
 
-if not exist "%BUILDDIR%" mkdir "%BUILDDIR%"
+if not exist "!BUILDDIR!" mkdir "!BUILDDIR!"
 
 rem ---------- compile ----------
 echo [1/2] Compiling ^(-std=c++17 -Wall -Wextra^) ...
@@ -161,8 +161,8 @@ rem ============================================================================
 rem  clean / rebuild / list / run
 rem ============================================================================
 :clean
-if exist "%BUILDDIR%" (
-    echo [INFO] Cleaning %BUILDDIR%
+if exist "!BUILDDIR!" (
+    echo [INFO] Cleaning !BUILDDIR!
     rmdir /s /q "%BUILDDIR%"
     echo [DONE] Cleaned
 ) else (

@@ -244,49 +244,46 @@ build\minic.exe tests\test.mc --dump-tokens --dump-ast --dump-symtab --dump-quad
 ...
 ```
 
-## 图形界面（GUI）
+## 图形界面（MiniC Studio）
 
-`gui/` 是基于 **Electron** 的桌面界面：暗/亮双主题、多文件标签、源码行号与语法高亮、
-代码格式化、7 类产物页签，以及可点击跳转的诊断列表，把「写代码 → 编译 → 看产物 → **运行看 print 输出**」
-串成一个窗口。
+`gui/` 是基于 **Electron + React 19 + Vite 8 + Monaco Editor + ECharts** 的桌面 IDE：暗/亮双主题、
+多文件标签、Monaco 编辑器（VS Code 同款内核）、9 类产物面板，以及可点击跳转的诊断列表，
+把「写代码 → 编译 → 看产物 → **运行看 print 输出**」串成一个窗口。
 
 ```bash
 cd gui
-npm install        :: 首次安装 Electron（.npmrc 已配置 npmmirror 镜像）
-启动GUI.bat        :: 或 npm start；需先 build.bat 生成 build\minic.exe
+npm install        :: 首次安装依赖（含 Electron，.npmrc 已配置 npmmirror 镜像）
+启动GUI.bat        :: 会先 npm run build 再启动；需先 build.bat 生成 build\minic.exe
 ```
 
-| 页签 | 数据来源 |
+| 面板 | 数据来源 |
 |---|---|
-| Token / 语法树 / 符号表 | `--dump-tokens` / `--dump-ast` / `--dump-symtab` 产物 |
-| 四元式 / 汇编 | `--dump-quads` 与默认 `.asm` 产物（均为真实输出） |
-| **运行输出** | **点「运行」（F5）：minic 编译 → gcc 汇编链接 → 执行 exe，抓 stdout/stderr** |
+| 词法 / 语法树 / 符号表 | `--dump-tokens` / `--dump-ast` / `--dump-symtab` 产物 |
+| 中间码 / 目标码 | `--dump-quads` 与默认 `.asm` 产物（均为真实输出） |
+| **控制流图** | 由四元式自动推导基本块与跳转边（`true` / `false` / `jump` / `next`） |
+| LL(1) | `--dump-parse` 分析轨迹（**仅在勾选「分析轨迹」时生成**；`.parse.txt` 随源码规模平方增长，大文件慎用） |
+| **运行** | **点「运行」（F5）：minic 编译 → gcc 汇编链接 → 执行 exe，抓 stdout/stderr** |
 | 诊断 | stderr 的 `minic: error/warning: 行:列: 消息`，点击跳到源码行 |
 
 > **`print` 的输出在哪看**：`print` 是运行期语句，`minic.exe` 只做编译，本身不输出 `print` 的内容。
-> 点工具栏 **运行**（或 `F5`）会走完整链路并执行程序，`print` 的结果显示在「运行输出」页签，
+> 点工具栏 **运行**（或 `F5`）会走完整链路并执行程序，`print` 的结果显示在「运行」面板，
 > 页脚给出编译/链接/运行耗时与进程退出码。只点「编译」是看不到任何 `print` 结果的。
 >
 > 运行需要 MinGW 的 `gcc`（自动从 PATH 查找；也可用环境变量 `MINIC_GCC` 指定完整路径）。
 > 程序若死循环，5 秒后被强制结束并提示超时。
 
-**示例库**：工具栏「示例▾」提供 20 条源码，分 6 组——基础（最小程序、最大公约数）、类型（浮点、
-字符与布尔）、函数（多实参与嵌套调用、递归）、数组与控制流（素数筛选、冒泡排序、数组统计、
-嵌套循环与多分支）、综合（全特性演示）、错误演示（8 条：缺分号+未声明、未声明变量、顶层声明写在
-语句后、词法语法语义三类混合、词法错误集中、语义错误集中、跨函数错误恢复、void 误用）。
-每条都标注了期望 stdout（或错误示例的 stderr 首行），**全部在真实工具链上跑通**：
-`build\minic.exe` 编译 → `gcc -x assembler` 汇编链接 → 运行比对输出。
-示例数据在 `gui/src/samples.js`，回归脚本 `gui/test/sample-smoke.js`。
+**示例库**：工具栏「示例」提供 20 条源码，分 6 组——基础、类型、函数、数组与控制流、综合、错误演示。
+每条都标注了期望 stdout（或错误示例的 stderr 首行），**全部在真实工具链上跑通**。
+示例数据在 `gui/renderer/src/data/samples.js`，回归脚本 `gui/test/sample-smoke.js`。
 
 **内建语法手册**：工具栏「语法手册」或 `F1` 打开全屏参考书，10 章 68 条，每条标注
-`✓ 支持` / `✗ 不支持` / `⚠ 有限制` / `· 说明`；不支持的直接给真实报错原文，支持的给可运行示例
-（可一键插入编辑器 / 载入为新文档 / 复制）。支持多关键词搜索与目录跳转。全部 60 条示例都在
-`build\minic.exe` 上实测过编译退出码与运行输出。
+`✓ 支持` / `✗ 不支持` / `⚠ 有限制` / `· 说明`；不支持的直接给真实报错原文，支持的给可运行示例。
+支持多关键词搜索与目录跳转。数据在 `gui/renderer/src/data/syntax-book.js`，
+回归脚本 `gui/test/book-smoke.js`。
 
 - 用法、快捷键、目录结构与启动器原理见 [gui/README.md](gui/README.md)。
-- 冒烟测试：`cd gui && node test\compile-smoke.js`（校验各类产物齐全、Token 格式与错误诊断格式）；
-  `node test\run-smoke.js`（校验编译→链接→执行链路、编译失败、除零崩溃与死循环超时）；
-  `node test\book-smoke.js`（语法手册数据层 + 渲染层）；`node test\sample-smoke.js`（示例库数据层与实跑）。
+- 渲染层是 React 应用（`gui/renderer/src/`），改动后需 `npm run build` 重新打包到 `gui/renderer/dist/`（该目录不入库）。
+- 冒烟测试：`cd gui && node test\compile-smoke.js`、`run-smoke.js`、`book-smoke.js`、`sample-smoke.js`。
 - 注意：本机实测原生程序在含中文的路径下文件 I/O 会失效，启动脚本会把 Electron 运行时部署到
   `%LOCALAPPDATA%\minic-gui\runtime`、`lib/compiler.js` 会把 `minic.exe` 复制到 `%TEMP%\minic-gui`，首次启动稍慢。
 

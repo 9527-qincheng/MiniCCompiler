@@ -1,181 +1,171 @@
-# MiniC 编译器 GUI（Electron）
+# MiniC Studio — MiniC 编译器图形界面
 
-按设计规范板 v1.0（S1~S5）实现的高保真桌面界面：暗/亮双主题、自定义标题栏、
-源码编辑器（行号 + 语法高亮）、7 类编译产物标签、诊断列表（点击跳转源码行），
-**并支持一键运行程序、直接查看 `print` 的输出**。
+MiniC Studio 是 MiniC 编译器的桌面 IDE，基于 **Electron + React + Vite + Monaco Editor + ECharts**。
+它把「写代码 → 编译 → 查看各阶段产物 → 运行程序看输出」串在同一个窗口里，
+既适合课堂演示，也适合日常调试编译器本身。
+
+## 功能亮点
+
+- **专业暗色 IDE**：石墨底 + 青色强调，自带浅色主题，可随时切换。
+- **Monaco 编辑器**：MiniC 语法高亮、关键字补全与悬停说明、括号配对、诊断波浪线、多标签、内置格式化。
+- **8 个可视化页签**：词法、语法树、符号表、中间码、目标码、LL(1)、运行、诊断。
+- **真实产物驱动**：所有页签都来自 `minic.exe` 的 `--dump-*` 产物，不是模拟数据。
+- **LL(1) 单步演示**：完整 105 条产生式、分析栈/剩余输入/动作三栏表格，可按步骤播放。
+- **四元式 + CFG**：中间码表格按操作分类着色，并自动划分基本块、绘制控制流图。
+- **AST 树**：可折叠语法树，支持节点详情与源码行定位。
+- **诊断联动**：编译错误在编辑器里标红，点击诊断卡跳到对应源码行。
+- **完整运行链路**：`minic` 生成汇编 → `gcc -x assembler` 链接 → 执行，捕获 stdout/stderr 与耗时。
+- **示例库 + 语法手册**：20 条可运行示例、10 章 68 条语法速查，均可一键插入编辑器。
 
 ## 启动
 
-双击 `启动GUI.bat`（推荐），或命令行：
+### 方式一：项目根目录一键启动（推荐）
+
+双击项目根目录的 `一键配置并启动.bat`，脚本会检查 g++、Node.js/npm、Electron 与
+`build\minic.exe`，缺什么补什么，然后启动 MiniC Studio。
+
+### 方式二：只启动 GUI
 
 ```bat
-cd /d MiniCCompiler\gui
-npm install          :: 首次
-启动GUI.bat
+cd gui
+npm install       :: 首次运行安装依赖（Electron、React、Vite、Monaco、ECharts）
+启动GUI.bat       :: 自动构建前端并启动
 ```
 
-需要先构建编译器后端：
+`启动GUI.bat` 每次启动都会先执行 `npm run build` 生成最新前端，再把 Electron 运行时
+部署到 `%LOCALAPPDATA%\minic-gui\runtime`，最后启动窗口。
+
+也可以手动：
 
 ```bat
-cd /d MiniCCompiler
-build.bat            :: 生成 build\minic.exe
+cd gui
+npm start
 ```
 
-## 快速上手（3 分钟）
+> `npm start` = `npm run build && electron . --no-sandbox --disable-gpu`。
+> 需要先执行 `build.bat build` 生成 `build\minic.exe`。
 
-1. **启动**：双击 `启动GUI.bat`，窗口打开（首次运行会先解压运行时，约 30 秒）。
-2. **写代码**：启动后是一个空白的新文件（`未命名.mc`）。可以直接输入，或点 **示例▾** 载入示例，
-   也可以点 **打开** 选择已有 `.mc` 文件。
-3. **多文件**：编辑器上方是文件标签栏。点 **新建**（或 `+` / `Ctrl+N`）新建空白文件，
-   每个文件独立保存内容、路径、编译产物和诊断；切换标签互不干扰。
-   标签上的蓝点表示该文件有未保存修改，点 × 或中键可关闭（有改动会先确认）。
-   **同一个文件不会重复打开**：再次点同一示例或打开同一路径时，会直接切到已有标签
-   （状态栏提示「已切换到已打开的 xxx」）。
-4. **编译**：点工具栏蓝色 **▶ 编译**（或 `Ctrl+Enter`）。改动过代码但还没重新编译时，
-   右上角状态会变成「已修改 · 待编译」。
-5. **保存**：`Ctrl+S`。没打开过文件时 → 弹出对话框选位置和文件名；已打开/已保存过 → 直接覆盖原文件。
-5. **看产物**：右侧 7 个标签分别是 Token / 语法树 / 符号表 / 四元式 / 汇编 / **运行输出** / 诊断，
-   点标签切换；Token 表按记号类型着色，标签上的数字是条目数。
-6. **看 print 输出**：点工具栏 **运行**（或按 `F5`）。它会依次做三件事——
-   `minic.exe` 编译出 `.asm` → `gcc` 汇编链接成 `.exe` → 执行程序，
-   然后把程序的 **stdout 显示在「运行输出」标签**里，页脚显示编译/链接/运行各阶段耗时与进程退出码。
-   > **为什么需要单独点「运行」**：`print` 是运行期语句，`minic.exe` 只负责编译，本身不会输出
-   > `print` 的内容。只点「编译」是看不到任何 `print` 结果的。
-   >
-   > 运行需要机器上有 MinGW 的 `gcc`（会自动从 PATH 里找，找不到则提示）。
-   > 若 `gcc` 不在 PATH，可设置环境变量 `MINIC_GCC=C:\msys64\ucrt64\bin\gcc.exe` 指过去。
-   > 程序若死循环，5 秒后会被强制结束并在输出区提示超时。
-7. **看错误**：编译失败会自动切到 **诊断** 标签，列出错误（行、列、阶段、原因），
-   **点一下错误行**，光标就跳到源码对应位置，编辑器里对应行有红色底纹。
-8. **调字号/主题**：编辑器内 `Ctrl+滚轮` 缩放字号；右上角 **主题** 或 `Ctrl+Shift+L` 切换暗/亮。
+## 界面结构
 
-## 为什么需要 启动GUI.bat
+```
+┌ 标题栏：MiniC Studio · 当前文件 · 最小化/最大化/关闭 ┐
+├ 工具栏：新建 打开 保存 | 示例库 语法手册 | 编译(F7) 运行(F5) | -O 字号 主题 ┤
+├ 左：源码编辑器（多标签）      │ 右：检查器（8 个页签）                   ┤
+├ 状态栏：编译状态 · 耗时 · Token 数 · 诊断数 · 光标位置 · 编码 · 主题     ┘
+```
 
-本机实测：**原生程序位于含中文的路径时（如 `E:\计算机软件实训\...`），其文件 I/O 会整体失效**——
-`minic.exe` 会报 `cannot open source file`，Electron 会直接崩溃。同一份二进制放到纯 ASCII
-路径则完全正常。启动脚本因此做两件事：
+编辑器与检查器之间的分隔条可以拖动，宽度会记住。
 
-1. 把 Electron 运行时部署到 `%LOCALAPPDATA%\minic-gui\runtime`（纯 ASCII 路径，仅首次）；
-2. 用该运行时加载本目录（应用目录可以留在中文路径，实测无影响）。
+## 八个页签
 
-同一原因，`lib/compiler.js` 在调用前会把 `minic.exe` 复制到 `%TEMP%\minic-gui\minic.exe`。
+| 页签 | 内容 |
+|---|---|
+| **词法** | Token 统计卡、类型分布环形图、可按类型筛选/搜索的完整 Token 表；点击行定位源码 |
+| **语法树** | 可折叠 AST 树、节点详情（类型/行号/子节点数）、节点数/深度统计；点击节点跳到源码行 |
+| **符号表** | 按作用域分栏展示变量、常量、类型、过程、形参、标号；支持搜索 |
+| **中间码** | 四元式表格按算术/关系/逻辑/数组/调用等分类着色；基本块划分与 CFG 控制流图 |
+| **目标码** | x86-64 汇编高亮、指令/伪指令/寄存器统计、寄存器使用分布 |
+| **LL(1)** | 预测分析全过程：105 条产生式、分析栈/剩余输入/动作表格，支持上一步/下一步/播放 |
+| **运行** | 编译 → 链接 → 运行终端，显示 stdout/stderr、编译/链接/运行耗时与退出码 |
+| **诊断** | 错误/警告卡片，含行:列、消息、源码片段；点击跳转到编辑器对应位置 |
 
-另外本机 GPU 进程无法在沙箱中启动，启动参数固定带 `--no-sandbox --disable-gpu`
-（`package.json` 的 start 脚本已包含）。
+## 常用操作
+
+| 操作 | 快捷键 |
+|---|---|
+| 新建标签页 | `Ctrl+N` |
+| 打开文件 | `Ctrl+O` |
+| 保存 | `Ctrl+S` |
+| 编译 | `F7` |
+| 运行 | `F5` |
+| 语法手册 | `F1` |
+| 格式化 | `Shift+Alt+F` |
+
+- **优化开关**：工具栏「优化 -O」切换 `minic.exe -O`，会影响中间码与目标码产物。
+- **LL(1) 分析**：首次切到 LL(1) 页签会按需附加 `--dump-parse` 重新编译；大文件的分析过程可能较大。
+- **导出产物**：词法 / 语法树 / 符号表 / 中间码 / 目标码页签右上角的导出按钮可将当前产物保存为 `.txt` / `.asm` 文件。
+- **主题/字号**：工具栏右侧切换深浅主题与 12–20 号字，设置会自动记住。
+
+## 示例库与语法手册
+
+- **示例库**：20 条源码，分 6 组（基础、类型、函数、数组与控制流、综合、错误演示），
+  全部在真实工具链上验证过退出码与输出。支持一键载入为新标签页。
+- **语法手册**：10 章 68 条，标注 `✓ 支持` / `✗ 不支持` / `⚠ 有限制` / `· 说明`；
+  支持多关键词搜索、目录跳转、一键插入编辑器。
 
 ## 目录结构
 
 ```
 gui/
-  main.js            Electron 主进程：窗口/IPC/文件对话框/截图模式
-  preload.js         contextBridge 暴露的最小 API
-  lib/compiler.js    编译调度（纯 Node，可单测）：调用 minic.exe、回读产物、编码处理
-  src/index.html     界面结构
-  src/styles.css     设计令牌（S5 色值）+ 布局 + 组件 + 语法手册浮层
-  src/syntax-book.js 语法手册数据（10 章 67 条，纯数据、可 require 校验）
-  src/samples.js     示例源码库（15 条，分组、逐条实测、纯数据可 require）
-  src/renderer.js    编辑器高亮、Token 表、7 标签、诊断解析、菜单与快捷键、语法手册
-  test/compile-smoke.js  编译管线冒烟测试
-  test/run-smoke.js      运行链路冒烟测试（编译→链接→执行）
-  test/book-smoke.js     语法手册数据/渲染冒烟测试
-  test/sample-smoke.js   示例库数据/可编译性冒烟测试
-  启动GUI.bat        启动器（部署 ASCII 运行时）
+├── main.js                 # Electron 主进程：窗口、IPC、截图验收钩子
+├── preload.js              # 通过 contextBridge 暴露 window.minicAPI
+├── lib/
+│   └── compiler.js         # 调用 minic.exe / gcc 的编译与运行调度
+├── renderer/               # 新版 React 前端（Vite 项目根）
+│   ├── index.html
+│   ├── vite.config.mjs
+│   └── src/
+│       ├── main.jsx        # React 入口、Monaco 初始化
+│       ├── App.jsx         # 应用状态、编译/运行、快捷键、页签调度
+│       ├── components/     # 标题栏、工具栏、编辑器、Modal、Toast、图表等
+│       ├── panels/         # 8 个检查器页签
+│       ├── lib/            # Monaco 配置、产物解析、格式化、颜色
+│       ├── data/           # 示例库与语法手册数据
+│       └── styles/app.css  # 完整设计系统
+├── src/                    # 旧版前端（保留用于旧回归测试）
+└── test/                   # compile-smoke / book-smoke / sample-smoke
 ```
 
-## 示例库
+## 工作原理
 
-**示例▾** 菜单里 15 条源码，分 6 组（基础 / 类型 / 函数 / 数组与控制流 / 综合 / 错误演示），
-覆盖最小程序、最大公约数、浮点、字符与布尔、嵌套调用、递归、素数筛选、冒泡排序、
-数组统计、嵌套循环、全特性综合，以及 3 条错误演示（缺分号+未声明、未声明变量、顶层声明写在语句后）。
+1. 渲染进程（React）不直接访问文件系统或执行程序，只调用 `window.minicAPI`。
+2. `preload.js` 通过 IPC 把请求转给主进程 `main.js`。
+3. `lib/compiler.js` 负责把源码写入 `%TEMP%\minic-gui`，调用 `minic.exe` 生成
+   `.token.txt` / `.ast.txt` / `.sym.txt` / `.quad.txt` / `.asm`（可按需生成 `.parse.txt`）。
+4. 前端 `lib/parseArtifacts.js` 把这些文本解析成表格、树、图与诊断列表。
+5. 点击「运行」时，`compiler.js` 继续调用 `gcc -x assembler` 链接并执行生成的 exe，超时 5 秒。
 
-- 数据在 `src/samples.js`，渲染逻辑在 `renderer.js` 的示例下拉段。改示例只需编辑 `SAMPLES` 数组。
-- 每条都带 `output`（期望 stdout）或 `err`（期望 stderr 首行），**全部在真实工具链上跑通过**：
-  `build\minic.exe` 编译 → `gcc -x assembler` 汇编链接 → 运行比对 stdout；错误示例比对退出码 1 与报错原文。
-- 可选 `exitCode`：`main` 的返回值就是进程退出码。`gcd` 示例是 `return t`（gcd(36,24)=12），
-  所以它标注了 `exitCode: 12`；未标注的示例默认要求退出码 0。
-  **这是 MiniC 返回值语义的正确体现，不是缺陷** —— 曾经把断言写死为 0，导致 `gcd` 被误判 FAIL。
-- 回归：`node test\sample-smoke.js`（数据层恒跑；实跑校验在允许启动子进程的环境才执行）。
+> 由于本机原生程序在含中文的路径下文件 I/O 会失效，`compiler.js` 会把 `minic.exe`
+> 复制到 `%TEMP%\minic-gui` 后再执行；Electron 运行时也部署到 `%LOCALAPPDATA%\minic-gui\runtime`。
 
-## 产物与标签对应
+## 构建与截图验收
 
-| 标签 | 数据来源 | 说明 |
-|---|---|---|
-| Token | `<src>.token.txt` | `行:列 类型 值`，按类型着色 |
-| 语法树 | `<src>.ast.txt` | tree 命令风格框线树，`@行:列` 对齐成列；点节点跳到源码 |
-| 符号表 | `<src>.sym.txt` | 分节符号表 |
-| 四元式 | `<src>.quad.txt` | `(操作符, 操作数1, 操作数2, 结果) @行:列` |
-| 汇编 | `<src>.asm` | x86-64 / GNU as 汇编（MinGW `main` 入口） |
-| **运行输出** | 执行编译出的 `.exe` 抓 stdout/stderr | **`print` 的输出显示在这里**；页脚给各阶段耗时与退出码 |
-| 诊断 | stderr | `minic: error/warning: 行:列: 消息`，点击跳转 |
+```bat
+cd gui
+npm run build                      :: 只构建前端到 renderer\dist
+npm start                          :: 构建 + 启动
+npm run start:fast                 :: 不构建，直接用现有 dist 启动
+```
 
-## 语法手册（内建参考书）
+截图模式（用于自动化验收）：
 
-工具栏 **语法手册** 按钮（或 `F1`）打开一本全屏参考书，共 **10 章 67 条**，每条都标注状态：
+```bat
+npm run shot -- --shot=build\shot.png --tab=quad --theme=dark --compile
+```
 
-| 徽标 | 含义 | 条数 |
-|---|---|---|
-| ✓ 支持 | 可直接使用，附可运行示例 | 33 |
-| ✗ 不支持 | 附真实报错原文 | 15 |
-| ⚠ 有限制 | 能用但有约束 | 11 |
-| · 说明 | 纯概念说明 | 8 |
-
-- **左侧目录**：按章分组，滚动正文时自动高亮当前条目。
-- **搜索框**：`Ctrl+F` 聚焦，支持多关键词（空格分隔，全部命中才显示），匹配范围含标题、语法、示例、报错原文与说明。
-- **每个示例块**右侧三个按钮：**插入**（插到编辑器光标处）、**载入**（作为新文档打开并编译）、**复制**。
-- **相关条目**是可点击的胶囊，点击跳转到对应条目。
-
-全部 60 条示例都在 `build\minic.exe` 上实测过：编译退出码、`gcc` 汇编链接、运行 stdout 与文档标注逐字一致。
-
-手册数据在 `src/syntax-book.js`，界面逻辑在 `renderer.js` 的 `// ══ 语法手册 ══` 段，样式在 `styles.css` 的 `.book-*` 段。改内容只需编辑 `syntax-book.js` 的 `SYNTAX_BOOK` 数组。
-
-## 编辑体验（类 VS Code）
-
-| 能力 | 说明 |
-|---|---|
-| 自动配对 | 输入 `(` `{` `[` `"` `'` 自动补右半；有选中内容时自动包裹；右侧已有右括号时按它直接跳过 |
-| 成对退格 | 空括号/空引号中间按退格一次删掉一对 |
-| 智能缩进 | 回车保持当前缩进；`{` 后回车自动多缩一级；在 `{}` 中间回车自动展开成三行；行首输入 `}` 自动退一级 |
-| 回车自动排版 | 光标在行尾按回车时，先把这一行规范化（`a=10;` → `a = 10;`），注释行不动 |
-| 格式化文档 | `Shift+Alt+F` 或 编辑菜单：重算缩进、规范操作符/逗号两侧空格、去行尾空格、压缩空行（只改空白，不改语义） |
-| 保存时自动格式化 | 默认开启，可在 **视图 → 保存时自动格式化** 关闭（会记住） |
-| 当前行高亮 | 光标所在行淡色底纹 |
-
-## 快捷键
-
-`Ctrl+N` 新建 · `Ctrl+O` 打开 · `Ctrl+S` 保存 · `Ctrl+Shift+S` 另存为 · `Ctrl+Enter` 编译 ·
-`F5` 运行 · `F1` 语法手册 · `Shift+Alt+F` 格式化文档 · `Ctrl+Shift+L` 切换主题 · `Ctrl+滚轮` 缩放编辑器字号 ·
-`Ctrl+=` / `Ctrl+-` 同样可调字号
+支持参数：`--shot=<png>`、`--theme=dark|light`、`--tab=token|ast|sym|quad|asm|parse|run|diag`、
+`--menu=book|samples`、`--compile`、`--break`、`--run`、`--parse`、
+`--multifile`、`--diagjump`、`--fontsize=<n>`、`--sample=<id>`、`--diagidx=<n>`。
+截图完成后会打印 `SHOT_SAVED <path>` 并以 0 退出。
 
 ## 测试
 
 ```bat
-cd /d MiniCCompiler\gui
-node test\compile-smoke.js
-node test\run-smoke.js
-node test\book-smoke.js
-node test\sample-smoke.js
+cd gui
+npm test              :: compile-smoke：产物齐全、Token 格式、错误诊断格式
+npm run test:book     :: 语法手册数据层 + 旧渲染层
+npm run test:samples  :: 示例库数据层 + 20 条真实工具链实跑
+npm run test:run      :: 编译→链接→运行链路、崩溃与超时处理
 ```
 
-或者从仓库根一次性跑全套：`build.bat test`（编译器 7 套回归 + GUI 2 套冒烟）。
+四套测试都不需要 Electron 窗口；`test:run` 会真实调用
+`minic.exe` → `gcc` → 生成的 exe。旧版 `gui\src` 保留未动，
+因此 `book-smoke.js` 的 DOM stub 测试仍然可以运行。
 
-- `compile-smoke.js` 覆盖：正常源码（7 个产物齐全、Token 格式、AST/符号表内容）与错误源码（退出码 1、诊断格式）。
-- `book-smoke.js` 覆盖语法手册的数据层（章结构、status 合法、id 唯一、related 交叉引用、ok 必带示例、no 必带报错原文）与渲染层（用最小 DOM stub 跑真实 `renderer.js`：67 条渲染、10 个章按钮、搜索过滤、空态、开关、定位、徽标）。
-- `sample-smoke.js` 覆盖示例库的数据层（条数、id 唯一、字段齐全、分组）与格式约定（LF、末尾换行、空格缩进），并在环境允许启动子进程时逐条实跑。
+## 已知限制
 
-## 截图/回归模式
-
-```bat
-"%LOCALAPPDATA%\minic-gui\runtime\electron.exe" "%CD%" --no-sandbox --disable-gpu ^
-  --shot=out.png --compile --theme=light
-```
-
-可选：`--break`（错误示例）、`--tab=asm|sym|diag|...`、`--menu=file|build|view|...`。
-回归钩子：`--twice`（连编）、`--multifile`（多文件）、`--fmt`（格式化幂等）、
-`--edittest`（编辑增强）、`--wheeltest`（缩放）、`--duptest`（同一文件重复打开去重）、
-`--diagjump`（点诊断跳转定位）。
-
-`--diagjump` 会载入 `--sample=<id>`（默认 `err-mixed-all`）、编译、点击第 `--diagidx=N` 条诊断
-（默认 0），然后打印 `DIAGJUMP {...}` 的几何自检结果：`scrollTop / scrollMax / expectedViewTop`
-（目标行应在的视口 y）、`currentLineTop`（当前行高亮的实际 y）、`marks[].viewTop`（各错误行标记的
-实际 y）。三者对不上就说明编辑器三层（textarea / 高亮层 / 行号列）坐标串了。
-例：`electron . --shot=out.png --diagjump --sample=err-mixed-all --diagidx=5`
+- MiniC 语言本身不支持 `%`、`?:`、`for`、`do-while`、`break`、`continue`、`switch`、`goto`、多维数组等，
+  编辑器补全会给出提示，语法手册中有对应条目。
+- LL(1) 分析过程为文本表格，超大源文件可能生成很大（例如数百 KB）的 `.parse.txt`，默认关闭、按需开启。
+- 「运行」需要系统 PATH 中有 MinGW `gcc`，也可用环境变量 `MINIC_GCC` 指定完整路径。
+- 程序死循环会在 5 秒后被强制终止并提示超时。

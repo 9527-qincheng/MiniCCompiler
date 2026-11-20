@@ -114,40 +114,42 @@ function escapeHtml(s) {
 }
 
 function measureLineHeight() {
-  // 行高必须实测，不能直接读 getComputedStyle().lineHeight。
-  // line-height:1.5 只声明了「行框至少 19.5px」，实际行框高度取
-  // max(19.5px, 字体自身的 ascent+descent)。换一台机器、换一个 fallback 字体
-  // （比如未安装 Sarasa Gothic SC 时退回 Consolas），实际行高可能是 20.5 或 21px，
-  // 而这里若仍返回 19.5，所有行标记的 top 按 19.5 递增，第 N 行就偏 (N-1)×差值——
-  // 表现就是「越往下滚，错误高亮和代码偏得越远」。
+  // 行高必须用「textarea」实测，不能用 div。
+  // 同一个 line-height:1.5，div 与 textarea 的真实行框高度并不相同
+  // （textarea 有自己的内部行布局），用 div 测出来的值会让红底
+  // 与文字按每行零点几像素累积错开，滚动后尤其明显。
   const cs = getComputedStyle(el.source);
-  const probe = document.createElement('div');
+  // 先清掉上一次写回的内联值，否则会在「被写回的值」上再测一次，形成正反馈。
+  if (el.source) el.source.style.lineHeight = '';
+  const probe = document.createElement('textarea');
   probe.style.position = 'absolute';
   probe.style.visibility = 'hidden';
   probe.style.left = '-9999px';
   probe.style.top = '0';
+  probe.style.width = '600px';
+  probe.style.height = 'auto';
   probe.style.margin = '0';
   probe.style.padding = '0';
   probe.style.border = '0';
+  probe.style.overflow = 'hidden';
+  probe.style.resize = 'none';
   probe.style.whiteSpace = 'pre';
+  probe.setAttribute('wrap', 'off');
   probe.style.fontFamily = cs.fontFamily;
   probe.style.fontSize = cs.fontSize;
-  probe.style.lineHeight = cs.lineHeight;
-  probe.textContent = new Array(21).join('X\n') + 'X';   // 共 20 行
+  probe.style.lineHeight = (parseFloat(cs.fontSize) * 1.5) + 'px';
+  probe.value = new Array(21).join('X\n') + 'X';   // 共 20 行
   document.body.appendChild(probe);
-  const measured = probe.getBoundingClientRect().height / 20;
+  const measured = probe.scrollHeight / 20;
   document.body.removeChild(probe);
   state.lineHeight = measured > 0 ? Math.round(measured * 1000) / 1000 : (parseFloat(cs.lineHeight) || state.fontSize * 1.5);
+  // 三层统一用同一个实测行高，避免行号、高亮、textarea 之间逐渐错开。
+  const lhPx = state.lineHeight + 'px';
+  if (el.gutter) el.gutter.style.lineHeight = lhPx;
+  if (el.highlight) el.highlight.style.lineHeight = lhPx;
+  if (el.source) el.source.style.lineHeight = lhPx;
 }
 
-/**
- * 字体真正加载完成、窗口缩放、系统 DPI 变化，都会改变「一行到底多高」。
- * 所有行标记（错误行底色、警告行底色、当前行高亮）的 top 都是
- * `padTop + (行号 - 1) * state.lineHeight`，一旦实测行高变了却没重绘，
- * 整列标记就会按「行号 × 差值」累积漂移——行号越大偏得越多，
- * 表现就是「明明点的是第 17 行，高亮却落在第 19 行」。
- * 所以在度量真正稳定之后重新测量并重绘一次。
- */
 function refreshMetrics() {
   const before = state.lineHeight;
   measureLineHeight();
@@ -158,7 +160,9 @@ function refreshMetrics() {
 }
 
 /* ------------------------- 语法高亮 ------------------------- */
-const KEYWORDS = new Set(['int', 'float', 'bool', 'char', 'void', 'if', 'else', 'while', 'print', 'return', 'true', 'false']);
+// 按 VS Code Dark+ 的语义分三类：类型名（青）/ 控制与常量（紫）/ 其余（函数名黄、变量浅蓝）
+const TYPE_KEYWORDS = new Set(['int', 'float', 'bool', 'char', 'void']);
+const CONTROL_KEYWORDS = new Set(['if', 'else', 'while', 'return', 'true', 'false']);
 
 function highlightMiniC(src) {
   let out = '';
@@ -213,9 +217,17 @@ function highlightMiniC(src) {
     if (/[A-Za-z_]/.test(c)) {
       const m = rest.match(/^[A-Za-z_][A-Za-z0-9_]*/);
       const word = m[0];
-      out += KEYWORDS.has(word)
-        ? `<span class="tok-kw">${word}</span>`
-        : `<span class="tok-id">${word}</span>`;
+      const after = src.slice(i + word.length);
+      if (TYPE_KEYWORDS.has(word)) {
+        out += `<span class="tok-type">${word}</span>`;
+      } else if (CONTROL_KEYWORDS.has(word)) {
+        out += `<span class="tok-kw">${word}</span>`;
+      } else if (/^\s*\(/.test(after)) {
+        // 标识符后面紧跟 ( —— 当作函数名（定义或调用），与 VS Code 一样显示为黄色
+        out += `<span class="tok-fn">${word}</span>`;
+      } else {
+        out += `<span class="tok-id">${word}</span>`;
+      }
       i += word.length;
       continue;
     }
@@ -442,6 +454,7 @@ function formatDocument({ silent = false } = {}) {
 function renderEditor() {
   const text = el.source.value;
   if (el.placeholder) el.placeholder.classList.toggle('hidden', text.length > 0);
+  if (el.highlight) el.highlight.innerHTML = highlightMiniC(text) + '\n';
   const lineCount = text.split('\n').length;
   let g = '';
   for (let i = 1; i <= lineCount; i++) g += i + '\n';
@@ -456,7 +469,14 @@ function syncScroll() {
     el.highlight.scrollLeft = el.source.scrollLeft;
   }
   el.gutter.scrollTop = el.source.scrollTop;
-  el.marks.style.transform = `translateY(${-el.source.scrollTop}px)`;
+  // 用 top 而不是 transform：transform 会把 .line-marks 提升为合成层，
+  // 而 textarea 的原生滚动由合成器直接处理，两者在滚轮滚动过程中会出现
+  // 一帧以上的不同步（表现为「红底跟着滚但慢半拍/多走一行」）。
+  // 改成改 top 让它在主线程参与布局，与滚动保持同一帧。
+  if (el.marks) {
+    el.marks.style.top = '0px';
+    el.marks.style.transform = 'none';
+  }
   updateCurrentLine();
 }
 
@@ -483,25 +503,54 @@ function updateCurrentLine() {
  * 于是相邻两行的标记之间会漏出 0.5px 的底色细缝——连续几行都有错误时，
  * 看上去就是一道道横线，容易被当成「高亮错位」。
  */
+// 行标记的纵向基准：不能直接拿 textarea 的 padding-top 当基准。
+// textarea 是 position:absolute; inset:0，与 .line-marks 同层，
+// 但两者在个别字体/缩放组合下会有几像素的基线差异（实测偏上约 8px）。
+// 用「textarea 顶边相对 .code-wrap 的偏移 + 自身 padding-top」实测得出，
+// 不再假设它等于 padding-top。
+function markPadTop() {
+  // 行号栏、高亮层、textarea 三者的 line-height 由 measureLineHeight()
+  // 统一写成同一个实测值（见该函数末尾），所以这里用 padding-top 即可。
+  return parseFloat(getComputedStyle(el.source).paddingTop) || 0;
+}
+
 function markHeight() {
-  return Math.ceil(state.lineHeight) + 1;
+  // 只向上取整到整像素，绝不再 +1。行高是 20.47 这样的分数时，ceil 得到 21，
+  // 相邻两条错误标记之间只重叠 0.5px——足以盖住亚像素缝隙，又不会明显连成一片。
+  // 以前写成 ceil + 1 = 22，比行高多出 1.5px，连续 4 行都有错误时看上去会把
+  // 中间的行号搅乱（像是整体往上偏了半行）。
+  return Math.ceil(state.lineHeight);
 }
 
 function renderMarks() {
+  // 【根治方案】错误行底色不再用「绝对定位的 .line-marks 层 + 手动同步滚动」，
+  // 改为直接画在 textarea 自己的背景上（background-attachment: local）。
+  // 理由：任何独立图层都要靠 JS 跟着 scrollTop 挪，scroll 事件、合成器滚动、
+  // DPI 缩放三者只要差一帧或差一个像素，用户滚动后就会看到红底和文字错开。
+  // 背景属于 textarea 自身，浏览器保证它与文字一起滚动，天然不会错位。
+  // 每行一条 linear-gradient，第 N 行覆盖 [(N-1)*行高, N*行高)。
+  // background-origin: content-box 让坐标原点落在 padding 内侧，与首行文字对齐。
   const lh = state.lineHeight;
-  const h = markHeight();
-  const padTop = parseFloat(getComputedStyle(el.source).paddingTop) || 0;
-  let html = '';
-  for (const line of state.errorLines) {
-    html += `<div class="line-mark" style="top:${Math.round(padTop + (line - 1) * lh)}px;height:${h}px"></div>`;
+  const layers = [];
+  const addLayer = (line, color) => {
+    const top = (line - 1) * lh;
+    const bot = top + lh;
+    layers.push(
+      `linear-gradient(to bottom, transparent ${top}px, ${color} ${top}px, ` +
+      `${color} ${bot}px, transparent ${bot}px)`
+    );
+  };
+  for (const line of state.errorLines) addLayer(line, 'rgba(255, 92, 92, 0.16)');
+  for (const line of state.warnLines) addLayer(line, 'rgba(214, 170, 60, 0.16)');
+  if (layers.length) {
+    el.source.style.backgroundImage = layers.join(',');
+    el.source.style.backgroundAttachment = 'local';
+    el.source.style.backgroundOrigin = 'content-box';
+    el.source.style.backgroundRepeat = 'no-repeat';
+  } else {
+    el.source.style.backgroundImage = 'none';
   }
-  for (const line of state.warnLines) {
-    html += `<div class="line-mark warn" style="top:${Math.round(padTop + (line - 1) * lh)}px;height:${h}px"></div>`;
-  }
-  el.marks.innerHTML = html;
-  // 容器高度必须跟内容总高一致：行标记的 top 是内容绝对坐标，容器若只有一屏高，
-  // 超出部分会被裁掉（长文件滚到下半部分时错误行高亮整片消失）。见 styles.css 注释。
-  el.marks.style.height = Math.max(el.source.scrollHeight, el.source.clientHeight) + 'px';
+  if (el.marks) el.marks.innerHTML = '';
 }
 
 function updateCursor() {
@@ -1009,11 +1058,15 @@ function renderDiagnostics(result) {
     })
     .join('');
 
+  // 只有该阶段真的没有报错时，才把它列进「已通过」。原来只判断产物文件在不在，
+  // 于是语法错得一塌糊涂时也会显示「已通过 LL(1) 语法分析 · AST 构建」，自相矛盾。
   const passed = [];
+  const hasLexErr = errors.some((d) => d.stage === '词法');
+  const hasSynErr = errors.some((d) => d.stage === '语法分析');
   const tokenCount = parseTokens(state.artifacts.tokens).length;
-  if (state.artifacts.tokens) passed.push(`词法 ${tokenCount} 记号`);
-  if (state.artifacts.ast) passed.push('LL(1) 语法分析');
-  if (state.artifacts.ast) passed.push('AST 构建');
+  if (state.artifacts.tokens && !hasLexErr) passed.push(`词法 ${tokenCount} 记号`);
+  if (state.artifacts.ast && !hasSynErr) passed.push('LL(1) 语法分析');
+  if (state.artifacts.ast && !hasSynErr) passed.push('AST 构建');
 
   el.diagList.innerHTML =
     html +
@@ -2168,8 +2221,25 @@ async function init() {
 }
 
 /* 截图/回归钩子：--compile / --break / --tab=xx / --menu=xx / --twice 模式使用 */
-window.__minicTest = async ({ theme, break: breakIt, tab, menu, twice, multifile, fmt, editTest, dupTest, demo, diagJump } = {}) => {
+window.__minicTest = async ({ theme, break: breakIt, tab, menu, twice, multifile, fmt, editTest, dupTest, demo, diagJump, fontSize, scrollY } = {}) => {
   if (theme) applyTheme(theme);
+  if (fontSize) applyFontSize(fontSize);
+  if (scrollY) {
+    diagJump = null;
+    let t = 'int main() {\n  int a;\n  int b;\n';
+    for (let i = 0; i < 40; i++) t += '  a = a + 1;\n';
+    t += '  b = ;\n';
+    for (let i = 0; i < 20; i++) t += '  a = a + 1;\n';
+    t += '  return 0;\n}\n';
+    setSource(t);
+    // 直接标注几行错误，不跑编译器（只为验证背景是否随文字一起滚动）
+    state.errorLines = [10, 20, 30, 45, 50];
+    state.warnLines = [15];
+    renderMarks();
+    el.source.scrollTop = scrollY;
+    syncScroll();
+  }
+
   if (diagJump) {
     // 回归：点诊断跳转后，目标行必须落在视口内的预期位置（高亮块、光标行、滚动量三者一致）
     const pick = SAMPLES.find((s) => s.id === diagJump.sample) || SAMPLES.find((s) => s.id === 'err-mixed-all');
@@ -2222,6 +2292,12 @@ window.__minicTest = async ({ theme, break: breakIt, tab, menu, twice, multifile
       srcFontSize: getComputedStyle(ta).fontSize,
       hlFontSize: el.highlight ? getComputedStyle(el.highlight).fontSize : null,
       derivedLH: Math.round(((ta.scrollHeight - 2 * padTop) / Math.max(1, ta.value.split('\n').length)) * 100) / 100,
+    gutterFirst: (() => { try { const g = el.gutter; const t = g.firstChild; const r = document.createRange(); r.setStart(t,0); r.setEnd(t,1); const b = r.getBoundingClientRect(); return { top: Math.round(b.top*10)/10, bottom: Math.round(b.bottom*10)/10 }; } catch(e) { return null; } })(),
+    hlFirst: (() => { try { const h = el.highlight; const w = document.createTreeWalker(h, NodeFilter.SHOW_TEXT, null); const t = w.nextNode(); const r = document.createRange(); r.setStart(t,0); r.setEnd(t,1); const b = r.getBoundingClientRect(); return { top: Math.round(b.top*10)/10, bottom: Math.round(b.bottom*10)/10 }; } catch(e) { return null; } })(),
+    marksRect: (() => { try { const b = el.marks.getBoundingClientRect(); return { top: Math.round(b.top*10)/10, h: Math.round(b.height*10)/10, offsetTop: el.marks.offsetTop, transform: getComputedStyle(el.marks).transform }; } catch(e) { return null; } })(),
+    marksFirst: (() => { try { const m = el.marks.firstElementChild; if (!m) return null; const b = m.getBoundingClientRect(); return { top: Math.round(b.top*10)/10, h: Math.round(b.height*10)/10, styleTop: m.style.top, styleH: m.style.height }; } catch(e) { return null; } })(),
+    gutterRect: (() => { try { const b = el.gutter.getBoundingClientRect(); return { top: Math.round(b.top*10)/10, h: Math.round(b.height*10)/10 }; } catch(e) { return null; } })(),
+    wrapRect: (() => { try { const b = el.source.parentElement.getBoundingClientRect(); return { top: Math.round(b.top*10)/10, h: Math.round(b.height*10)/10 }; } catch(e) { return null; } })(),
     };
   }
   if (demo) {

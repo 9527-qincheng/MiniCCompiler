@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 chcp 65001 >nul
 rem ============================================================
 rem  MiniC Compiler GUI launcher
@@ -33,8 +33,26 @@ if not exist "%APP_DIR%\node_modules\electron\dist\electron.exe" (
     exit /b 1
 )
 
+rem -- build React renderer bundle before launching --
+where npm >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] npm not found. Install Node.js first.
+    pause
+    exit /b 1
+)
+echo [1/3] Building UI bundle ...
+pushd "%APP_DIR%"
+call npm run build
+set "BUILD_RC=%errorlevel%"
+popd
+if not "%BUILD_RC%"=="0" (
+    echo [ERROR] UI build failed.
+    pause
+    exit /b 1
+)
+
 if not exist "%RUNTIME%\electron.exe" (
-    echo [1/2] Deploying runtime to %RUNTIME% ...
+    echo [2/3] Deploying runtime to %RUNTIME% ...
     robocopy "%APP_DIR%\node_modules\electron\dist" "%RUNTIME%" /E /NFL /NDL /NJH /NJS /NP >nul
     if errorlevel 8 (
         echo [ERROR] Failed to deploy runtime.
@@ -47,6 +65,6 @@ if not exist "%APP_DIR%\..\build\minic.exe" (
     echo [WARN] minic.exe not found - run build.bat first.
 )
 
-echo [2/2] Starting MiniC Compiler GUI ...
+echo [3/3] Starting MiniC Studio ...
 start "" "%RUNTIME%\electron.exe" "%APP_DIR%" --no-sandbox --disable-gpu
 endlocal

@@ -134,7 +134,7 @@ function prepareWork({ text, name, guiDir }) {
   return { exe, workDir, fileName, srcPath, base: srcPath.replace(/\.mc$/i, '') };
 }
 
-async function compileSource({ text, name, guiDir }) {
+async function compileSource({ text, name, guiDir, optimize = false, includeParse = false }) {
   const work = prepareWork({ text, name, guiDir });
   if (!work) {
     return { ok: false, reason: 'minic-not-found', message: '未找到 minic.exe（期望位于 MiniCCompiler/build/minic.exe）' };
@@ -145,15 +145,14 @@ async function compileSource({ text, name, guiDir }) {
     try { fs.unlinkSync(base + ext); } catch { /* 旧产物不存在 */ }
   }
 
-  // 分析轨迹（.parse.txt）在界面上没有展示页签，只被用来判定「LL(1) 语法分析通过」，
-  // 但它的文本量随源码规模平方增长：实测 500 条语句（约 1500 行）会产生 1.2 GB、
-  // 编译耗时 30 秒；100 条语句也要 53 MB / 1.3 秒；2 KB 的小文件就有 2.1 MB。
-  // 因此界面编译一律不生成它——这一项改由 .ast.txt 是否存在来判断。
-  // 需要完整分析过程时，直接在命令行执行 minic <file.mc> --dump-parse。
-  const PARSE_ENABLED = false;
+  // 分析轨迹（.parse.txt）的文本量随源码规模平方增长：实测 500 条语句（约 1500 行）
+  // 会产生 1.2 GB、编译 30 秒；2 KB 的小文件也有 2.1 MB。因此默认不生成，
+  // 仅在用户手动开启「语法分析」页签时按需生成，并只回传前 512 KB。
   const lineCount = String(text == null ? '' : text).split('\n').length;
-  const args = [srcPath, '--dump-tokens', '--dump-ast', '--dump-symtab', '--dump-quads'];
-  if (PARSE_ENABLED) args.splice(1, 0, '--dump-parse');
+  const args = [srcPath];
+  if (optimize) args.push('-O');
+  if (includeParse) args.push('--dump-parse');
+  args.push('--dump-tokens', '--dump-ast', '--dump-symtab', '--dump-quads');
 
   const t0 = Date.now();
   const res = await runProcess(exe, args, workDir);
@@ -214,7 +213,7 @@ async function compileSource({ text, name, guiDir }) {
     durationMs,
     exe,
     workDir,
-    parseGenerated: PARSE_ENABLED,
+    parseGenerated: Boolean(includeParse),
     sourceLines: lineCount,
   };
 }
@@ -226,7 +225,7 @@ async function compileSource({ text, name, guiDir }) {
  * 必须真的把程序跑起来才有输出。汇编链接全程在 %TEMP%\minic-gui（ASCII 路径）下完成，
  * 因为 MinGW ld 不接受含中文的 -o 绝对路径。
  */
-async function runSource({ text, name, guiDir, timeoutMs = 5000 }) {
+async function runSource({ text, name, guiDir, timeoutMs = 5000, optimize = false }) {
   const work = prepareWork({ text, name, guiDir });
   if (!work) {
     return { ok: false, reason: 'minic-not-found', message: '未找到 minic.exe（期望位于 MiniCCompiler/build/minic.exe）' };
@@ -237,7 +236,7 @@ async function runSource({ text, name, guiDir, timeoutMs = 5000 }) {
   const asmPath = base + '.asm';
   try { fs.unlinkSync(asmPath); } catch { /* 旧产物不存在 */ }
   const t0 = Date.now();
-  const compileRes = await runProcess(exe, [srcPath], workDir);
+  const compileRes = await runProcess(exe, optimize ? [srcPath, '-O'] : [srcPath], workDir);
   const compileMs = Date.now() - t0;
 
   if (compileRes.spawnError) {

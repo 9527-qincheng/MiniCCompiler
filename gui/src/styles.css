@@ -32,11 +32,14 @@
   --scrollbar-hover: #5c5c5c;
   /* 语法高亮 */
   --syn-kw: #c586c0;
+  --syn-type: #4ec9b0;
+  --syn-fn: #dcdcaa;
   --syn-id: #9cdcfe;
   --syn-num: #b5cea8;
+  --syn-str: #ce9178;
   --syn-comment: #6a9955;
   --syn-op: #d4d4d4;
-  --syn-punct: #ffd700;
+  --syn-punct: #d4d4d4;
   /* 语法树框线 */
   --ast-guide: #4d545c;
   --ast-hover: rgba(255, 255, 255, 0.045);
@@ -65,11 +68,14 @@
   --scrollbar: #c6cad0;
   --scrollbar-hover: #aab0b8;
   --syn-kw: #a626a4;
+  --syn-type: #0f7d6d;
+  --syn-fn: #8a6d1f;
   --syn-id: #4078f2;
   --syn-num: #986801;
+  --syn-str: #b35a1f;
   --syn-comment: #a0a1a7;
   --syn-op: #0184bc;
-  --syn-punct: #c18401;
+  --syn-punct: #383a42;
   --ast-guide: #c3c9d2;
   --ast-hover: rgba(0, 0, 0, 0.04);
 }
@@ -438,6 +444,11 @@ body {
 }
 
 .highlight {
+  /* 盖在 textarea 之上：选中时浏览器的蓝色选区画在下层的 textarea 里，
+     彩色的字由本层显示，「蓝底 + 彩字」同时可见，不会出现字被蓝色盖掉。
+     本层 pointer-events:none，鼠标事件一律穿透给下面的 textarea。 */
+  z-index: 2;
+  right: 14px;            /* 给 textarea 的滚动条留位置 */
   color: var(--text);
   background: transparent;
   pointer-events: none;
@@ -445,17 +456,17 @@ body {
 }
 
 #source {
+  z-index: 1;
   background: transparent;
-  color: var(--text);
+  color: transparent;     /* 真正显示的文字来自上面的 .highlight 层 */
   caret-color: var(--text);
   resize: none;
   overflow: auto;
   user-select: text;
 }
-/* 选中文字必须保持可读：这条规则原本是配合「透明 textarea + 下层彩色 pre」写的
-   （选中时让下层的彩色文字透出来）。那个叠层已经删掉，若还保留 color: transparent，
-   选中区域就只剩一块蓝色、字全看不见——全选时整屏变成一片蓝。 */
-#source::selection { background: var(--selection); color: var(--text); }
+/* 文字由上层 .highlight 显示，textarea 自己的字保持透明（否则两层文字重叠会发糊）。
+   所以选区文字也是 transparent，看到的是「下层蓝色选区 + 上层彩色文字」。 */
+#source::selection { background: var(--selection); color: transparent; }
 
 /* 行标记层：子元素的 top 是「内容绝对坐标」，整层靠 translateY(-scrollTop) 跟随滚动。
    容器高度必须等于内容总高（renderMarks 按 scrollHeight 写入），否则超出第一屏的
@@ -507,12 +518,14 @@ body {
 
 /* 语法着色 */
 .tok-kw { color: var(--syn-kw); }
+.tok-type { color: var(--syn-type); }
+.tok-fn { color: var(--syn-fn); }
 .tok-id { color: var(--syn-id); }
 .tok-num { color: var(--syn-num); }
+.tok-str { color: var(--syn-str); }
 .tok-comment { color: var(--syn-comment); font-style: italic; }
 .tok-op { color: var(--syn-op); }
 .tok-punct { color: var(--syn-punct); }
-.tok-str { color: var(--syn-num); }
 
 /* ---------- 标签页 ---------- */
 .tabs {

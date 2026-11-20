@@ -22,14 +22,14 @@ app.commandLine.appendSwitch('disable-gpu');
 /* ------------------------------------------------------------------ */
 function createWindow() {
   win = new BrowserWindow({
-    width: 1280,
-    height: 824,
-    minWidth: 1000,
-    minHeight: 640,
+    width: 1440,
+    height: 900,
+    minWidth: 1120,
+    minHeight: 700,
     frame: false,
     show: false,
-    backgroundColor: '#202020',
-    title: 'MiniC 编译器',
+    backgroundColor: '#070b10',
+    title: 'MiniC Studio',
     icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -39,16 +39,17 @@ function createWindow() {
     },
   });
 
-  win.loadFile(path.join(__dirname, 'src', 'index.html'));
+  win.loadFile(path.join(__dirname, 'renderer', 'dist', 'index.html'));
   win.once('ready-to-show', () => win.show());
   // 禁用页面级缩放（Ctrl+滚轮只用于编辑器字号，不应缩放整个窗口）
   try {
     win.webContents.setVisualZoomLevelLimits(1, 1);
   } catch { /* 旧版本无此 API */ }
 
-  // 截图模式（验收/回归用）：--shot=<png> [--theme=light] [--compile] [--break]
+  // 截图/验收模式：--shot=<png> [--theme=light] [--compile] [--tab=ast] [--menu=samples]
   if (isShot) {
     win.webContents.once('did-finish-load', async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const arg = (name, def) => {
         const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
         return hit ? hit.split('=')[1] : def;
@@ -57,49 +58,50 @@ function createWindow() {
       const theme = arg('theme', 'dark');
       const tab = arg('tab', '');
       const menu = arg('menu', '');
-      const autoCompile = process.argv.includes('--compile');
+      const autoCompile = process.argv.includes('--compile')
+        || process.argv.includes('--demo')
+        || process.argv.includes('--break')
+        || process.argv.includes('--parse')
+        || process.argv.includes('--run')
+        || process.argv.includes('--diagjump');
       const breakIt = process.argv.includes('--break');
-      const twice = process.argv.includes('--twice');
+      const runIt = process.argv.includes('--run');
       const multifile = process.argv.includes('--multifile');
-      const fmt = process.argv.includes('--fmt');
-      const editTest = process.argv.includes('--edittest');
-      const dupTest = process.argv.includes('--duptest');
-      const demo = process.argv.includes('--demo');
       const diagJump = process.argv.includes('--diagjump');
-      await new Promise((r) => setTimeout(r, 900));
+      const includeParse = process.argv.includes('--parse');
+      const fontSize = +arg('fontsize', 0);
 
-      // Ctrl+滚轮缩放回归测试
-      if (process.argv.includes('--wheeltest')) {
-        const r = await win.webContents.executeJavaScript(`(() => {
-          const wrap = document.getElementById('code-wrap');
-          const src = document.getElementById('source');
-          const before = getComputedStyle(src).fontSize;
-          for (let i = 0; i < 3; i++) wrap.dispatchEvent(new WheelEvent('wheel', { deltaY: -120, ctrlKey: true, bubbles: true, cancelable: true }));
-          const after = getComputedStyle(src).fontSize;
-          for (let i = 0; i < 8; i++) wrap.dispatchEvent(new WheelEvent('wheel', { deltaY: 120, ctrlKey: true, bubbles: true, cancelable: true }));
-          const after2 = getComputedStyle(src).fontSize;
-          return { before, after, after2, stored: localStorage.getItem('minic.fontSize') };
-        })()`);
-        console.log('WHEELTEST ' + JSON.stringify(r));
-      }
-
-      if (autoCompile || breakIt || tab || menu || twice || multifile || fmt || editTest || dupTest || demo || diagJump) {
+      // 等 React 挂载、字体就绪与首屏自动编译完成
+      for (let i = 0; i < 60; i++) {
         try {
-          const r = await win.webContents.executeJavaScript(
-            `window.__minicTest && window.__minicTest(${JSON.stringify({ theme, break: breakIt, tab, menu, twice, multifile, fmt, editTest, dupTest, demo, diagJump: diagJump ? { sample: arg('sample', 'err-mixed-all'), index: +arg('diagidx', 0) } : null })})`,
-          );
-          if (twice && r) console.log('TWICETEST ' + JSON.stringify(r));
-          if (multifile && r) console.log('MULTITEST ' + JSON.stringify(r));
-          if (fmt && r) console.log('FMTTEST ' + JSON.stringify(r));
-          if (editTest && r) console.log('EDITTEST ' + JSON.stringify(r));
-          if (dupTest && r) console.log('DUPTEST ' + JSON.stringify(r));
-          if (demo && r) console.log('DEMO ' + JSON.stringify(r));
-          if (diagJump && r) console.log('DIAGJUMP ' + JSON.stringify(r));
-        } catch (e) {
-          console.error('auto test failed:', e);
-        }
-        await new Promise((r) => setTimeout(r, 1800));
+          const ready = await win.webContents.executeJavaScript('typeof window.__minicTest === "function"');
+          if (ready) break;
+        } catch { /* 页面仍在装载 */ }
+        await sleep(150);
       }
+      await sleep(1200);
+
+      try {
+        const payload = {
+          theme,
+          compile: autoCompile && !breakIt && !diagJump && !runIt,
+          break: breakIt,
+          run: runIt,
+          includeParse,
+          tab,
+          menu,
+          multifile,
+          diagJump: diagJump ? { sample: arg('sample', 'err-mixed-all'), index: +arg('diagidx', 0) } : null,
+          fontSize,
+        };
+        const r = await win.webContents.executeJavaScript(
+          `window.__minicTest && window.__minicTest(${JSON.stringify(payload)})`,
+        );
+        console.log('TESTRESULT ' + JSON.stringify(r));
+      } catch (e) {
+        console.error('auto test failed:', e);
+      }
+      await sleep(1800);
       const image = await win.webContents.capturePage();
       fs.writeFileSync(outPath, image.toPNG());
       console.log('SHOT_SAVED ' + outPath);

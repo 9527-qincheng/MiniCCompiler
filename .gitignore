@@ -34,3 +34,5 @@ compile_commands.json
 
 # GUI（Electron）依赖
 gui/node_modules/
+# GUI 渲染层构建产物（由 npm run build 生成，不入库）
+gui/renderer/dist/
